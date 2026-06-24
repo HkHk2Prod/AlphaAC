@@ -1,0 +1,11 @@
+rank: 2
+max_moves: 8
+agents:
+  - random
+  - greedy
+  - uniform_mcts
+  - ppo
+  - dqn
+  - alphazero_residual_mlp
+  - alphazero_gru
+  - alphazero_transformer

@@ -1,0 +1,56 @@
+[project]
+name = "ac-zero"
+version = "0.1.0"
+description = "AlphaZero-style search for verified Andrews-Curtis trivialization certificates."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+license = "MIT"
+authors = [{ name = "AC-Zero contributors" }]
+dependencies = [
+  "numpy>=1.26",
+  "pydantic>=2",
+  "pyyaml>=6",
+  "typer>=0.12",
+  "rich>=13",
+  "gymnasium>=0.29",
+]
+
+[project.optional-dependencies]
+jax = ["jax>=0.4", "flax>=0.8", "optax>=0.2", "orbax-checkpoint>=0.5"]
+cuda12 = ["jax[cuda12]>=0.4"]
+cuda13 = ["jax[cuda13]>=0.6"]
+tpu = ["jax[tpu]>=0.4"]
+tracking = ["wandb>=0.17"]
+docs = ["mkdocs-material>=9", "mkdocstrings[python]>=0.25"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "pytest-cov>=5",
+  "hypothesis>=6",
+  "ruff>=0.5",
+  "mypy>=1.10",
+]
+
+[project.scripts]
+aczero = "ac_zero.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["ac_zero"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=ac_zero --cov-report=term-missing"

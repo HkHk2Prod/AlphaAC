@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AC-Zero presentation dataset",
+  "type": "object",
+  "required": ["schema_version", "rank", "instances"],
+  "properties": {
+    "schema_version": {"enum": ["aczero-dataset-v1", "aczero-dataset-v2", "aczero-candidates-v1"]},
+    "rank": {"type": "integer", "minimum": 1},
+    "instances": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rank", "relators"],
+        "properties": {
+          "rank": {"type": "integer", "minimum": 1},
+          "relators": {"type": "array"},
+          "difficulty": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Scramble difficulty label (v2 generated datasets): an upper bound on the strict-AC solution length."
+          },
+          "ac_trivial": {
+            "type": ["boolean", "null"],
+            "description": "True if known AC-trivial, False if known non-trivial, null if open/unknown."
+          },
+          "minimal_known_operations": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "description": "Fewest strict primitive AC operations of any known trivialization, or null if none is known."
+          },
+          "optimal": {
+            "type": ["boolean", "null"],
+            "description": "Whether minimal_known_operations is proven minimal; null when there is no number to qualify."
+          }
+        }
+      }
+    },
+    "provenance": {"type": "object"},
+    "leakage_warning": {"type": "string"}
+  }
+}

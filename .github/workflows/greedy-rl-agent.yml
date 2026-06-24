@@ -1,0 +1,14 @@
+name: greedy-rl-agent
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  greedy-rl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - run: sh scripts/test_greedy_rl_agent.sh

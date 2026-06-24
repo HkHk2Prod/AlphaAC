@@ -1,0 +1,9 @@
+name: accelerator-smoke
+on:
+  workflow_dispatch:
+jobs:
+  mocked:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/bootstrap.py --accelerator auto

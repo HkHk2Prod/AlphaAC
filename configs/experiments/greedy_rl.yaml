@@ -1,0 +1,13 @@
+rank: 2
+seed: 0
+dataset:
+  count: 12
+  depth: 10
+  min_total_length: 10
+  min_relator_length: 2
+max_moves: 30
+agent: greedy
+artifacts:
+  dataset: data/generated/greedy_rl.json
+  certificate: runs/greedy_rl/certificates/solution.json
+  benchmark: runs/smoke/evaluation/benchmark.json

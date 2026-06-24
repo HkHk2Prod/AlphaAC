@@ -1,0 +1,9 @@
+name: docs
+on:
+  workflow_dispatch:
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Documentation markdown is checked in docs/."

@@ -1,0 +1,10 @@
+rank: 2
+max_moves: 8
+total_length_cap: 128
+model: residual_mlp
+dataset:
+  count: 3
+  depth: 3
+training:
+  optimizer_updates: 1
+  mcts_simulations: 8

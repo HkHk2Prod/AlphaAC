@@ -1,0 +1,44 @@
+# Data
+
+`examples/` contains small, committed presentation fixtures. The standard
+series `standard_rank_1.json` through `standard_rank_3.json` is the exact
+trivial presentation `<x1,...,xn | x1,...,xn>` for ranks 1, 2, and 3.
+
+Every entry across `examples/`, `generated/`, and `candidates/` carries three
+trivialization-label fields:
+
+- `ac_trivial`: `true` if known AC-trivial, `false` if known non-trivial, `null`
+  if open/unknown.
+- `minimal_known_operations`: fewest strict primitive AC operations of any known
+  trivialization, or `null` if none is known.
+- `optimal`: whether `minimal_known_operations` is proven minimal (`null` when
+  there is no number to qualify).
+
+`generated/` contains synthetic guaranteed-solvable strict-AC scrambles
+(`aczero-dataset-v2`). Each instance is `ac_trivial: true` with a known but not
+proven-optimal trivialization (the reverse scramble path), and carries a
+`difficulty` label: the number of scramble moves that actually changed the
+presentation. `write_dataset` / `generate_dataset` deduplicate by content hash
+and exclude the trivial presentation, so the set scales to large counts without
+repetition (pass `depths=[...]` to span an easy-to-hard difficulty range):
+
+```bash
+uv run --frozen aczero dataset generate \
+  --config configs/experiments/greedy_rl.yaml \
+  --output data/generated/greedy_rl.json
+```
+
+`candidates/` holds curated literature presentations (`aczero-candidates-v1`):
+the Akbulut-Kirby series `AK(n)` and members of the Miller-Schupp series. These
+are balanced presentations of the trivial group used as standard potential
+Andrews-Curtis counterexamples and hard benchmarks. `AK(2)` is labeled known
+AC-trivial; the larger members and the Miller-Schupp instances are open
+(`ac_trivial: null`). Regenerate with:
+
+```bash
+uv run --frozen aczero dataset candidates --output data/candidates/standard.json
+```
+
+Candidates must remain separate from training data to avoid leakage. A failed
+search on a candidate is not evidence that it is a genuine counterexample, and
+this project does not prove or disprove the Andrews-Curtis conjecture.

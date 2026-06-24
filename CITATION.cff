@@ -1,0 +1,7 @@
+cff-version: 1.2.0
+message: "If you use AC-Zero, cite this repository and the relevant Andrews-Curtis and AlphaZero literature."
+title: "AC-Zero"
+version: 0.1.0
+date-released: 2026-06-22
+authors:
+  - family-names: "AC-Zero contributors"

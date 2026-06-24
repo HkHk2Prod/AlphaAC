@@ -1,0 +1,28 @@
+{
+  "ac_trivial": true,
+  "content_hash": "87956fa69b76ab8771dcbc2dff9febd72d275ad09acb210212271b8e2d1accb4",
+  "generator_names": [
+    "x1",
+    "x2"
+  ],
+  "human_relators": [
+    "x1",
+    "x2"
+  ],
+  "minimal_known_operations": 0,
+  "optimal": true,
+  "presentation_id": "standard-rank-2",
+  "provenance": {
+    "family": "exact_standard",
+    "rank": 2
+  },
+  "rank": 2,
+  "relators": [
+    [
+      1
+    ],
+    [
+      2
+    ]
+  ]
+}

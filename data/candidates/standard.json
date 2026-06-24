@@ -1,0 +1,394 @@
+{
+  "instances": [
+    {
+      "ac_trivial": true,
+      "content_hash": "d0fb5b062e079d6798235d866f067adad46bb6557691bb4752c55e6c4166deed",
+      "generator_names": [
+        "x",
+        "y"
+      ],
+      "human_relators": [
+        "x x y^-1 y^-1 y^-1",
+        "x y x y^-1 x^-1 y^-1"
+      ],
+      "minimal_known_operations": null,
+      "optimal": null,
+      "presentation_id": "akbulut-kirby-2",
+      "provenance": {
+        "family": "akbulut_kirby",
+        "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+        "n": 2,
+        "reference": "Akbulut and Kirby, A potential smooth counterexample (1985)",
+        "status": "potential_counterexample"
+      },
+      "rank": 2,
+      "relators": [
+        [
+          1,
+          1,
+          -2,
+          -2,
+          -2
+        ],
+        [
+          1,
+          2,
+          1,
+          -2,
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "ac_trivial": null,
+      "content_hash": "26c7ca8acf4a4ccccf9e4d1e7226be1c17d78ed1dd96dd6d0aefc458038ad452",
+      "generator_names": [
+        "x",
+        "y"
+      ],
+      "human_relators": [
+        "x x x y^-1 y^-1 y^-1 y^-1",
+        "x y x y^-1 x^-1 y^-1"
+      ],
+      "minimal_known_operations": null,
+      "optimal": null,
+      "presentation_id": "akbulut-kirby-3",
+      "provenance": {
+        "family": "akbulut_kirby",
+        "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+        "n": 3,
+        "reference": "Akbulut and Kirby, A potential smooth counterexample (1985)",
+        "status": "potential_counterexample"
+      },
+      "rank": 2,
+      "relators": [
+        [
+          1,
+          1,
+          1,
+          -2,
+          -2,
+          -2,
+          -2
+        ],
+        [
+          1,
+          2,
+          1,
+          -2,
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "ac_trivial": null,
+      "content_hash": "9cc779f08e655cca2a9cff1977d970ced9d9934874980f5aea30a69aeceb063a",
+      "generator_names": [
+        "x",
+        "y"
+      ],
+      "human_relators": [
+        "x x x x y^-1 y^-1 y^-1 y^-1 y^-1",
+        "x y x y^-1 x^-1 y^-1"
+      ],
+      "minimal_known_operations": null,
+      "optimal": null,
+      "presentation_id": "akbulut-kirby-4",
+      "provenance": {
+        "family": "akbulut_kirby",
+        "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+        "n": 4,
+        "reference": "Akbulut and Kirby, A potential smooth counterexample (1985)",
+        "status": "potential_counterexample"
+      },
+      "rank": 2,
+      "relators": [
+        [
+          1,
+          1,
+          1,
+          1,
+          -2,
+          -2,
+          -2,
+          -2,
+          -2
+        ],
+        [
+          1,
+          2,
+          1,
+          -2,
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "ac_trivial": null,
+      "content_hash": "c2976202d7edb1757fd38629a852975eebabe53f9042b63a5135bcf97b07293b",
+      "generator_names": [
+        "x",
+        "y"
+      ],
+      "human_relators": [
+        "x x x x x y^-1 y^-1 y^-1 y^-1 y^-1 y^-1",
+        "x y x y^-1 x^-1 y^-1"
+      ],
+      "minimal_known_operations": null,
+      "optimal": null,
+      "presentation_id": "akbulut-kirby-5",
+      "provenance": {
+        "family": "akbulut_kirby",
+        "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+        "n": 5,
+        "reference": "Akbulut and Kirby, A potential smooth counterexample (1985)",
+        "status": "potential_counterexample"
+      },
+      "rank": 2,
+      "relators": [
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          -2,
+          -2,
+          -2,
+          -2,
+          -2,
+          -2
+        ],
+        [
+          1,
+          2,
+          1,
+          -2,
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "ac_trivial": null,
+      "content_hash": "c93830ee853d7ec4966860b987dd2545a3db6669c34402debf501a7c62d3c2e1",
+      "generator_names": [
+        "x",
+        "y"
+      ],
+      "human_relators": [
+        "x^-1 y x y^-1 y^-1",
+        "x^-1 y"
+      ],
+      "minimal_known_operations": null,
+      "optimal": null,
+      "presentation_id": "miller-schupp-1-Y",
+      "provenance": {
+        "family": "miller_schupp",
+        "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+        "n": 1,
+        "reference": "Miller and Schupp, Some presentations of the trivial group (1999)",
+        "status": "hard_benchmark",
+        "w": [
+          2
+        ]
+      },
+      "rank": 2,
+      "relators": [
+        [
+          -1,
+          2,
+          1,
+          -2,
+          -2
+        ],
+        [
+          -1,
+          2
+        ]
+      ]
+    },
+    {
+      "ac_trivial": null,
+      "content_hash": "4433ec003793dafd6eea075e17fb029a11d996ceb38d36f06ddbac58976c58fc",
+      "generator_names": [
+        "x",
+        "y"
+      ],
+      "human_relators": [
+        "x^-1 y x y^-1 y^-1",
+        "x^-1 y y"
+      ],
+      "minimal_known_operations": null,
+      "optimal": null,
+      "presentation_id": "miller-schupp-1-YY",
+      "provenance": {
+        "family": "miller_schupp",
+        "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+        "n": 1,
+        "reference": "Miller and Schupp, Some presentations of the trivial group (1999)",
+        "status": "hard_benchmark",
+        "w": [
+          2,
+          2
+        ]
+      },
+      "rank": 2,
+      "relators": [
+        [
+          -1,
+          2,
+          1,
+          -2,
+          -2
+        ],
+        [
+          -1,
+          2,
+          2
+        ]
+      ]
+    },
+    {
+      "ac_trivial": null,
+      "content_hash": "6a8f0e520aab7ee730507979c92b61fd8f649b4addc03844afacc0658dca8ca6",
+      "generator_names": [
+        "x",
+        "y"
+      ],
+      "human_relators": [
+        "x^-1 y y x y^-1 y^-1 y^-1",
+        "x^-1 y"
+      ],
+      "minimal_known_operations": null,
+      "optimal": null,
+      "presentation_id": "miller-schupp-2-Y",
+      "provenance": {
+        "family": "miller_schupp",
+        "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+        "n": 2,
+        "reference": "Miller and Schupp, Some presentations of the trivial group (1999)",
+        "status": "hard_benchmark",
+        "w": [
+          2
+        ]
+      },
+      "rank": 2,
+      "relators": [
+        [
+          -1,
+          2,
+          2,
+          1,
+          -2,
+          -2,
+          -2
+        ],
+        [
+          -1,
+          2
+        ]
+      ]
+    },
+    {
+      "ac_trivial": null,
+      "content_hash": "1815d8256582f1f5cae866b86605723f8373b2b963201cef10da10bf000d9b68",
+      "generator_names": [
+        "x",
+        "y"
+      ],
+      "human_relators": [
+        "x^-1 y y x y^-1 y^-1 y^-1",
+        "y x^-1 y^-1"
+      ],
+      "minimal_known_operations": null,
+      "optimal": null,
+      "presentation_id": "miller-schupp-2-XYxy",
+      "provenance": {
+        "family": "miller_schupp",
+        "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+        "n": 2,
+        "reference": "Miller and Schupp, Some presentations of the trivial group (1999)",
+        "status": "hard_benchmark",
+        "w": [
+          1,
+          2,
+          -1,
+          -2
+        ]
+      },
+      "rank": 2,
+      "relators": [
+        [
+          -1,
+          2,
+          2,
+          1,
+          -2,
+          -2,
+          -2
+        ],
+        [
+          2,
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "ac_trivial": null,
+      "content_hash": "58cf1361fb2e55d13c8ca589e16a18cee171ac7299e8a1206dda4754970f070e",
+      "generator_names": [
+        "x",
+        "y"
+      ],
+      "human_relators": [
+        "x^-1 y y y x y^-1 y^-1 y^-1 y^-1",
+        "x^-1 y x y^-1 x^-1"
+      ],
+      "minimal_known_operations": null,
+      "optimal": null,
+      "presentation_id": "miller-schupp-3-YXyx",
+      "provenance": {
+        "family": "miller_schupp",
+        "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+        "n": 3,
+        "reference": "Miller and Schupp, Some presentations of the trivial group (1999)",
+        "status": "hard_benchmark",
+        "w": [
+          2,
+          1,
+          -2,
+          -1
+        ]
+      },
+      "rank": 2,
+      "relators": [
+        [
+          -1,
+          2,
+          2,
+          2,
+          1,
+          -2,
+          -2,
+          -2,
+          -2
+        ],
+        [
+          -1,
+          2,
+          1,
+          -2,
+          -1
+        ]
+      ]
+    }
+  ],
+  "leakage_warning": "Literature candidate, not training data. A failed search proves nothing about the Andrews-Curtis conjecture; keep separate from generated training sets.",
+  "rank": 2,
+  "schema_version": "aczero-candidates-v1"
+}
