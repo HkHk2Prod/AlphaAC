@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from ac_zero.algebra.presentation import BalancedPresentation
+
+_SCHEMA_VERSIONS = {"aczero-dataset-v1", "aczero-dataset-v2", "aczero-candidates-v1"}
+_TRISTATE = (True, False, None)
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationReport:
+    """Outcome of validating a dataset document against the AC-Zero schema."""
+
+    ok: bool
+    instances: int
+    errors: list[str] = field(default_factory=list)
+
+
+def validate_dataset(path: str | Path) -> ValidationReport:
+    """Validate a dataset JSON file on disk."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return ValidationReport(ok=False, instances=0, errors=[f"unreadable dataset: {exc}"])
+    return validate_mapping(data)
+
+
+def validate_mapping(data: Any) -> ValidationReport:
+    """Validate an already-parsed dataset document, checking structure and labels.
+
+    Beyond shape, every instance is reparsed as a presentation and its stored
+    content hash is recomputed, so corrupted relators or stale hashes are caught.
+    """
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        return ValidationReport(ok=False, instances=0, errors=["document must be a JSON object"])
+    if data.get("schema_version") not in _SCHEMA_VERSIONS:
+        errors.append(f"unknown schema_version {data.get('schema_version')!r}")
+    if not isinstance(data.get("rank"), int) or data.get("rank", 0) < 1:
+        errors.append("rank must be a positive integer")
+    instances = data.get("instances")
+    if not isinstance(instances, list):
+        return ValidationReport(ok=False, instances=0, errors=[*errors, "instances must be a list"])
+
+    for index, entry in enumerate(instances):
+        errors.extend(f"instance {index}: {message}" for message in _validate_entry(entry))
+    return ValidationReport(ok=not errors, instances=len(instances), errors=errors)
+
+
+def _validate_entry(entry: Any) -> list[str]:
+    if not isinstance(entry, dict):
+        return ["entry must be a JSON object"]
+    problems: list[str] = []
+    problems.extend(_check_label(entry))
+    difficulty = entry.get("difficulty")
+    if difficulty is not None and (not isinstance(difficulty, int) or difficulty < 0):
+        problems.append("difficulty must be a non-negative integer or absent")
+    try:
+        presentation = BalancedPresentation.from_json(entry)
+    except Exception as exc:
+        return [*problems, f"invalid presentation: {exc}"]
+    stored = entry.get("content_hash")
+    if stored is not None and stored != presentation.content_hash:
+        problems.append("content_hash does not match the relators")
+    return problems
+
+
+def _check_label(entry: dict[str, Any]) -> list[str]:
+    problems: list[str] = []
+    if entry.get("ac_trivial") not in _TRISTATE:
+        problems.append("ac_trivial must be true, false, or null")
+    operations = entry.get("minimal_known_operations")
+    if operations is not None and (not isinstance(operations, int) or operations < 0):
+        problems.append("minimal_known_operations must be a non-negative integer or null")
+    if entry.get("optimal") not in _TRISTATE:
+        problems.append("optimal must be true, false, or null")
+    if entry.get("optimal") is True and operations is None:
+        problems.append("optimal cannot be true without minimal_known_operations")
+    return problems

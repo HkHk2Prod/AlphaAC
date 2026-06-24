@@ -14,9 +14,10 @@ from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.encoding.padded import PaddedEncoding, StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
+from ac_zero.models.base import PolicyValueModel
 from ac_zero.models.registry import create_trainable_model
 from ac_zero.models.trainable import TrainablePolicyValueModel
-from ac_zero.search.mcts import UniformMCTS
+from ac_zero.search.puct import PUCTMCTS, PUCTConfig
 from ac_zero.system.manifests import ReproducibilityManifest
 from ac_zero.training.callbacks import CallbackManager, default_training_callbacks
 from ac_zero.training.checkpointing import CheckpointManager
@@ -233,7 +234,9 @@ def run_training_pipeline(
             episodes = []
             for episode_index in range(config.episodes_per_iteration):
                 episode_seed = seed + iteration * 10_000 + episode_index
-                examples, episode_metrics = _collect_episode(config, encoder, episode_seed, rng)
+                examples, episode_metrics = _collect_episode(
+                    config, encoder, episode_seed, rng, model
+                )
                 replay.extend(examples)
                 episodes.append(episode_metrics)
             total_episodes += len(episodes)
@@ -372,6 +375,9 @@ def run_training_pipeline(
             encoding="utf-8",
         )
         return summary
+    except Exception as exc:
+        manager.emit_error("error", "training pipeline failed", exc)
+        raise
     finally:
         manager.close()
 
@@ -381,10 +387,11 @@ def _collect_episode(
     encoder: StateEncoder,
     episode_seed: int,
     rng: random.Random,
+    model: PolicyValueModel,
 ) -> tuple[list[ReplayExample], EpisodeMetrics]:
     instance = generate_solvable(config.rank, config.scramble_depth, episode_seed)
     env = ACEnvironment(instance.presentation, _env_config(config))
-    mcts = UniformMCTS(config.mcts_simulations)
+    mcts = PUCTMCTS(model, encoder, PUCTConfig(simulations=config.mcts_simulations))
     pending: list[tuple[PaddedEncoding, tuple[bool, ...], NDArray[np.float64], int, float]] = []
     rewards: list[float] = []
     terminated = False

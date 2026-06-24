@@ -15,7 +15,11 @@ class MCTSStats:
 
 
 class UniformMCTS:
-    """Small deterministic single-player MCTS placeholder using one-step rollouts."""
+    """Deterministic uniform-prior baseline that spreads visits over legal actions.
+
+    This is the model-free reference; `search.puct.PUCTMCTS` is the real
+    model-guided PUCT search used for training targets and the `puct` agent.
+    """
 
     def __init__(self, simulations: int = 16) -> None:
         """Create a uniform-prior search with a fixed simulation count."""

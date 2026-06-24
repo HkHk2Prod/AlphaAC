@@ -13,7 +13,7 @@
         "x2"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s0",
       "provenance": {
         "depth": 2,
@@ -47,7 +47,7 @@
         "x1^-1 x2^-1",
         "x1 x2 x1 x2 x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2",
       "provenance": {
@@ -83,7 +83,7 @@
         "x2^-1 x1^-1 x2",
         "x2 x1^-1 x2^-1 x1 x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3",
       "provenance": {
@@ -471,7 +471,7 @@
         "x1^-1 x2 x1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s10",
       "provenance": {
         "depth": 2,
@@ -543,8 +543,8 @@
         "x2^-1 x1 x2",
         "x2 x1 x2 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s12",
       "provenance": {
         "depth": 6,
@@ -842,7 +842,7 @@
         "x2"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s21",
       "provenance": {
         "depth": 4,
@@ -876,8 +876,8 @@
         "x1 x2",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s22",
       "provenance": {
         "depth": 6,
@@ -910,7 +910,7 @@
         "x2 x2 x1 x1 x2^-1",
         "x2 x1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s23",
       "provenance": {
@@ -1212,8 +1212,8 @@
         "x1 x2",
         "x1 x2 x2"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s31",
       "provenance": {
         "depth": 4,
@@ -1615,7 +1615,7 @@
         "x1^-1 x2 x1"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s40",
       "provenance": {
         "depth": 2,
@@ -1650,7 +1650,7 @@
         "x2^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s41",
       "provenance": {
         "depth": 4,
@@ -1684,8 +1684,8 @@
         "x1 x1 x2",
         "x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s42",
       "provenance": {
         "depth": 6,
@@ -1718,7 +1718,7 @@
         "x1^-1 x2^-1 x1 x2^-1 x1^-1 x1^-1 x2 x1",
         "x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s43",
       "provenance": {
@@ -2102,7 +2102,7 @@
         "x2"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s50",
       "provenance": {
         "depth": 2,
@@ -2137,7 +2137,7 @@
         "x1 x1 x2^-1 x1^-1 x1^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s51",
       "provenance": {
         "depth": 4,
@@ -2209,7 +2209,7 @@
         "x2^-1 x2^-1 x1 x2 x2",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s53",
       "provenance": {
@@ -2532,7 +2532,7 @@
         "x1 x2^-1 x1^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s61",
       "provenance": {
         "depth": 4,
@@ -2566,7 +2566,7 @@
         "x1 x2^-1 x1^-1 x2 x1^-1",
         "x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s62",
       "provenance": {
@@ -2920,7 +2920,7 @@
         "x1^-1",
         "x2^-1 x2^-1 x1^-1 x2 x1 x1 x2 x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s72",
       "provenance": {
@@ -2958,7 +2958,7 @@
         "x1 x2^-1 x2^-1 x1^-1 x2 x2 x1^-1",
         "x2 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s73",
       "provenance": {
@@ -2996,7 +2996,7 @@
         "x1^-1",
         "x1^-1 x1^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s74",
       "provenance": {
@@ -3344,8 +3344,8 @@
         "x1 x2^-1 x1^-1 x2 x1^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s82",
       "provenance": {
         "depth": 6,
@@ -3381,7 +3381,7 @@
         "x1 x2 x2",
         "x1 x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s83",
       "provenance": {
@@ -3415,7 +3415,7 @@
         "x2^-1 x1^-1 x2^-1 x1 x2 x2 x2 x1 x2",
         "x2 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s84",
       "provenance": {
@@ -3741,7 +3741,7 @@
         "x1^-1",
         "x2 x1^-1 x2 x1 x1 x2^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s91",
       "provenance": {
@@ -3777,8 +3777,8 @@
         "x2 x1 x2^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 2,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s92",
       "provenance": {
         "depth": 6,
@@ -3812,7 +3812,7 @@
         "x1^-1 x1^-1 x2^-1 x1^-1 x2 x1 x1",
         "x2^-1 x1^-1 x2 x1 x2 x1^-1 x2^-1 x1 x1 x2 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s93",
       "provenance": {
@@ -4212,7 +4212,7 @@
         "x2^-1 x1^-1 x1^-1 x2^-1 x1 x2",
         "x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s104",
       "provenance": {
@@ -4527,7 +4527,7 @@
         "x1^-1 x2 x1"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s110",
       "provenance": {
         "depth": 2,
@@ -4602,7 +4602,7 @@
         "x1^-1 x2^-1 x1 x1 x2 x1^-1 x2 x2 x1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s113",
       "provenance": {
@@ -4691,7 +4691,7 @@
         "x1",
         "x2 x2 x2 x1 x1 x2^-1 x2^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s115",
       "provenance": {
@@ -4934,7 +4934,7 @@
         "x2 x1 x2^-1",
         "x1^-1 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s121",
       "provenance": {
@@ -4970,8 +4970,8 @@
         "x1",
         "x2^-1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s122",
       "provenance": {
         "depth": 6,
@@ -5362,7 +5362,7 @@
         "x1^-1 x1^-1 x2^-1 x1^-1 x2^-1 x1 x2 x1 x2 x1 x1",
         "x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s133",
       "provenance": {
@@ -5664,7 +5664,7 @@
         "x2^-1 x1 x1 x2 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s141",
       "provenance": {
@@ -5700,8 +5700,8 @@
         "x2^-1 x1^-1 x2",
         "x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s142",
       "provenance": {
         "depth": 6,
@@ -5737,7 +5737,7 @@
         "x2^-1 x2^-1 x1",
         "x2^-1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s143",
       "provenance": {
@@ -6112,7 +6112,7 @@
         "x2 x2 x1^-1 x2^-1 x2^-1",
         "x2 x1^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s152",
       "provenance": {
@@ -6150,7 +6150,7 @@
         "x2 x1 x2^-1 x1 x2 x1 x2 x1^-1 x2^-1",
         "x1^-1 x1^-1 x2^-1 x1 x2 x2 x1 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 11,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s153",
       "provenance": {
@@ -6554,8 +6554,8 @@
         "x1 x2",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s162",
       "provenance": {
         "depth": 6,
@@ -6588,7 +6588,7 @@
         "x1 x2^-1 x2^-1 x1^-1 x2 x2 x1^-1",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s163",
       "provenance": {
@@ -6627,7 +6627,7 @@
         "x2^-1 x1 x2",
         "x2 x1 x2^-1 x1 x1 x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s164",
       "provenance": {
@@ -6969,8 +6969,8 @@
         "x1^-1 x2^-1 x1 x2 x1",
         "x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s173",
       "provenance": {
         "depth": 8,
@@ -7370,8 +7370,8 @@
         "x1^-1 x1^-1 x1^-1 x2^-1 x1 x2 x1 x1 x1",
         "x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s182",
       "provenance": {
         "depth": 6,
@@ -7409,7 +7409,7 @@
         "x1 x1 x1 x2",
         "x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s183",
       "provenance": {
@@ -8248,7 +8248,7 @@
         "x2 x1 x2^-1",
         "x1 x2"
       ],
-      "minimal_known_operations": 5,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s201",
       "provenance": {
@@ -8662,7 +8662,7 @@
         "x2^-1 x1^-1 x2^-1 x1 x2"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s211",
       "provenance": {
         "depth": 4,
@@ -8741,7 +8741,7 @@
         "x2 x1 x2 x1^-1 x2^-1 x1^-1 x2^-1 x2^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s213",
       "provenance": {
@@ -9042,7 +9042,7 @@
         "x2^-1 x1^-1 x2^-1",
         "x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s222",
       "provenance": {
@@ -9076,8 +9076,8 @@
         "x1",
         "x1 x2 x1 x2^-1 x1^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s223",
       "provenance": {
         "depth": 8,
@@ -9149,7 +9149,7 @@
         "x1^-1 x2^-1 x1^-1 x2 x1 x2",
         "x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s225",
       "provenance": {
@@ -9439,8 +9439,8 @@
         "x1^-1 x1^-1 x2^-1 x1",
         "x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s231",
       "provenance": {
         "depth": 4,
@@ -9473,8 +9473,8 @@
         "x1",
         "x1^-1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s232",
       "provenance": {
         "depth": 6,
@@ -9507,8 +9507,8 @@
         "x2^-1 x1^-1 x2",
         "x1 x1 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s233",
       "provenance": {
         "depth": 8,
@@ -9544,8 +9544,8 @@
         "x1 x1 x2 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s234",
       "provenance": {
         "depth": 10,
@@ -9895,7 +9895,7 @@
         "x2^-1 x2^-1 x1 x2 x2 x2",
         "x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s242",
       "provenance": {
@@ -9931,7 +9931,7 @@
         "x1 x2^-1 x1 x2^-1 x1^-1 x2 x1^-1 x1^-1",
         "x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s243",
       "provenance": {
@@ -10343,7 +10343,7 @@
         "x2^-1 x1^-1",
         "x1 x2 x1^-1 x2 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s252",
       "provenance": {
@@ -10750,7 +10750,7 @@
         "x1^-1",
         "x2^-1 x1 x1 x2 x1^-1 x2 x1 x2^-1 x1^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s264",
       "provenance": {
@@ -11116,7 +11116,7 @@
         "x2"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s271",
       "provenance": {
         "depth": 4,
@@ -11198,8 +11198,8 @@
         "x1",
         "x1^-1 x2^-1 x1^-1 x2 x1 x2 x1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s273",
       "provenance": {
         "depth": 8,
@@ -11274,7 +11274,7 @@
         "x1",
         "x1^-1 x2 x1 x2^-1 x1^-1 x2 x1 x1 x2 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s275",
       "provenance": {
@@ -11316,7 +11316,7 @@
         "x1^-1 x2 x1",
         "x2 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d14-s276",
       "provenance": {
@@ -11583,7 +11583,7 @@
         "x2"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s282",
       "provenance": {
         "depth": 6,
@@ -11616,7 +11616,7 @@
         "x2^-1 x1 x2^-1 x1^-1 x1^-1 x2",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s283",
       "provenance": {
@@ -12398,8 +12398,8 @@
         "x1",
         "x1 x1 x1 x2^-1 x1^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s302",
       "provenance": {
         "depth": 6,
@@ -12435,7 +12435,7 @@
         "x1 x1 x2 x1^-1",
         "x1^-1 x1^-1 x2 x1 x2 x1 x1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s303",
       "provenance": {
@@ -13074,7 +13074,7 @@
         "x1 x2 x1^-1"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s320",
       "provenance": {
         "depth": 2,
@@ -13109,7 +13109,7 @@
         "x2"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s321",
       "provenance": {
         "depth": 4,
@@ -13181,7 +13181,7 @@
         "x1^-1 x1^-1 x2 x1 x1",
         "x2 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s323",
       "provenance": {
@@ -13474,7 +13474,7 @@
         "x1^-1 x2 x1 x1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s330",
       "provenance": {
         "depth": 2,
@@ -13507,7 +13507,7 @@
         "x2 x1 x2^-1",
         "x2^-1 x1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s332",
       "provenance": {
@@ -13913,7 +13913,7 @@
         "x1^-1 x1^-1 x2 x1 x1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s341",
       "provenance": {
         "depth": 4,
@@ -13947,7 +13947,7 @@
         "x1",
         "x1^-1 x1^-1 x2^-1 x1 x1 x1 x1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s342",
       "provenance": {
@@ -14366,7 +14366,7 @@
         "x1^-1 x1^-1 x2 x1 x1"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s351",
       "provenance": {
         "depth": 4,
@@ -14400,8 +14400,8 @@
         "x1^-1",
         "x2 x2 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s352",
       "provenance": {
         "depth": 6,
@@ -14434,7 +14434,7 @@
         "x2 x1 x2^-1",
         "x1 x2 x2 x1 x2^-1 x1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s353",
       "provenance": {
@@ -14754,7 +14754,7 @@
         "x2^-1 x1^-1 x2 x1 x2"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s361",
       "provenance": {
         "depth": 4,
@@ -14790,8 +14790,8 @@
         "x1",
         "x1 x1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s362",
       "provenance": {
         "depth": 6,
@@ -14825,7 +14825,7 @@
         "x1 x2^-1",
         "x1 x1 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s363",
       "provenance": {
@@ -14907,7 +14907,7 @@
         "x2 x2 x1^-1 x2^-1 x2^-1",
         "x2 x1^-1 x2^-1 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s365",
       "provenance": {
@@ -15165,7 +15165,7 @@
         "x2 x2 x1 x2^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s370",
       "provenance": {
         "depth": 2,
@@ -15199,7 +15199,7 @@
         "x1^-1 x2 x1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s371",
       "provenance": {
         "depth": 4,
@@ -15235,7 +15235,7 @@
         "x1",
         "x2^-1 x2^-1 x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s372",
       "provenance": {
@@ -15270,7 +15270,7 @@
         "x1 x2",
         "x1 x2 x1 x2 x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s373",
       "provenance": {
@@ -15306,7 +15306,7 @@
         "x1^-1",
         "x1 x1 x2^-1 x2^-1 x1 x2 x1^-1 x2 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s374",
       "provenance": {
@@ -15575,8 +15575,8 @@
         "x2^-1 x1^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s382",
       "provenance": {
         "depth": 6,
@@ -15609,7 +15609,7 @@
         "x1^-1",
         "x2 x1 x1 x2^-1 x1^-1 x1^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s383",
       "provenance": {
@@ -15921,7 +15921,7 @@
         "x2^-1 x2^-1 x1 x2 x2",
         "x1^-1 x1^-1 x2 x1 x1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s392",
       "provenance": {
@@ -15960,8 +15960,8 @@
         "x2^-1 x1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 2,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s393",
       "provenance": {
         "depth": 8,
@@ -16381,7 +16381,7 @@
         "x2 x1^-1",
         "x2^-1 x2^-1 x1^-1 x2^-1 x1 x2 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s403",
       "provenance": {
@@ -16769,7 +16769,7 @@
         "x1 x2",
         "x2^-1 x1^-1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s412",
       "provenance": {
@@ -16805,7 +16805,7 @@
         "x1 x2^-1 x1^-1 x2 x1^-1",
         "x2^-1 x1^-1 x2 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s413",
       "provenance": {
@@ -17235,8 +17235,8 @@
         "x1^-1",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s423",
       "provenance": {
         "depth": 8,
@@ -17998,7 +17998,7 @@
         "x1^-1 x2 x1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s441",
       "provenance": {
         "depth": 4,
@@ -18032,8 +18032,8 @@
         "x2 x1^-1",
         "x2 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s443",
       "provenance": {
         "depth": 8,
@@ -18396,7 +18396,7 @@
         "x2 x1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s450",
       "provenance": {
         "depth": 2,
@@ -18429,7 +18429,7 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s451",
       "provenance": {
@@ -18465,7 +18465,7 @@
         "x2 x1 x2^-1",
         "x1 x1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s453",
       "provenance": {
@@ -18803,7 +18803,7 @@
         "x2^-1 x1^-1 x2",
         "x1 x2^-1 x1^-1 x2 x1 x2 x1^-1 x1^-1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s463",
       "provenance": {
@@ -19516,7 +19516,7 @@
         "x2 x1 x2 x1^-1 x2^-1 x1 x2 x1 x2 x1^-1 x2^-1 x1 x1",
         "x1^-1 x2 x1 x2 x1^-1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s483",
       "provenance": {
@@ -19862,7 +19862,7 @@
         "x2 x1 x2 x1 x1",
         "x1^-1 x2 x1 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s492",
       "provenance": {
@@ -19943,8 +19943,8 @@
         "x1^-1",
         "x1^-1 x2 x1 x1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d12-s495",
       "provenance": {
         "depth": 12,
@@ -20171,8 +20171,8 @@
         "x1 x2 x1^-1 x2^-1 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s503",
       "provenance": {
         "depth": 8,
@@ -20247,7 +20247,7 @@
         "x2^-1 x1^-1 x2",
         "x2 x1 x1 x2 x1^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s505",
       "provenance": {
@@ -20508,8 +20508,8 @@
         "x2^-1 x1^-1 x2",
         "x2 x1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s511",
       "provenance": {
         "depth": 4,
@@ -20545,7 +20545,7 @@
         "x1^-1 x2 x1^-1 x2^-1 x2^-1 x1^-1 x2 x1 x2^-1 x1",
         "x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s512",
       "provenance": {
@@ -20585,7 +20585,7 @@
         "x2 x1",
         "x1^-1 x2 x1^-1 x2^-1 x1 x2^-1 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s513",
       "provenance": {
@@ -21268,8 +21268,8 @@
         "x2^-1 x1^-1 x2",
         "x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s532",
       "provenance": {
         "depth": 6,
@@ -21302,8 +21302,8 @@
         "x2 x2 x1^-1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s533",
       "provenance": {
         "depth": 8,
@@ -21642,7 +21642,7 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x1^-1 x2 x2 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s543",
       "provenance": {
@@ -21897,7 +21897,7 @@
         "x2"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s550",
       "provenance": {
         "depth": 2,
@@ -21932,7 +21932,7 @@
         "x2 x2 x1 x2^-1 x1^-1 x2^-1 x2^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s551",
       "provenance": {
         "depth": 4,
@@ -22002,8 +22002,8 @@
         "x2^-1 x2^-1 x1^-1 x2 x2",
         "x2"
       ],
-      "minimal_known_operations": 12,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s553",
       "provenance": {
         "depth": 8,
@@ -22037,7 +22037,7 @@
         "x1 x2 x1 x1 x2^-1 x1^-1 x2^-1 x1^-1",
         "x2 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s554",
       "provenance": {
@@ -22355,8 +22355,8 @@
         "x1 x2 x1",
         "x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s562",
       "provenance": {
         "depth": 6,
@@ -22389,8 +22389,8 @@
         "x2 x1 x1 x2^-1 x1^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s564",
       "provenance": {
         "depth": 10,
@@ -22807,8 +22807,8 @@
         "x2 x1 x2^-1",
         "x1 x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s573",
       "provenance": {
         "depth": 8,
@@ -23124,7 +23124,7 @@
         "x1 x1 x2 x1^-1 x1^-1"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s580",
       "provenance": {
         "depth": 2,
@@ -23158,7 +23158,7 @@
         "x1 x2^-1 x1^-1 x1^-1",
         "x2"
       ],
-      "minimal_known_operations": 5,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s581",
       "provenance": {
@@ -23192,8 +23192,8 @@
         "x2^-1 x1^-1 x2",
         "x1^-1 x2"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s582",
       "provenance": {
         "depth": 6,
@@ -23226,7 +23226,7 @@
         "x1^-1",
         "x1^-1 x2 x1^-1 x2^-1 x1 x2 x2 x1 x2^-1 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s583",
       "provenance": {
@@ -23921,8 +23921,8 @@
         "x2 x1^-1 x2^-1",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s602",
       "provenance": {
         "depth": 6,
@@ -23958,7 +23958,7 @@
         "x2^-1 x1^-1 x2 x2",
         "x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s603",
       "provenance": {
@@ -24271,7 +24271,7 @@
         "x2 x1 x2 x1^-1 x2^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s611",
       "provenance": {
         "depth": 4,
@@ -24668,7 +24668,7 @@
         "x1 x2^-1 x1 x2 x2 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s622",
       "provenance": {
@@ -24705,7 +24705,7 @@
         "x2 x1^-1 x2^-1 x2^-1 x1^-1 x2 x1^-1 x1^-1 x2^-1 x1",
         "x1^-1 x2 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 15,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s623",
       "provenance": {
@@ -25069,7 +25069,7 @@
         "x1 x1 x1 x2^-1 x2^-1 x1^-1 x1^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s632",
       "provenance": {
@@ -25108,7 +25108,7 @@
         "x1^-1 x1^-1 x2 x1 x2 x1 x2 x2 x1^-1 x2 x1 x2 x1 x2 x1",
         "x2 x1^-1 x2 x1 x2 x1 x2"
       ],
-      "minimal_known_operations": 18,
+      "minimal_known_operations": 14,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s633",
       "provenance": {
@@ -25159,8 +25159,8 @@
         "x2^-1 x1^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s634",
       "provenance": {
         "depth": 10,
@@ -25939,8 +25939,8 @@
         "x2^-1 x1^-1 x2",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s652",
       "provenance": {
         "depth": 6,
@@ -26343,8 +26343,8 @@
         "x1 x2 x1^-1 x2^-1 x1^-1",
         "x2 x1 x2 x1^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s661",
       "provenance": {
         "depth": 4,
@@ -26383,7 +26383,7 @@
         "x1 x1 x1 x2 x1^-1",
         "x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s662",
       "provenance": {
@@ -26419,7 +26419,7 @@
         "x1^-1 x2^-1 x1 x2 x1",
         "x1 x2 x1^-1 x2 x1 x1 x2^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s663",
       "provenance": {
@@ -26705,8 +26705,8 @@
         "x2^-1 x1^-1",
         "x2^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s672",
       "provenance": {
         "depth": 6,
@@ -26739,7 +26739,7 @@
         "x1^-1 x1^-1 x2 x1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s673",
       "provenance": {
@@ -27171,7 +27171,7 @@
         "x2^-1 x2^-1 x2^-1 x1^-1 x1^-1",
         "x1 x2^-1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s683",
       "provenance": {
@@ -27561,7 +27561,7 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x1 x1 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s692",
       "provenance": {
@@ -27933,7 +27933,7 @@
         "x1 x2"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s701",
       "provenance": {
         "depth": 4,
@@ -27966,7 +27966,7 @@
         "x1^-1 x2^-1",
         "x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s703",
       "provenance": {
@@ -28321,8 +28321,8 @@
         "x1",
         "x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 4,
-      "optimal": false,
+      "minimal_known_operations": 2,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s711",
       "provenance": {
         "depth": 4,
@@ -28689,8 +28689,8 @@
         "x1",
         "x1 x2^-1 x1^-1 x2 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s722",
       "provenance": {
         "depth": 6,
@@ -29082,8 +29082,8 @@
         "x1",
         "x1 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s731",
       "provenance": {
         "depth": 4,
@@ -29525,7 +29525,7 @@
         "x2 x2 x2 x2 x1 x2^-1 x2^-1",
         "x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s743",
       "provenance": {
@@ -29566,7 +29566,7 @@
         "x1 x2 x1",
         "x1 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s744",
       "provenance": {
@@ -29882,7 +29882,7 @@
         "x1 x2 x1^-1 x2 x1 x2^-1",
         "x2^-1 x1 x2 x1^-1 x2 x1 x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s752",
       "provenance": {
@@ -30233,8 +30233,8 @@
         "x1",
         "x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 4,
-      "optimal": false,
+      "minimal_known_operations": 2,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s761",
       "provenance": {
         "depth": 4,
@@ -30268,8 +30268,8 @@
         "x2 x1^-1 x2^-1",
         "x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s762",
       "provenance": {
         "depth": 6,
@@ -30302,7 +30302,7 @@
         "x1 x2 x1^-1 x2 x1 x1 x2",
         "x1 x1 x2 x2 x1^-1 x2 x1 x1 x2 x2"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 15,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s763",
       "provenance": {
@@ -30437,7 +30437,7 @@
         "x1^-1",
         "x2^-1 x1 x1 x2^-1 x1^-1 x1^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d14-s766",
       "provenance": {
@@ -31263,8 +31263,8 @@
         "x2^-1 x1",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s791",
       "provenance": {
         "depth": 4,
@@ -31696,7 +31696,7 @@
         "x1 x1 x2 x1^-1 x1^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s802",
       "provenance": {
         "depth": 6,
@@ -31730,8 +31730,8 @@
         "x1^-1",
         "x2^-1 x1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 12,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s803",
       "provenance": {
         "depth": 8,
@@ -32102,8 +32102,8 @@
         "x1^-1",
         "x1 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s811",
       "provenance": {
         "depth": 4,
@@ -32136,7 +32136,7 @@
         "x2 x1",
         "x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s812",
       "provenance": {
@@ -32172,7 +32172,7 @@
         "x1 x2 x2 x1^-1 x2^-1 x1^-1",
         "x1^-1 x2^-1 x1^-1 x2 x1 x2 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s813",
       "provenance": {
@@ -32561,7 +32561,7 @@
         "x2^-1 x1^-1 x2 x1^-1 x2^-1 x1 x2",
         "x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s822",
       "provenance": {
@@ -32653,7 +32653,7 @@
         "x1^-1 x2 x1 x1 x1",
         "x1^-1 x1^-1 x2 x1 x1 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s825",
       "provenance": {
@@ -32915,7 +32915,7 @@
         "x1^-1",
         "x2^-1 x1^-1 x1^-1 x1^-1 x2 x1 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s833",
       "provenance": {
@@ -32953,8 +32953,8 @@
         "x1^-1 x1^-1 x2",
         "x1^-1 x2"
       ],
-      "minimal_known_operations": 12,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s834",
       "provenance": {
         "depth": 10,
@@ -33651,8 +33651,8 @@
         "x2 x1^-1 x2^-1",
         "x2 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s853",
       "provenance": {
         "depth": 8,
@@ -33687,7 +33687,7 @@
         "x1^-1",
         "x2 x1 x2^-1 x1^-1 x1^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s855",
       "provenance": {
@@ -33926,8 +33926,8 @@
         "x1 x2 x1 x2^-1 x1^-1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s863",
       "provenance": {
         "depth": 8,
@@ -34290,7 +34290,7 @@
         "x2 x1 x2^-1 x2^-1",
         "x2 x1^-1 x2 x1^-1 x2 x1 x2^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 12,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s874",
       "provenance": {
@@ -34925,7 +34925,7 @@
         "x2"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s890",
       "provenance": {
         "depth": 2,
@@ -34958,7 +34958,7 @@
         "x2^-1 x1 x2",
         "x2 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s893",
       "provenance": {
@@ -35345,7 +35345,7 @@
         "x2^-1 x1 x2^-1 x1^-1 x1^-1 x2",
         "x1 x2 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s903",
       "provenance": {
@@ -35431,7 +35431,7 @@
         "x1 x2",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s905",
       "provenance": {
@@ -35980,7 +35980,7 @@
         "x2 x2 x1 x2^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s921",
       "provenance": {
         "depth": 4,
@@ -36015,7 +36015,7 @@
         "x2^-1 x1 x2 x2",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s922",
       "provenance": {
@@ -36053,7 +36053,7 @@
         "x1^-1 x2^-1 x1^-1 x2 x1",
         "x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s923",
       "provenance": {
@@ -36092,7 +36092,7 @@
         "x1",
         "x2 x1^-1 x2 x1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s924",
       "provenance": {
@@ -36380,7 +36380,7 @@
         "x1 x2 x1^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s931",
       "provenance": {
         "depth": 4,
@@ -36728,7 +36728,7 @@
         "x1 x1 x2 x1^-1 x1^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s941",
       "provenance": {
         "depth": 4,
@@ -36764,7 +36764,7 @@
         "x2^-1 x1 x2",
         "x2^-1 x2^-1 x1 x1 x2^-1 x1^-1 x1^-1 x2 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s943",
       "provenance": {
@@ -37097,7 +37097,7 @@
         "x2^-1 x1 x2 x2 x1 x2 x1^-1 x2^-1 x2^-1",
         "x2 x1^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 11,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s952",
       "provenance": {
@@ -37604,7 +37604,7 @@
         "x2 x1 x1 x2^-1 x1^-1 x2^-1 x1 x2 x1 x2 x1^-1 x1^-1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s965",
       "provenance": {
@@ -37915,7 +37915,7 @@
         "x2 x2 x1 x2^-1 x2^-1",
         "x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s972",
       "provenance": {
@@ -38286,7 +38286,7 @@
         "x2"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s980",
       "provenance": {
         "depth": 2,
@@ -38320,7 +38320,7 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x1 x2 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s982",
       "provenance": {
@@ -38670,7 +38670,7 @@
         "x1 x2 x1^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s990",
       "provenance": {
         "depth": 2,
@@ -38705,7 +38705,7 @@
         "x1^-1 x2^-1",
         "x1^-1 x2^-1 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s993",
       "provenance": {
@@ -39061,7 +39061,7 @@
         "x1 x2",
         "x1 x2^-1 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1001",
       "provenance": {
@@ -39501,8 +39501,8 @@
         "x2 x1 x2^-1",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1012",
       "provenance": {
         "depth": 6,
@@ -39885,7 +39885,7 @@
         "x2 x1^-1 x2 x1^-1 x2^-1 x1 x2^-1",
         "x1^-1 x2 x2 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1022",
       "provenance": {
@@ -39927,7 +39927,7 @@
         "x1 x2^-1 x2^-1 x1^-1 x2 x2 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1023",
       "provenance": {
@@ -40337,7 +40337,7 @@
         "x2^-1 x1 x2",
         "x2^-1 x1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1033",
       "provenance": {
@@ -40787,7 +40787,7 @@
         "x2^-1 x2^-1 x1 x2 x2 x1^-1 x2^-1 x1",
         "x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1044",
       "provenance": {
@@ -40829,7 +40829,7 @@
         "x1^-1 x2^-1 x2^-1 x2^-1 x1^-1 x2 x2 x1",
         "x1 x2 x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s1045",
       "provenance": {
@@ -41116,7 +41116,7 @@
         "x1 x1 x2 x1^-1",
         "x2 x1 x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1051",
       "provenance": {
@@ -41152,8 +41152,8 @@
         "x2^-1 x1 x2",
         "x2 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 2,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1052",
       "provenance": {
         "depth": 6,
@@ -41821,7 +41821,7 @@
         "x2^-1 x2^-1 x1 x2 x2",
         "x1 x2"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1071",
       "provenance": {
@@ -41857,7 +41857,7 @@
         "x2 x1",
         "x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1072",
       "provenance": {
@@ -41893,7 +41893,7 @@
         "x2 x1",
         "x1 x2 x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1073",
       "provenance": {
@@ -42248,7 +42248,7 @@
         "x1^-1 x1^-1 x2^-1 x1^-1 x2 x1 x1",
         "x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1083",
       "provenance": {
@@ -42285,7 +42285,7 @@
         "x2 x1",
         "x2 x1 x2 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1084",
       "provenance": {
@@ -42321,7 +42321,7 @@
         "x1",
         "x1^-1 x2 x1 x1 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s1085",
       "provenance": {
@@ -42656,8 +42656,8 @@
         "x1 x2^-1 x1^-1 x2 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1092",
       "provenance": {
         "depth": 6,
@@ -43013,7 +43013,7 @@
         "x2^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1101",
       "provenance": {
         "depth": 4,
@@ -43047,7 +43047,7 @@
         "x1 x2 x1 x2^-1 x1^-1",
         "x1^-1 x2 x1 x1 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1104",
       "provenance": {
@@ -43407,7 +43407,7 @@
         "x2 x1 x1",
         "x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1112",
       "provenance": {
@@ -43441,7 +43441,7 @@
         "x2^-1 x2^-1 x1^-1 x2^-1 x1^-1 x2^-1 x2^-1 x1^-1",
         "x1 x2 x1 x2 x2"
       ],
-      "minimal_known_operations": 18,
+      "minimal_known_operations": 12,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1113",
       "provenance": {
@@ -43524,7 +43524,7 @@
         "x1 x2 x1 x2 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s1115",
       "provenance": {
@@ -43776,7 +43776,7 @@
         "x1^-1 x1^-1 x1^-1 x2^-1 x1 x1 x1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1121",
       "provenance": {
         "depth": 4,
@@ -44215,7 +44215,7 @@
         "x2 x1 x2",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1131",
       "provenance": {
@@ -44578,8 +44578,8 @@
         "x2 x1 x2^-1",
         "x2 x1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1142",
       "provenance": {
         "depth": 6,
@@ -44661,8 +44661,8 @@
         "x1",
         "x2^-1 x1^-1 x1^-1 x2^-1 x1 x1 x2"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d12-s1145",
       "provenance": {
         "depth": 12,
@@ -44911,7 +44911,7 @@
         "x2^-1 x1^-1 x2^-1 x1 x2"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1151",
       "provenance": {
         "depth": 4,
@@ -45316,7 +45316,7 @@
         "x1 x2^-1 x1^-1 x1^-1 x1^-1",
         "x1^-1"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1163",
       "provenance": {
@@ -45699,8 +45699,8 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1172",
       "provenance": {
         "depth": 6,
@@ -46083,7 +46083,7 @@
         "x1 x1 x2^-1 x1^-1",
         "x2^-1 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1182",
       "provenance": {
@@ -46735,7 +46735,7 @@
         "x2^-1 x1^-1 x2 x1 x2^-1 x1 x2 x2",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s1205",
       "provenance": {
@@ -47004,8 +47004,8 @@
         "x2 x1^-1 x2^-1 x1^-1 x2 x1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1213",
       "provenance": {
         "depth": 8,
@@ -47041,7 +47041,7 @@
         "x2 x2 x2 x1 x2^-1 x2^-1 x2^-1",
         "x2 x2 x2 x2 x1 x1 x2^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1214",
       "provenance": {
@@ -47400,7 +47400,7 @@
         "x1",
         "x2^-1 x1^-1 x2 x1^-1 x2 x1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1222",
       "provenance": {
@@ -47439,8 +47439,8 @@
         "x1^-1 x2^-1 x2^-1 x1 x2 x2 x1",
         "x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1223",
       "provenance": {
         "depth": 8,
@@ -47817,7 +47817,7 @@
         "x2 x1 x2 x1^-1 x2^-1"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d2-s1230",
       "provenance": {
         "depth": 2,
@@ -47891,8 +47891,8 @@
         "x2 x1 x2^-1",
         "x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1232",
       "provenance": {
         "depth": 6,
@@ -47929,7 +47929,7 @@
         "x2 x2 x1 x2 x1^-1 x2^-1 x2^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1233",
       "provenance": {
         "depth": 8,
@@ -48029,8 +48029,8 @@
         "x2 x1^-1 x2 x1^-1 x2^-1 x1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d12-s1235",
       "provenance": {
         "depth": 12,
@@ -48366,7 +48366,7 @@
         "x2 x1 x2^-1",
         "x2 x2 x1 x2^-1 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1242",
       "provenance": {
@@ -48657,8 +48657,8 @@
         "x1^-1 x2 x1 x1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1251",
       "provenance": {
         "depth": 4,
@@ -48735,8 +48735,8 @@
         "x2 x1 x2^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1253",
       "provenance": {
         "depth": 8,
@@ -49087,8 +49087,8 @@
         "x1",
         "x1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1263",
       "provenance": {
         "depth": 8,
@@ -49374,7 +49374,7 @@
         "x2 x1 x2 x1^-1 x1^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1272",
       "provenance": {
@@ -49800,7 +49800,7 @@
         "x1 x1 x2",
         "x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1283",
       "provenance": {
@@ -50131,7 +50131,7 @@
         "x1^-1 x1^-1 x2 x1 x1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1291",
       "provenance": {
         "depth": 4,
@@ -50534,7 +50534,7 @@
         "x2^-1 x2^-1 x2^-1 x1 x2 x2 x2",
         "x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1302",
       "provenance": {
@@ -50975,7 +50975,7 @@
         "x1 x2 x1 x2^-1 x1^-1",
         "x1^-1 x2 x1^-1 x2^-1 x1 x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1313",
       "provenance": {
@@ -51364,8 +51364,8 @@
         "x1^-1 x2 x1^-1 x2^-1 x1",
         "x2 x1^-1 x2 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1322",
       "provenance": {
         "depth": 6,
@@ -51404,7 +51404,7 @@
         "x2 x1^-1 x2^-1 x2^-1 x1 x2 x2 x1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1323",
       "provenance": {
@@ -51444,8 +51444,8 @@
         "x1^-1 x2^-1 x1^-1 x2 x1",
         "x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s1324",
       "provenance": {
         "depth": 10,
@@ -51781,7 +51781,7 @@
         "x2 x1^-1 x2^-1 x2^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1332",
       "provenance": {
@@ -52080,8 +52080,8 @@
         "x1^-1 x2^-1 x1^-1 x2 x1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1343",
       "provenance": {
         "depth": 8,
@@ -52425,7 +52425,7 @@
         "x2 x1 x2^-1",
         "x1 x2 x1^-1 x2 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1353",
       "provenance": {
@@ -52740,7 +52740,7 @@
         "x1 x2^-1 x1^-1 x1^-1",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1362",
       "provenance": {
@@ -52776,7 +52776,7 @@
         "x2^-1 x1 x2 x1 x2^-1 x1^-1 x2^-1 x1 x2",
         "x1^-1 x2"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1363",
       "provenance": {
@@ -53134,7 +53134,7 @@
         "x1 x2 x1^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1371",
       "provenance": {
         "depth": 4,
@@ -53208,8 +53208,8 @@
         "x1^-1 x2^-1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1373",
       "provenance": {
         "depth": 8,
@@ -53896,7 +53896,7 @@
         "x1^-1 x2 x1 x2^-1 x1",
         "x2 x2 x2 x1^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1393",
       "provenance": {
@@ -53936,7 +53936,7 @@
         "x2^-1 x1^-1 x1^-1 x1^-1 x2 x2 x1 x1 x2",
         "x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1394",
       "provenance": {
@@ -54537,7 +54537,7 @@
         "x2^-1 x1 x2 x2 x1",
         "x2 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1411",
       "provenance": {
@@ -54575,7 +54575,7 @@
         "x1^-1 x2^-1 x2^-1 x2^-1 x1^-1 x2 x2 x2 x1",
         "x1 x2^-1 x2^-1 x1 x2 x2 x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1413",
       "provenance": {
@@ -54924,7 +54924,7 @@
         "x2^-1 x2^-1 x2^-1 x1 x2",
         "x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1422",
       "provenance": {
@@ -54959,7 +54959,7 @@
         "x2^-1 x1^-1 x2^-1 x2^-1 x2^-1 x1^-1 x2 x2 x1 x2",
         "x2 x1 x2 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1423",
       "provenance": {
@@ -55259,7 +55259,7 @@
         "x1 x2 x1^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1431",
       "provenance": {
         "depth": 4,
@@ -55293,7 +55293,7 @@
         "x1 x2^-1 x1^-1 x2 x1^-1",
         "x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1432",
       "provenance": {
@@ -55730,7 +55730,7 @@
         "x2^-1 x1^-1 x2 x1 x2"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1441",
       "provenance": {
         "depth": 4,
@@ -55808,7 +55808,7 @@
         "x1^-1 x1^-1 x2 x1",
         "x2^-1 x1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1443",
       "provenance": {
@@ -55846,7 +55846,7 @@
         "x2^-1 x1^-1 x1^-1 x2 x1 x2",
         "x1 x2^-1 x1^-1 x2 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1444",
       "provenance": {
@@ -56204,7 +56204,7 @@
         "x1",
         "x2 x1 x1 x2^-1 x1^-1 x2 x1 x2 x1^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1454",
       "provenance": {
@@ -56507,7 +56507,7 @@
         "x1 x1 x2 x2 x1^-1",
         "x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1461",
       "provenance": {
@@ -56542,8 +56542,8 @@
         "x2^-1 x1 x2^-1 x1^-1 x2 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s1464",
       "provenance": {
         "depth": 10,
@@ -56875,7 +56875,7 @@
         "x1",
         "x1 x2^-1 x1^-1 x2^-1 x1 x1 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1472",
       "provenance": {
@@ -56912,7 +56912,7 @@
         "x2 x1 x2^-1",
         "x1^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1473",
       "provenance": {
@@ -57277,7 +57277,7 @@
         "x2 x1^-1 x2^-1",
         "x2 x1^-1 x1^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1482",
       "provenance": {
@@ -57314,7 +57314,7 @@
         "x1 x2 x1^-1 x2^-1 x1^-1",
         "x2 x1^-1 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1483",
       "provenance": {
@@ -57650,8 +57650,8 @@
         "x1 x1 x2^-1 x1^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1491",
       "provenance": {
         "depth": 4,
@@ -57686,7 +57686,7 @@
         "x1 x2 x1^-1 x2^-1 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1492",
       "provenance": {
@@ -57722,7 +57722,7 @@
         "x2 x2 x2 x1 x2^-1 x2^-1 x2^-1",
         "x2 x2 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1493",
       "provenance": {
@@ -58067,8 +58067,8 @@
         "x2 x1 x2^-1 x1^-1 x2 x1^-1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1502",
       "provenance": {
         "depth": 6,
@@ -58436,7 +58436,7 @@
         "x1 x2 x1^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1511",
       "provenance": {
         "depth": 4,
@@ -58509,7 +58509,7 @@
         "x1^-1",
         "x2^-1 x1 x2^-1 x1^-1 x2 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1513",
       "provenance": {
@@ -58824,8 +58824,8 @@
         "x2 x1^-1 x2^-1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1523",
       "provenance": {
         "depth": 8,
@@ -59123,8 +59123,8 @@
         "x2^-1 x1 x2 x2",
         "x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1531",
       "provenance": {
         "depth": 4,
@@ -59157,8 +59157,8 @@
         "x1^-1",
         "x2 x1 x2 x1^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1532",
       "provenance": {
         "depth": 6,
@@ -59193,7 +59193,7 @@
         "x2 x1^-1 x2^-1",
         "x2^-1 x1^-1 x2^-1 x1^-1 x2^-1 x1 x2 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1533",
       "provenance": {
@@ -59233,7 +59233,7 @@
         "x2 x1^-1 x2 x1^-1 x2^-1 x1 x2^-1",
         "x1^-1 x1^-1 x2 x1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1534",
       "provenance": {
@@ -59800,7 +59800,7 @@
         "x2^-1 x1 x1 x2 x1^-1 x1^-1 x2"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1551",
       "provenance": {
         "depth": 4,
@@ -59836,8 +59836,8 @@
         "x1 x2 x1^-1 x1^-1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1552",
       "provenance": {
         "depth": 6,
@@ -59872,7 +59872,7 @@
         "x1",
         "x1^-1 x2 x1^-1 x2^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1553",
       "provenance": {
@@ -60608,7 +60608,7 @@
         "x1^-1 x1^-1 x2^-1",
         "x1^-1 x2^-1 x1^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1573",
       "provenance": {
@@ -60845,8 +60845,8 @@
         "x2 x2 x2 x1 x2^-1 x2^-1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1582",
       "provenance": {
         "depth": 6,
@@ -60882,7 +60882,7 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1583",
       "provenance": {
@@ -60918,7 +60918,7 @@
         "x1",
         "x1^-1 x1^-1 x2 x1 x1 x1 x1 x1"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1584",
       "provenance": {
@@ -61167,8 +61167,8 @@
         "x1",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 4,
-      "optimal": false,
+      "minimal_known_operations": 2,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1591",
       "provenance": {
         "depth": 4,
@@ -61531,7 +61531,7 @@
         "x2 x1 x1 x2 x2 x1^-1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1603",
       "provenance": {
@@ -61852,7 +61852,7 @@
         "x1^-1 x2 x1^-1 x2^-1 x1",
         "x2 x1^-1 x2 x1 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1613",
       "provenance": {
@@ -61931,7 +61931,7 @@
         "x2^-1 x1^-1 x2",
         "x2^-1 x2^-1 x1^-1 x1^-1 x2 x1 x1 x2 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d14-s1616",
       "provenance": {
@@ -62193,7 +62193,7 @@
         "x2 x1^-1 x2^-1 x1^-1 x2 x1 x2^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s1625",
       "provenance": {
@@ -62497,7 +62497,7 @@
         "x1",
         "x1 x2 x1^-1 x2^-1 x1 x2 x1^-1 x2 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1633",
       "provenance": {
@@ -62836,7 +62836,7 @@
         "x2 x2 x1^-1 x2^-1 x2^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1642",
       "provenance": {
@@ -62872,7 +62872,7 @@
         "x1 x2",
         "x2 x2 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1643",
       "provenance": {
@@ -62906,7 +62906,7 @@
         "x1 x1 x2^-1 x1 x2 x2 x2 x2 x2 x1^-1 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1644",
       "provenance": {
@@ -63250,7 +63250,7 @@
         "x1 x1 x2 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1651",
       "provenance": {
@@ -63326,7 +63326,7 @@
         "x2 x1 x2^-1 x2^-1 x1^-1 x1^-1 x2^-1",
         "x2 x1 x2 x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1653",
       "provenance": {
@@ -63659,8 +63659,8 @@
         "x1^-1",
         "x1^-1 x2 x1 x1 x1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1663",
       "provenance": {
         "depth": 8,
@@ -63694,7 +63694,7 @@
         "x1 x1 x2 x1 x2^-1 x1^-1 x2 x1^-1",
         "x1 x1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1664",
       "provenance": {
@@ -64174,7 +64174,7 @@
         "x2 x1^-1 x2^-1",
         "x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1673",
       "provenance": {
@@ -64208,7 +64208,7 @@
         "x1^-1",
         "x2 x2 x2 x1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1674",
       "provenance": {
@@ -64526,7 +64526,7 @@
         "x1 x2 x2",
         "x2^-1 x1 x2 x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1683",
       "provenance": {
@@ -64867,8 +64867,8 @@
         "x1",
         "x2 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1693",
       "provenance": {
         "depth": 8,
@@ -65226,8 +65226,8 @@
         "x1 x2 x1 x2^-1 x1^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1702",
       "provenance": {
         "depth": 6,
@@ -65647,8 +65647,8 @@
         "x2^-1 x1 x2",
         "x1 x1 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1712",
       "provenance": {
         "depth": 6,
@@ -65997,8 +65997,8 @@
         "x1^-1",
         "x2^-1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1723",
       "provenance": {
         "depth": 8,
@@ -66392,8 +66392,8 @@
         "x1 x1 x2^-1 x2^-1 x2^-1 x1^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 14,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1733",
       "provenance": {
         "depth": 8,
@@ -66726,7 +66726,7 @@
         "x2^-1 x1^-1 x2 x1 x2"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1741",
       "provenance": {
         "depth": 4,
@@ -66802,7 +66802,7 @@
         "x2^-1 x1^-1 x2",
         "x2^-1 x1 x2 x1 x2^-1 x1"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1743",
       "provenance": {
@@ -67084,7 +67084,7 @@
         "x1 x2 x1^-1 x1^-1",
         "x1 x2^-1 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1752",
       "provenance": {
@@ -67122,7 +67122,7 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1753",
       "provenance": {
@@ -67158,7 +67158,7 @@
         "x2^-1 x1 x2^-1 x2^-1 x1^-1 x2 x1^-1 x2",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1754",
       "provenance": {
@@ -67514,7 +67514,7 @@
         "x1 x1 x2 x2 x1^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1762",
       "provenance": {
@@ -67802,7 +67802,7 @@
         "x2 x2 x1 x2^-1 x1 x2 x1^-1 x2^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1772",
       "provenance": {
@@ -67842,7 +67842,7 @@
         "x1^-1 x2^-1 x1 x2 x1 x2^-1",
         "x2^-1 x2^-1 x1 x2 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1773",
       "provenance": {
@@ -68149,7 +68149,7 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1781",
       "provenance": {
@@ -68185,7 +68185,7 @@
         "x2 x1 x2^-1",
         "x1 x1 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1782",
       "provenance": {
@@ -68222,8 +68222,8 @@
         "x1 x2^-1 x1",
         "x1 x2^-1"
       ],
-      "minimal_known_operations": 12,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1783",
       "provenance": {
         "depth": 8,
@@ -68546,8 +68546,8 @@
         "x1^-1 x2^-1 x1 x2 x1",
         "x2"
       ],
-      "minimal_known_operations": 4,
-      "optimal": false,
+      "minimal_known_operations": 2,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1792",
       "provenance": {
         "depth": 6,
@@ -68581,7 +68581,7 @@
         "x1 x2 x1^-1 x1^-1",
         "x2 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1793",
       "provenance": {
@@ -68619,7 +68619,7 @@
         "x1 x2^-1 x1 x2 x1 x2^-1 x2^-1 x1^-1 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1794",
       "provenance": {
@@ -68944,8 +68944,8 @@
         "x2 x1 x2^-1",
         "x2 x1 x2 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1802",
       "provenance": {
         "depth": 6,
@@ -68981,7 +68981,7 @@
         "x2 x1 x2^-1",
         "x2^-1 x1^-1 x2^-1 x1 x2 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1803",
       "provenance": {
@@ -69271,7 +69271,7 @@
         "x1 x2^-1 x1 x2 x1^-1 x2 x1^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1811",
       "provenance": {
         "depth": 4,
@@ -69348,7 +69348,7 @@
         "x1^-1 x2^-1 x1 x2 x1 x2",
         "x1^-1 x2 x1^-1 x2^-1 x1 x2 x1 x2 x1^-1 x2^-1 x1 x2 x1 x2 x1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s1814",
       "provenance": {
@@ -70039,8 +70039,8 @@
         "x2^-1 x1 x2",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1832",
       "provenance": {
         "depth": 6,
@@ -70729,8 +70729,8 @@
         "x2 x1^-1 x2^-1",
         "x2 x2 x1 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s1851",
       "provenance": {
         "depth": 4,
@@ -71221,7 +71221,7 @@
         "x1 x1 x2 x1 x2^-1 x1^-1 x1^-1",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1863",
       "provenance": {
@@ -71534,7 +71534,7 @@
         "x2^-1 x1 x2",
         "x1 x1 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1871",
       "provenance": {
@@ -71572,7 +71572,7 @@
         "x1 x2 x1^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1872",
       "provenance": {
         "depth": 6,
@@ -71697,7 +71697,7 @@
         "x2 x1 x2^-1",
         "x2^-1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s1875",
       "provenance": {
@@ -71929,7 +71929,7 @@
         "x1 x2",
         "x2 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1882",
       "provenance": {
@@ -71963,7 +71963,7 @@
         "x1^-1 x2 x1 x2^-1 x1",
         "x1 x1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1883",
       "provenance": {
@@ -72307,7 +72307,7 @@
         "x1 x2 x2",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1891",
       "provenance": {
@@ -72704,7 +72704,7 @@
         "x2^-1 x2^-1 x1 x2 x2 x2 x2",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1902",
       "provenance": {
@@ -72987,7 +72987,7 @@
         "x2 x1 x2^-1",
         "x2^-1 x1 x1 x2 x1^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1913",
       "provenance": {
@@ -73243,7 +73243,7 @@
         "x2 x2 x1 x2 x1",
         "x1 x2^-1 x1^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1922",
       "provenance": {
@@ -73624,7 +73624,7 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s1931",
       "provenance": {
@@ -73660,8 +73660,8 @@
         "x2 x1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s1933",
       "provenance": {
         "depth": 8,
@@ -74063,7 +74063,7 @@
         "x1^-1 x2^-1",
         "x2 x2 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s1942",
       "provenance": {
@@ -74099,7 +74099,7 @@
         "x1 x2",
         "x1^-1 x1^-1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1943",
       "provenance": {
@@ -75130,8 +75130,8 @@
         "x1 x2^-1 x1",
         "x2^-1 x1"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s1972",
       "provenance": {
         "depth": 6,
@@ -75164,7 +75164,7 @@
         "x2^-1 x1^-1 x2",
         "x1 x2 x2 x1^-1 x1^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1973",
       "provenance": {
@@ -75547,7 +75547,7 @@
         "x1^-1 x2^-1 x2^-1 x1^-1 x2",
         "x2 x2 x2 x2 x1 x2^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s1983",
       "provenance": {
@@ -75589,8 +75589,8 @@
         "x1",
         "x2^-1 x1^-1 x2 x2"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s1984",
       "provenance": {
         "depth": 10,
@@ -76061,7 +76061,7 @@
         "x2^-1 x2^-1 x2^-1 x1^-1 x2 x2 x2 x2",
         "x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s1995",
       "provenance": {
@@ -76345,7 +76345,7 @@
         "x1^-1 x2 x1 x2 x1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s2001",
       "provenance": {
@@ -76382,7 +76382,7 @@
         "x2 x1",
         "x1^-1 x2 x1 x2 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2002",
       "provenance": {
@@ -76718,7 +76718,7 @@
         "x2 x1 x1 x2^-1 x1^-1 x1^-1 x2^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2011",
       "provenance": {
         "depth": 4,
@@ -76794,7 +76794,7 @@
         "x1^-1 x2 x2 x1 x2^-1 x1",
         "x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2013",
       "provenance": {
@@ -77173,7 +77173,7 @@
         "x1^-1 x1^-1 x2 x1 x2^-1 x1 x1",
         "x1^-1 x1^-1 x2 x1 x1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2023",
       "provenance": {
@@ -77532,7 +77532,7 @@
         "x2 x2 x1^-1 x2^-1 x2^-1",
         "x1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2033",
       "provenance": {
@@ -77568,7 +77568,7 @@
         "x1 x1 x2 x1 x2 x1 x2 x1",
         "x1 x2 x1 x2 x1"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 12,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2034",
       "provenance": {
@@ -78019,7 +78019,7 @@
         "x2^-1 x1 x2",
         "x2 x1^-1 x2^-1 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2043",
       "provenance": {
@@ -78419,7 +78419,7 @@
         "x1^-1 x2^-1",
         "x2^-1 x2^-1 x1^-1 x2^-1 x1 x2 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2053",
       "provenance": {
@@ -79002,8 +79002,8 @@
         "x2^-1 x1^-1",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2071",
       "provenance": {
         "depth": 4,
@@ -79036,8 +79036,8 @@
         "x2 x2 x1 x2^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2072",
       "provenance": {
         "depth": 6,
@@ -79071,7 +79071,7 @@
         "x1 x2^-1 x2^-1",
         "x2 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2073",
       "provenance": {
@@ -79107,7 +79107,7 @@
         "x1 x2",
         "x1^-1 x2 x2 x1 x2 x1^-1 x2^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2074",
       "provenance": {
@@ -79397,8 +79397,8 @@
         "x1^-1 x1^-1 x1^-1 x2^-1",
         "x2 x1 x1"
       ],
-      "minimal_known_operations": 11,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2082",
       "provenance": {
         "depth": 6,
@@ -79433,7 +79433,7 @@
         "x1 x1 x2 x1 x2 x1 x2 x1^-1 x1^-1",
         "x2^-1 x1^-1 x2 x1 x2 x1 x2"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2083",
       "provenance": {
@@ -80187,7 +80187,7 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x1 x2"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2102",
       "provenance": {
@@ -80223,7 +80223,7 @@
         "x2 x1 x1",
         "x2^-1 x1 x2 x2"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2103",
       "provenance": {
@@ -80610,7 +80610,7 @@
         "x2"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2111",
       "provenance": {
         "depth": 4,
@@ -80690,7 +80690,7 @@
         "x1 x2^-1 x1^-1 x1^-1",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2113",
       "provenance": {
@@ -80950,8 +80950,8 @@
         "x2 x2 x1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s2123",
       "provenance": {
         "depth": 8,
@@ -80984,7 +80984,7 @@
         "x2 x2 x1^-1 x2^-1 x2^-1 x2^-1 x2^-1",
         "x1^-1 x2^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 12,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2124",
       "provenance": {
@@ -81437,7 +81437,7 @@
         "x2"
       ],
       "minimal_known_operations": 2,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2131",
       "provenance": {
         "depth": 4,
@@ -81471,7 +81471,7 @@
         "x2^-1 x2^-1 x1^-1 x2 x2",
         "x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2132",
       "provenance": {
@@ -81852,7 +81852,7 @@
         "x1^-1",
         "x2^-1 x1^-1 x2 x1 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2142",
       "provenance": {
@@ -81889,7 +81889,7 @@
         "x1 x2^-1",
         "x2 x2 x1^-1 x2 x1 x2^-1 x1^-1 x2^-1 x1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2143",
       "provenance": {
@@ -82256,7 +82256,7 @@
         "x1^-1 x1^-1 x2 x1 x1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2151",
       "provenance": {
         "depth": 4,
@@ -82329,8 +82329,8 @@
         "x1 x1 x2",
         "x1 x2"
       ],
-      "minimal_known_operations": 12,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s2153",
       "provenance": {
         "depth": 8,
@@ -82363,7 +82363,7 @@
         "x2^-1 x2^-1 x1^-1 x2 x2 x2",
         "x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2154",
       "provenance": {
@@ -82600,8 +82600,8 @@
         "x1 x2 x2 x1 x2^-1 x2^-1 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2162",
       "provenance": {
         "depth": 6,
@@ -82680,7 +82680,7 @@
         "x1^-1 x2 x1^-1 x2^-1 x1 x2^-1 x1^-1 x2 x1 x2^-1",
         "x2 x1^-1 x2^-1 x1 x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2164",
       "provenance": {
@@ -82728,7 +82728,7 @@
         "x1 x2^-1 x2^-1 x1^-1 x2 x2 x1^-1",
         "x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s2165",
       "provenance": {
@@ -82969,7 +82969,7 @@
         "x2 x2 x2 x1^-1 x2^-1 x2^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2172",
       "provenance": {
@@ -84322,7 +84322,7 @@
         "x1 x2",
         "x2 x1 x2 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s2211",
       "provenance": {
@@ -84358,7 +84358,7 @@
         "x1^-1 x2 x1 x2^-1 x1",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2212",
       "provenance": {
@@ -84440,8 +84440,8 @@
         "x2^-1 x1 x2",
         "x2^-1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s2214",
       "provenance": {
         "depth": 10,
@@ -84700,7 +84700,7 @@
         "x1^-1",
         "x2^-1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2222",
       "provenance": {
@@ -84734,7 +84734,7 @@
         "x1 x2^-1 x1 x2 x2 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2223",
       "provenance": {
@@ -84770,7 +84770,7 @@
         "x2 x2 x1^-1",
         "x2 x1 x1 x2^-1 x1^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2224",
       "provenance": {
@@ -85007,7 +85007,7 @@
         "x1 x2",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2232",
       "provenance": {
@@ -85043,7 +85043,7 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x2 x1 x2 x1^-1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2233",
       "provenance": {
@@ -85359,8 +85359,8 @@
         "x1 x2 x1 x2^-1 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2242",
       "provenance": {
         "depth": 6,
@@ -85394,8 +85394,8 @@
         "x2 x2 x1^-1 x2^-1 x2^-1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s2243",
       "provenance": {
         "depth": 8,
@@ -85710,7 +85710,7 @@
         "x2^-1 x1 x1 x2 x1^-1 x2",
         "x2 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s2251",
       "provenance": {
@@ -86142,7 +86142,7 @@
         "x1^-1 x2^-1 x2^-1 x2^-1 x1 x2^-1 x2^-1 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 11,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2263",
       "provenance": {
@@ -86535,8 +86535,8 @@
         "x2 x1^-1",
         "x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2272",
       "provenance": {
         "depth": 6,
@@ -86569,7 +86569,7 @@
         "x2^-1 x1^-1 x2 x1^-1 x2^-1 x1^-1",
         "x1^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2273",
       "provenance": {
@@ -86858,8 +86858,8 @@
         "x2 x1^-1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2282",
       "provenance": {
         "depth": 6,
@@ -86892,7 +86892,7 @@
         "x1^-1 x1^-1 x2^-1 x1 x2 x1 x1",
         "x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2283",
       "provenance": {
@@ -86931,7 +86931,7 @@
         "x1 x2^-1 x2^-1 x1 x2^-1 x1 x2^-1",
         "x2^-1 x1 x2^-1 x1 x2^-1"
       ],
-      "minimal_known_operations": 15,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2284",
       "provenance": {
@@ -86972,7 +86972,7 @@
         "x1",
         "x1 x2 x2 x1^-1 x2 x1 x1 x2^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s2285",
       "provenance": {
@@ -87251,7 +87251,7 @@
         "x2^-1 x1 x2 x2 x1 x1",
         "x2 x1 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s2291",
       "provenance": {
@@ -87289,8 +87289,8 @@
         "x1^-1",
         "x1^-1 x1^-1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s2294",
       "provenance": {
         "depth": 10,
@@ -87580,7 +87580,7 @@
         "x1 x1 x2",
         "x2 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2302",
       "provenance": {
@@ -87614,7 +87614,7 @@
         "x1^-1 x2^-1 x1^-1",
         "x1^-1 x2 x1 x1 x1 x2 x1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2303",
       "provenance": {
@@ -87973,7 +87973,7 @@
         "x1 x2 x1^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2311",
       "provenance": {
         "depth": 4,
@@ -88412,7 +88412,7 @@
         "x1 x1 x2 x1 x2 x1^-1 x1^-1 x1^-1 x2 x1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 11,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2323",
       "provenance": {
@@ -88820,7 +88820,7 @@
         "x1 x1 x1 x2^-1 x1^-1 x1^-1 x1^-1 x1^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2333",
       "provenance": {
@@ -89224,7 +89224,7 @@
         "x1 x2^-1 x1^-1 x1^-1",
         "x2 x1^-1 x2 x1 x1 x2^-1 x1^-1 x1^-1 x2^-1 x1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2343",
       "provenance": {
@@ -89569,7 +89569,7 @@
         "x2^-1 x1 x2 x1^-1 x2^-1 x1 x1 x2^-1 x1 x2 x1^-1 x2^-1 x1 x1 x2^-1 x1 x2",
         "x2 x1^-1 x2^-1 x1 x1 x2^-1 x1"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2353",
       "provenance": {
@@ -89958,7 +89958,7 @@
         "x2^-1 x1 x2 x2 x2",
         "x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s2361",
       "provenance": {
@@ -89993,7 +89993,7 @@
         "x2 x1 x2^-1 x2^-1 x1 x2 x1^-1 x2",
         "x2^-1 x1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2362",
       "provenance": {
@@ -90035,7 +90035,7 @@
         "x1^-1 x2 x1 x1",
         "x1^-1 x2^-1 x1 x2^-1 x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2364",
       "provenance": {
@@ -90423,7 +90423,7 @@
         "x1^-1 x2 x1 x2^-1 x2^-1 x1 x2 x2 x1^-1 x2^-1 x2^-1 x1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2374",
       "provenance": {
@@ -90712,8 +90712,8 @@
         "x2^-1 x1 x2",
         "x2^-1 x1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2381",
       "provenance": {
         "depth": 4,
@@ -90746,8 +90746,8 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2382",
       "provenance": {
         "depth": 6,
@@ -90781,7 +90781,7 @@
         "x2 x1^-1",
         "x1 x2^-1 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2383",
       "provenance": {
@@ -91448,7 +91448,7 @@
         "x2^-1 x1^-1 x2",
         "x2^-1 x1 x2^-1 x1^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2403",
       "provenance": {
@@ -92119,7 +92119,7 @@
         "x2 x1^-1",
         "x2^-1 x1^-1 x1^-1 x2^-1 x1 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2423",
       "provenance": {
@@ -92485,7 +92485,7 @@
         "x1 x2 x1 x2^-1 x1^-1",
         "x1^-1 x1^-1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2434",
       "provenance": {
@@ -92524,8 +92524,8 @@
         "x2^-1 x1^-1 x2",
         "x2^-1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d12-s2435",
       "provenance": {
         "depth": 12,
@@ -92784,7 +92784,7 @@
         "x2 x1^-1 x2^-1",
         "x1 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2442",
       "provenance": {
@@ -92820,7 +92820,7 @@
         "x1^-1 x2 x1 x2^-1 x1",
         "x1 x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2443",
       "provenance": {
@@ -93206,7 +93206,7 @@
         "x2 x1 x2^-1",
         "x1 x2 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2454",
       "provenance": {
@@ -93503,7 +93503,7 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x1^-1 x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2463",
       "provenance": {
@@ -94119,7 +94119,7 @@
         "x2^-1 x1 x2",
         "x1^-1 x1^-1 x2 x1^-1 x2^-1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2484",
       "provenance": {
@@ -94330,7 +94330,7 @@
         "x2^-1 x1 x2 x2 x1",
         "x2 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2492",
       "provenance": {
@@ -94366,7 +94366,7 @@
         "x2",
         "x1 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2494",
       "provenance": {
@@ -94699,8 +94699,8 @@
         "x1^-1",
         "x2^-1 x1^-1 x2 x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2502",
       "provenance": {
         "depth": 6,
@@ -95168,7 +95168,7 @@
         "x2^-1 x1 x2^-1 x1 x2 x1^-1 x2",
         "x1^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2514",
       "provenance": {
@@ -95529,7 +95529,7 @@
         "x1 x2 x1^-1 x2^-1 x1^-1",
         "x2 x2 x1 x1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2524",
       "provenance": {
@@ -96690,7 +96690,7 @@
         "x1^-1 x2 x1 x1",
         "x2 x1^-1 x2^-1 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2552",
       "provenance": {
@@ -96728,7 +96728,7 @@
         "x2 x1 x1 x2 x1^-1 x2^-1 x1 x2 x1^-1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2554",
       "provenance": {
@@ -97018,7 +97018,7 @@
         "x2 x1 x2^-1",
         "x2^-1 x1^-1 x2^-1 x1 x2 x1^-1 x2 x1 x1 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2563",
       "provenance": {
@@ -97060,7 +97060,7 @@
         "x1^-1",
         "x1 x1 x2^-1 x1^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2564",
       "provenance": {
@@ -97374,8 +97374,8 @@
         "x1^-1",
         "x1 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2571",
       "provenance": {
         "depth": 4,
@@ -97408,7 +97408,7 @@
         "x1^-1 x2^-1",
         "x1^-1 x2 x1 x2 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2572",
       "provenance": {
@@ -97446,7 +97446,7 @@
         "x2^-1 x1 x2",
         "x2^-1 x2^-1 x1^-1 x1^-1 x2^-1 x1 x2 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2573",
       "provenance": {
@@ -97937,8 +97937,8 @@
         "x1^-1 x2^-1 x1 x2 x1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s2583",
       "provenance": {
         "depth": 8,
@@ -97974,8 +97974,8 @@
         "x1^-1 x2 x1 x1",
         "x2"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s2584",
       "provenance": {
         "depth": 10,
@@ -98246,7 +98246,7 @@
         "x1^-1 x2^-1 x1 x2 x2 x1",
         "x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2593",
       "provenance": {
@@ -98282,7 +98282,7 @@
         "x2 x1 x2^-1",
         "x2 x1^-1 x2^-1 x1^-1 x2 x1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s2595",
       "provenance": {
@@ -98464,7 +98464,7 @@
         "x1^-1 x2 x1 x1",
         "x2^-1 x1^-1 x1^-1 x2 x1 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2603",
       "provenance": {
@@ -98803,7 +98803,7 @@
         "x1^-1 x2 x1 x2^-1 x1 x2^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2613",
       "provenance": {
@@ -99178,7 +99178,7 @@
         "x1 x1 x1 x2^-1 x1 x2 x2 x1^-1 x1^-1 x1^-1",
         "x1 x1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2623",
       "provenance": {
@@ -99333,8 +99333,8 @@
         "x1^-1 x2^-1 x1 x2 x2 x1",
         "x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d14-s2626",
       "provenance": {
         "depth": 14,
@@ -99553,7 +99553,7 @@
         "x2 x1 x2^-1 x2^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2632",
       "provenance": {
@@ -100068,7 +100068,7 @@
         "x1^-1",
         "x2 x1^-1 x2^-1 x1 x1 x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2643",
       "provenance": {
@@ -100405,7 +100405,7 @@
         "x2 x1 x2",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2653",
       "provenance": {
@@ -100766,7 +100766,7 @@
         "x2^-1 x2^-1 x1 x2 x2",
         "x2 x1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2662",
       "provenance": {
@@ -100803,7 +100803,7 @@
         "x1^-1",
         "x1 x2^-1 x1^-1 x2^-1 x1 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2663",
       "provenance": {
@@ -101241,7 +101241,7 @@
         "x1 x2 x1 x2^-1 x1^-1",
         "x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s2671",
       "provenance": {
@@ -101636,7 +101636,7 @@
         "x2^-1 x1 x2 x2",
         "x2 x2 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s2681",
       "provenance": {
@@ -101672,7 +101672,7 @@
         "x1 x2",
         "x1^-1 x2 x1 x1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2682",
       "provenance": {
@@ -101708,8 +101708,8 @@
         "x2^-1 x1^-1 x2",
         "x1^-1 x1^-1 x2 x1 x1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s2683",
       "provenance": {
         "depth": 8,
@@ -101988,8 +101988,8 @@
         "x1",
         "x2 x2 x1^-1 x2 x1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2692",
       "provenance": {
         "depth": 6,
@@ -102312,7 +102312,7 @@
         "x2^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2701",
       "provenance": {
         "depth": 4,
@@ -102346,8 +102346,8 @@
         "x2 x1^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s2703",
       "provenance": {
         "depth": 8,
@@ -102637,8 +102637,8 @@
         "x2 x1^-1 x2^-1",
         "x2 x1^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2712",
       "provenance": {
         "depth": 6,
@@ -102988,7 +102988,7 @@
         "x2 x2 x2 x1^-1 x2^-1 x2^-1 x2^-1",
         "x2 x2 x2 x1^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2724",
       "provenance": {
@@ -103290,7 +103290,7 @@
         "x1 x2 x1^-1",
         "x2 x1^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2733",
       "provenance": {
@@ -103717,7 +103717,7 @@
         "x2^-1 x1 x2",
         "x2 x1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s2741",
       "provenance": {
@@ -103754,7 +103754,7 @@
         "x2 x1 x2^-1 x2^-1 x2^-1",
         "x2 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2743",
       "provenance": {
@@ -103793,7 +103793,7 @@
         "x2^-1 x1 x2 x1 x2^-1 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2744",
       "provenance": {
@@ -104164,8 +104164,8 @@
         "x1^-1 x1^-1 x2^-1",
         "x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2752",
       "provenance": {
         "depth": 6,
@@ -104472,7 +104472,7 @@
         "x2 x1 x2^-1",
         "x1^-1 x1^-1 x2 x2 x1 x1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2763",
       "provenance": {
@@ -105166,7 +105166,7 @@
         "x1^-1",
         "x2^-1 x1 x2 x1^-1 x2 x1 x2^-1 x1^-1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s2785",
       "provenance": {
@@ -105417,7 +105417,7 @@
         "x1^-1 x2 x1^-1 x2 x1 x2^-1 x1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2791",
       "provenance": {
         "depth": 4,
@@ -105453,7 +105453,7 @@
         "x1^-1 x1^-1 x2^-1 x1 x2 x1^-1 x2^-1 x1 x2^-1 x1^-1 x2^-1 x1",
         "x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 13,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2793",
       "provenance": {
@@ -105827,8 +105827,8 @@
         "x1 x1 x2^-1 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s2802",
       "provenance": {
         "depth": 6,
@@ -105861,7 +105861,7 @@
         "x2",
         "x2 x1^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2803",
       "provenance": {
@@ -105937,7 +105937,7 @@
         "x2 x1",
         "x2 x1^-1 x2 x1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s2805",
       "provenance": {
@@ -106190,7 +106190,7 @@
         "x2^-1 x1 x2",
         "x1 x2 x2 x1^-1 x1^-1 x2 x1 x1 x1 x1 x2^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2813",
       "provenance": {
@@ -106593,7 +106593,7 @@
         "x1 x2 x1 x2^-1 x1^-1",
         "x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2823",
       "provenance": {
@@ -106901,7 +106901,7 @@
         "x2 x1",
         "x1 x1 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2832",
       "provenance": {
@@ -106937,7 +106937,7 @@
         "x1 x1 x2",
         "x1 x2 x2 x1 x1 x1 x1 x2"
       ],
-      "minimal_known_operations": 15,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2833",
       "provenance": {
@@ -106977,7 +106977,7 @@
         "x1^-1 x2^-1 x1 x2 x1 x2",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2834",
       "provenance": {
@@ -107266,7 +107266,7 @@
         "x1^-1 x2 x2 x1 x1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2843",
       "provenance": {
@@ -107609,7 +107609,7 @@
         "x1 x2 x2",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2852",
       "provenance": {
@@ -107644,7 +107644,7 @@
         "x2^-1 x1^-1 x2 x2",
         "x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2853",
       "provenance": {
@@ -108002,7 +108002,7 @@
         "x2 x1 x1 x1 x2 x1^-1 x1^-1 x2^-1",
         "x1 x2^-1 x1^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2863",
       "provenance": {
@@ -108271,7 +108271,7 @@
         "x2 x1^-1 x2^-1 x2^-1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2872",
       "provenance": {
@@ -108663,7 +108663,7 @@
         "x2^-1 x1^-1 x2",
         "x1^-1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2883",
       "provenance": {
@@ -108698,7 +108698,7 @@
         "x1^-1 x2 x1 x2^-1 x1",
         "x1 x1 x1 x2 x1^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2884",
       "provenance": {
@@ -108956,7 +108956,7 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x2^-1 x1^-1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2893",
       "provenance": {
@@ -109288,7 +109288,7 @@
         "x1",
         "x1 x2 x1^-1 x1^-1 x2 x1 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2902",
       "provenance": {
@@ -109327,7 +109327,7 @@
         "x1 x2 x1 x2^-1 x1 x2 x2",
         "x2^-1 x1 x2 x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2903",
       "provenance": {
@@ -109405,8 +109405,8 @@
         "x1^-1",
         "x1 x2 x2 x1^-1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d12-s2905",
       "provenance": {
         "depth": 12,
@@ -109592,8 +109592,8 @@
         "x2 x1^-1 x2^-1",
         "x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s2913",
       "provenance": {
         "depth": 8,
@@ -109626,7 +109626,7 @@
         "x2 x2 x1 x2^-1 x2^-1",
         "x1^-1 x1^-1 x2 x1 x1 x1 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2914",
       "provenance": {
@@ -109976,7 +109976,7 @@
         "x2^-1 x1 x2",
         "x1^-1 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s2921",
       "provenance": {
@@ -110391,7 +110391,7 @@
         "x2 x2 x1",
         "x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2932",
       "provenance": {
@@ -110428,7 +110428,7 @@
         "x2^-1 x1^-1 x1^-1",
         "x1 x2^-1 x1 x2 x2 x1^-1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2933",
       "provenance": {
@@ -110771,7 +110771,7 @@
         "x2"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s2941",
       "provenance": {
         "depth": 4,
@@ -110807,7 +110807,7 @@
         "x1 x2 x1 x2 x1",
         "x2^-1 x1 x2 x1 x2"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2943",
       "provenance": {
@@ -111289,7 +111289,7 @@
         "x2 x1^-1 x2^-1",
         "x2^-1 x1^-1 x2 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s2954",
       "provenance": {
@@ -111641,7 +111641,7 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2963",
       "provenance": {
@@ -111991,7 +111991,7 @@
         "x1",
         "x2^-1 x1 x2 x2 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2972",
       "provenance": {
@@ -112026,7 +112026,7 @@
         "x1 x2 x2 x1 x2^-1 x2^-1 x1^-1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s2973",
       "provenance": {
@@ -112751,7 +112751,7 @@
         "x1 x1 x2 x1 x2 x1^-1 x1^-1",
         "x1 x2 x2 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s2992",
       "provenance": {
@@ -113040,8 +113040,8 @@
         "x2 x1 x2^-1 x2^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s3002",
       "provenance": {
         "depth": 6,
@@ -113075,8 +113075,8 @@
         "x1 x2^-1 x1 x2 x1^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3003",
       "provenance": {
         "depth": 8,
@@ -113791,7 +113791,7 @@
         "x2 x1 x2^-1 x2^-1 x1^-1 x2 x1 x2",
         "x2^-1 x2^-1 x1^-1 x2^-1 x1 x2 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3023",
       "provenance": {
@@ -113835,7 +113835,7 @@
         "x2^-1 x2^-1 x2^-1 x1^-1 x2 x2 x2",
         "x2 x1 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3024",
       "provenance": {
@@ -114172,7 +114172,7 @@
         "x2 x2 x1 x2^-1 x2^-1",
         "x2 x2 x1^-1 x2 x1 x2^-1 x1 x1 x2^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3033",
       "provenance": {
@@ -114482,7 +114482,7 @@
         "x2 x1^-1 x2 x1 x2^-1 x1 x2^-1",
         "x2 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3043",
       "provenance": {
@@ -114801,7 +114801,7 @@
         "x2 x1 x2 x1 x2^-1",
         "x2 x1 x2 x1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3052",
       "provenance": {
@@ -114842,7 +114842,7 @@
         "x2^-1 x2^-1 x2^-1 x2^-1 x1 x2 x2",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3053",
       "provenance": {
@@ -114881,7 +114881,7 @@
         "x2^-1 x1 x2 x1^-1 x2 x2 x1 x2^-1 x2^-1 x1^-1 x2 x2 x1",
         "x2 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 12,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3054",
       "provenance": {
@@ -115176,8 +115176,8 @@
         "x1^-1 x1^-1 x2^-1 x1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3063",
       "provenance": {
         "depth": 8,
@@ -115502,7 +115502,7 @@
         "x2^-1 x1 x2 x2",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s3071",
       "provenance": {
@@ -115906,7 +115906,7 @@
         "x2 x1",
         "x2^-1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s3081",
       "provenance": {
@@ -115942,7 +115942,7 @@
         "x1 x2 x2 x2 x2",
         "x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3082",
       "provenance": {
@@ -115977,7 +115977,7 @@
         "x1",
         "x2 x2 x1 x2 x1^-1 x2^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3083",
       "provenance": {
@@ -116642,7 +116642,7 @@
         "x1^-1 x2 x1 x1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s3101",
       "provenance": {
@@ -117107,7 +117107,7 @@
         "x2^-1 x2^-1 x1 x2 x2 x2",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3112",
       "provenance": {
@@ -117145,7 +117145,7 @@
         "x2^-1 x2^-1 x2^-1 x1 x2 x2 x2 x2",
         "x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3113",
       "provenance": {
@@ -117183,7 +117183,7 @@
         "x1^-1 x2 x1^-1 x2^-1 x1",
         "x2 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3114",
       "provenance": {
@@ -117478,7 +117478,7 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x2^-1 x1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3122",
       "provenance": {
@@ -117859,8 +117859,8 @@
         "x2^-1 x1^-1 x2 x1 x2^-1 x1 x2",
         "x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s3132",
       "provenance": {
         "depth": 6,
@@ -117896,7 +117896,7 @@
         "x1 x2 x1^-1 x2 x1 x1 x2^-1 x1^-1",
         "x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3133",
       "provenance": {
@@ -118233,7 +118233,7 @@
         "x2 x1^-1 x2^-1 x1 x2^-1"
       ],
       "minimal_known_operations": 4,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3143",
       "provenance": {
         "depth": 8,
@@ -118631,8 +118631,8 @@
         "x2 x1",
         "x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s3151",
       "provenance": {
         "depth": 4,
@@ -118898,8 +118898,8 @@
         "x1 x2^-1",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s3162",
       "provenance": {
         "depth": 6,
@@ -118932,8 +118932,8 @@
         "x2 x1^-1 x2^-1 x1^-1 x2 x1",
         "x2"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3163",
       "provenance": {
         "depth": 8,
@@ -119276,7 +119276,7 @@
         "x2^-1 x1 x2^-1 x2^-1 x1",
         "x1 x2 x1^-1 x2 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3173",
       "provenance": {
@@ -119559,7 +119559,7 @@
         "x2 x2 x1^-1 x2^-1 x2^-1 x2^-1",
         "x2^-1 x1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3183",
       "provenance": {
@@ -120293,8 +120293,8 @@
         "x1",
         "x2 x2 x1 x2^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3203",
       "provenance": {
         "depth": 8,
@@ -120632,7 +120632,7 @@
         "x2 x1 x2 x2 x1 x2^-1 x2^-1",
         "x2 x2 x1^-1 x2^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3213",
       "provenance": {
@@ -121260,8 +121260,8 @@
         "x2 x1^-1 x2^-1",
         "x1 x2 x1^-1 x2 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s3222",
       "provenance": {
         "depth": 6,
@@ -121298,8 +121298,8 @@
         "x1",
         "x2 x2 x1^-1 x2^-1 x1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3223",
       "provenance": {
         "depth": 8,
@@ -122401,7 +122401,7 @@
         "x2 x2 x2 x1 x2^-1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s3251",
       "provenance": {
@@ -122437,7 +122437,7 @@
         "x2 x2 x1 x2^-1 x2^-1",
         "x1 x2 x1^-1 x2^-1 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3253",
       "provenance": {
@@ -122877,7 +122877,7 @@
         "x2 x2 x2 x1^-1 x2^-1 x2^-1 x2^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3262",
       "provenance": {
@@ -123953,7 +123953,7 @@
         "x2 x2 x1 x2^-1",
         "x2 x1 x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3293",
       "provenance": {
@@ -124300,7 +124300,7 @@
         "x1",
         "x2 x2 x1 x2 x1 x1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3302",
       "provenance": {
@@ -124338,7 +124338,7 @@
         "x1 x1 x2^-1 x1^-1 x1^-1 x1^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3303",
       "provenance": {
@@ -124769,7 +124769,7 @@
         "x2^-1 x1 x1",
         "x1^-1 x2^-1 x1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s3311",
       "provenance": {
@@ -124805,7 +124805,7 @@
         "x1 x1 x2 x1^-1",
         "x2^-1 x1 x2 x1^-1 x2 x1 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3313",
       "provenance": {
@@ -124847,7 +124847,7 @@
         "x1 x1 x2 x2 x1^-1 x2^-1 x1^-1 x1^-1 x1^-1",
         "x2 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3314",
       "provenance": {
@@ -125144,8 +125144,8 @@
         "x2 x1",
         "x2 x2 x1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s3321",
       "provenance": {
         "depth": 4,
@@ -125178,7 +125178,7 @@
         "x1 x2 x2 x1 x2^-1 x2^-1 x2^-1 x1^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3322",
       "provenance": {
@@ -125216,7 +125216,7 @@
         "x1 x1 x2 x2 x1 x2^-1 x1^-1 x1^-1",
         "x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3324",
       "provenance": {
@@ -125447,7 +125447,7 @@
         "x2^-1 x1^-1 x2 x2 x1",
         "x2 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3332",
       "provenance": {
@@ -125483,7 +125483,7 @@
         "x1",
         "x1 x2^-1 x1 x1 x1 x2^-1 x1^-1 x1^-1 x1^-1 x2 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3333",
       "provenance": {
@@ -125835,7 +125835,7 @@
         "x2^-1 x1 x2 x2 x1",
         "x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3343",
       "provenance": {
@@ -125871,7 +125871,7 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x2 x1 x2^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3344",
       "provenance": {
@@ -126540,8 +126540,8 @@
         "x2 x1^-1 x2^-1",
         "x1 x1 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s3362",
       "provenance": {
         "depth": 6,
@@ -126629,7 +126629,7 @@
         "x1 x2^-1 x1 x2 x1^-1",
         "x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3364",
       "provenance": {
@@ -126940,8 +126940,8 @@
         "x1 x2 x1",
         "x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3373",
       "provenance": {
         "depth": 8,
@@ -127276,8 +127276,8 @@
         "x2^-1 x1^-1 x2 x1^-1 x2^-1 x1 x2",
         "x2"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s3382",
       "provenance": {
         "depth": 6,
@@ -127313,7 +127313,7 @@
         "x1^-1 x2 x1 x2^-1 x1",
         "x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3383",
       "provenance": {
@@ -127861,7 +127861,7 @@
         "x1 x2",
         "x1 x2 x1^-1 x2^-1 x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3403",
       "provenance": {
@@ -128258,7 +128258,7 @@
         "x1 x1 x2^-1 x1^-1 x2 x1^-1 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3413",
       "provenance": {
@@ -128898,8 +128898,8 @@
         "x2^-1 x1",
         "x2^-1 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3433",
       "provenance": {
         "depth": 8,
@@ -129141,8 +129141,8 @@
         "x2 x1^-1 x2^-1",
         "x1^-1 x2"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s3442",
       "provenance": {
         "depth": 6,
@@ -129175,7 +129175,7 @@
         "x1 x2 x1 x2^-1 x1^-1",
         "x2^-1 x1^-1 x2 x1^-1 x2 x1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3443",
       "provenance": {
@@ -130052,7 +130052,7 @@
         "x2^-1 x1",
         "x2 x1^-1 x2^-1 x1 x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3462",
       "provenance": {
@@ -130088,8 +130088,8 @@
         "x2^-1 x2^-1 x1 x2 x2",
         "x1^-1 x2"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3463",
       "provenance": {
         "depth": 8,
@@ -130124,8 +130124,8 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x2^-1"
       ],
-      "minimal_known_operations": 8,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s3464",
       "provenance": {
         "depth": 10,
@@ -130158,7 +130158,7 @@
         "x2 x1^-1 x2^-1 x2^-1 x2^-1 x1^-1 x2 x2 x2 x1 x2^-1",
         "x2"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s3465",
       "provenance": {
@@ -130388,7 +130388,7 @@
         "x2^-1 x1 x2 x2",
         "x2 x1 x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s3471",
       "provenance": {
@@ -130747,7 +130747,7 @@
         "x2 x1^-1 x2 x1 x2^-1"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s3481",
       "provenance": {
         "depth": 4,
@@ -131267,7 +131267,7 @@
         "x2 x2 x1 x1 x2^-1",
         "x1^-1 x2 x1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s3491",
       "provenance": {
@@ -131609,7 +131609,7 @@
         "x1 x2 x1 x1 x2^-1 x1^-1 x1^-1",
         "x1 x1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3503",
       "provenance": {
@@ -132054,7 +132054,7 @@
         "x2^-1 x1 x2",
         "x1^-1 x2^-1 x1^-1 x2^-1 x1^-1 x2^-1 x1 x2 x2"
       ],
-      "minimal_known_operations": 11,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3513",
       "provenance": {
@@ -132435,7 +132435,7 @@
         "x1^-1 x2",
         "x1 x1 x2 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3523",
       "provenance": {
@@ -132471,7 +132471,7 @@
         "x2 x1",
         "x2 x2 x1 x2^-1 x1^-1 x2^-1 x1^-1 x2^-1 x2^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3524",
       "provenance": {
@@ -132765,8 +132765,8 @@
         "x2^-1 x2^-1 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 5,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s3531",
       "provenance": {
         "depth": 4,
@@ -132799,8 +132799,8 @@
         "x2 x1^-1 x2^-1",
         "x2 x1"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s3532",
       "provenance": {
         "depth": 6,
@@ -132833,7 +132833,7 @@
         "x2 x1 x2^-1",
         "x1 x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3533",
       "provenance": {
@@ -133150,7 +133150,7 @@
         "x2 x1 x2 x2",
         "x2 x1 x2 x2 x2"
       ],
-      "minimal_known_operations": 13,
+      "minimal_known_operations": 10,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3542",
       "provenance": {
@@ -133188,7 +133188,7 @@
         "x1^-1 x1^-1 x2^-1 x1 x2 x1 x1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3543",
       "provenance": {
@@ -133526,7 +133526,7 @@
         "x1^-1 x2 x1^-1 x2^-1 x1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3553",
       "provenance": {
@@ -133563,7 +133563,7 @@
         "x1 x2 x1^-1 x2^-1 x1^-1",
         "x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3554",
       "provenance": {
@@ -134576,7 +134576,7 @@
         "x2^-1 x1 x2",
         "x2^-1 x1^-1 x2^-1 x1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3582",
       "provenance": {
@@ -134613,7 +134613,7 @@
         "x1^-1 x1^-1 x2^-1 x1",
         "x1^-1 x1^-1 x2 x1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3583",
       "provenance": {
@@ -134953,8 +134953,8 @@
         "x2^-1 x1 x1",
         "x2^-1 x1"
       ],
-      "minimal_known_operations": 10,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d10-s3594",
       "provenance": {
         "depth": 10,
@@ -135240,7 +135240,7 @@
         "x1",
         "x2 x1^-1 x2 x1 x1 x2^-1 x1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d4-s3601",
       "provenance": {
@@ -135568,8 +135568,8 @@
         "x1^-1",
         "x1 x2^-1 x1^-1 x2 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3613",
       "provenance": {
         "depth": 8,
@@ -136217,7 +136217,7 @@
         "x1 x2",
         "x1 x1 x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3633",
       "provenance": {
@@ -136253,7 +136253,7 @@
         "x2^-1 x1 x2 x1^-1 x2 x1",
         "x2 x1^-1 x2^-1 x1 x2^-1 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3634",
       "provenance": {
@@ -136908,7 +136908,7 @@
         "x1^-1 x1^-1 x2^-1 x1 x2 x2 x2 x1 x1",
         "x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3652",
       "provenance": {
@@ -136949,7 +136949,7 @@
         "x2^-1 x1^-1 x2^-1",
         "x2^-1 x2^-1 x1^-1 x1^-1 x2^-1"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3653",
       "provenance": {
@@ -136986,7 +136986,7 @@
         "x1",
         "x1 x2 x1^-1 x2 x1 x2^-1"
       ],
-      "minimal_known_operations": 8,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3654",
       "provenance": {
@@ -137261,8 +137261,8 @@
         "x2 x1 x2^-1",
         "x1^-1 x1^-1 x2 x1 x1"
       ],
-      "minimal_known_operations": 7,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3663",
       "provenance": {
         "depth": 8,
@@ -137298,7 +137298,7 @@
         "x2^-1 x1^-1 x2^-1 x2^-1 x1 x2 x1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3664",
       "provenance": {
@@ -137628,7 +137628,7 @@
         "x1^-1 x1^-1 x2 x1 x2",
         "x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3672",
       "provenance": {
@@ -138052,7 +138052,7 @@
         "x2"
       ],
       "minimal_known_operations": 3,
-      "optimal": false,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s3681",
       "provenance": {
         "depth": 4,
@@ -138398,7 +138398,7 @@
         "x1 x2 x1^-1 x2 x1",
         "x1 x2^-1 x1^-1 x2 x1 x2 x1^-1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3692",
       "provenance": {
@@ -138723,7 +138723,7 @@
         "x2^-1 x1^-1 x2 x1 x2^-1 x1 x2 x2 x1 x2^-1 x1 x2",
         "x1^-1 x2 x1 x2^-1 x1 x2 x1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 13,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3703",
       "provenance": {
@@ -139292,7 +139292,7 @@
         "x1^-1 x2^-1 x1^-1 x2 x1 x2^-1",
         "x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3713",
       "provenance": {
@@ -140115,7 +140115,7 @@
         "x2 x2 x1 x2^-1",
         "x1^-1 x2 x1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3732",
       "provenance": {
@@ -140948,7 +140948,7 @@
         "x1",
         "x1 x2^-1 x1 x1 x2 x1^-1 x1^-1 x2 x1^-1"
       ],
-      "minimal_known_operations": 6,
+      "minimal_known_operations": 4,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3753",
       "provenance": {
@@ -141325,8 +141325,8 @@
         "x2^-1 x1",
         "x2 x1^-1 x2"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 3,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d6-s3762",
       "provenance": {
         "depth": 6,
@@ -141359,7 +141359,7 @@
         "x2^-1 x1 x2",
         "x1 x1 x2 x1^-1 x2^-1 x1^-1 x2^-1 x1^-1 x1^-1"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3763",
       "provenance": {
@@ -141400,7 +141400,7 @@
         "x1 x1 x2",
         "x1^-1 x1^-1 x2^-1 x1^-1 x1^-1 x1^-1 x2^-1 x1 x1 x1 x2 x1"
       ],
-      "minimal_known_operations": 16,
+      "minimal_known_operations": 14,
       "optimal": false,
       "presentation_id": "synthetic-r2-d10-s3764",
       "provenance": {
@@ -141706,7 +141706,7 @@
         "x2 x2 x2 x1^-1 x2^-1 x2^-1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3773",
       "provenance": {
@@ -141788,7 +141788,7 @@
         "x2^-1 x1^-1",
         "x1^-1 x2 x1 x2^-1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d12-s3775",
       "provenance": {
@@ -142003,7 +142003,7 @@
         "x1^-1 x2^-1 x1 x2 x1",
         "x2^-1 x1^-1 x2^-1 x2^-1 x1 x2 x1 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 9,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3783",
       "provenance": {
@@ -143210,8 +143210,8 @@
         "x1 x2^-1 x1^-1 x1^-1",
         "x1 x2^-1 x1^-1"
       ],
-      "minimal_known_operations": 9,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d8-s3813",
       "provenance": {
         "depth": 8,
@@ -143543,7 +143543,7 @@
         "x1^-1",
         "x2 x1 x2^-1 x1^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 12,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3822",
       "provenance": {
@@ -143579,7 +143579,7 @@
         "x1^-1 x2 x2 x1 x2^-1 x1",
         "x2^-1 x1^-1 x2 x1 x2 x2 x1 x1 x2"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 13,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3823",
       "provenance": {
@@ -145180,7 +145180,7 @@
         "x1 x2",
         "x1^-1 x2 x2 x1^-1 x1^-1 x2^-1 x1 x1 x2^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3863",
       "provenance": {
@@ -145542,7 +145542,7 @@
         "x1^-1 x2^-1 x1 x2 x1",
         "x1 x1 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3872",
       "provenance": {
@@ -145579,7 +145579,7 @@
         "x1^-1",
         "x1 x2^-1 x1^-1 x2 x1 x2"
       ],
-      "minimal_known_operations": 9,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3873",
       "provenance": {
@@ -146331,7 +146331,7 @@
         "x1^-1 x1^-1 x2^-1 x1",
         "x1^-1 x2^-1 x1^-1 x2^-1 x1"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 7,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3892",
       "provenance": {
@@ -146736,8 +146736,8 @@
         "x1^-1 x2^-1 x1 x2 x1 x2^-1",
         "x2^-1"
       ],
-      "minimal_known_operations": 6,
-      "optimal": false,
+      "minimal_known_operations": 4,
+      "optimal": true,
       "presentation_id": "synthetic-r2-d4-s3901",
       "provenance": {
         "depth": 4,
@@ -146772,7 +146772,7 @@
         "x1 x1 x2^-1 x2^-1 x1 x2 x2 x1^-1 x1^-1 x2 x2",
         "x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 8,
       "optimal": false,
       "presentation_id": "synthetic-r2-d6-s3902",
       "provenance": {
@@ -146813,7 +146813,7 @@
         "x1 x2^-1 x1 x2 x1^-1 x2",
         "x2"
       ],
-      "minimal_known_operations": 7,
+      "minimal_known_operations": 5,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3903",
       "provenance": {
@@ -147151,7 +147151,7 @@
         "x1",
         "x1 x2^-1 x2^-1 x1^-1 x2"
       ],
-      "minimal_known_operations": 10,
+      "minimal_known_operations": 6,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3913",
       "provenance": {
@@ -147441,7 +147441,7 @@
         "x1 x2^-1",
         "x1^-1 x2 x1 x1 x2^-1 x1^-1 x2^-1 x2^-1 x1 x1 x2^-1"
       ],
-      "minimal_known_operations": 14,
+      "minimal_known_operations": 11,
       "optimal": false,
       "presentation_id": "synthetic-r2-d8-s3923",
       "provenance": {
@@ -148312,7 +148312,9 @@
     ],
     "generator": "strict_ac_scramble",
     "max_difficulty": 20,
+    "max_known_operations": 38,
     "min_difficulty": 2,
+    "min_known_operations": 2,
     "min_relator_length": 1,
     "min_total_length": 5,
     "seed": 0,

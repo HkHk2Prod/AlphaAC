@@ -1,11 +1,12 @@
 rank: 2
 max_moves: 8
+total_length_cap: 48
+# Agents the `aczero benchmark` command actually runs, in report order. Each is
+# implemented and produces an independently replay-verified certificate.
 agents:
   - random
   - greedy
-  - uniform_mcts
-  - ppo
-  - dqn
-  - alphazero_residual_mlp
-  - alphazero_gru
-  - alphazero_transformer
+  - greedy_best_first
+  - breadth_first
+  - iterative_deepening
+  - puct

@@ -235,6 +235,9 @@ def run_smoke_training(
             json.dumps(asdict(summary), indent=2, sort_keys=True) + "\n"
         )
         return summary
+    except Exception as exc:
+        manager.emit_error("error", "smoke training failed", exc)
+        raise
     finally:
         manager.close()
 

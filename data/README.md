@@ -42,3 +42,18 @@ uv run --frozen aczero dataset candidates --output data/candidates/standard.json
 Candidates must remain separate from training data to avoid leakage. A failed
 search on a candidate is not evidence that it is a genuine counterexample, and
 this project does not prove or disprove the Andrews-Curtis conjecture.
+
+## Improving labels
+
+`aczero dataset improve` (see `datasets/update.py`) runs the search agents on each
+entry and merges any better trivialization into its labels. Breadth-first search
+contributes shortest, sometimes provably optimal, solutions; greedy best-first
+contributes heuristic upper bounds. The merge is monotonic:
+
+- a shorter `minimal_known_operations` is never replaced by a longer one;
+- `ac_trivial` is never demoted from a known result to unknown;
+- `optimal: true` is only set when a search proves it, and never regressed;
+- duplicate entries (same content hash) are merged automatically, keeping the
+  best label and smallest difficulty;
+- proven-optimal entries are skipped, so repeated passes are cheap and the file
+  is rewritten atomically.

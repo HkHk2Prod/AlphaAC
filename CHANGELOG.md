@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Added a real single-player PUCT MCTS (`search/puct.py`) guided by the policy/
+  value model. Training self-play now uses it for visit-count targets (replacing
+  the uniform placeholder), and it is exposed as the `puct` solve/benchmark agent.
+- Added iterative-deepening DFS (`search/iterative_deepening.py`, `solve --agent
+  iterative-deepening`): shortest-path certificates with linear memory.
+- `aczero dataset validate` now performs real schema validation
+  (`datasets/validation.py`): structure, label-field types, and recomputed
+  content hashes.
+- `aczero benchmark` now runs every implemented solver (random, greedy, greedy
+  best-first, breadth-first, iterative-deepening, puct) and `benchmark_rank2.yaml`
+  lists exactly those agents.
+
+- Added uninformed breadth-first search (`search/breadth_first.py`,
+  `aczero solve --agent breadth-first`): shortest-path certificates, with a
+  proven-optimality flag when the search completes within its caps.
+- Added `aczero dataset improve` (`datasets/update.py`): runs the search agents
+  over a dataset and merges better trivializations into the labels. The merge is
+  monotonic (`merge_labels`) — a shorter known solution never loses to a longer
+  one, triviality is never demoted, and proven-optimal entries are skipped.
+  Duplicates are merged by content hash and the file is written atomically.
+
 - Added per-entry trivialization labels to every dataset and example
   (`ac_trivial`, `minimal_known_operations`, `optimal`; see
   `datasets/labels.py`). Generated instances are known AC-trivial with a known,

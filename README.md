@@ -109,13 +109,35 @@ Run the dedicated greedy RL agent test pipeline:
 sh scripts/test_greedy_rl_agent.sh
 ```
 
-Run a greedy solve. The one-step greedy rollout stops honestly at a local
-minimum; the greedy best-first variant explores a length-ordered frontier under
-an explicit budget.
+Run a solve with any implemented agent. Greedy stops honestly at a local
+minimum; greedy best-first explores a length-ordered frontier; breadth-first and
+iterative-deepening return shortest (and, within their caps, provably optimal)
+certificates; `puct` runs the model-guided PUCT search.
 
 ```bash
 uv run --frozen aczero solve --agent greedy
 uv run --frozen aczero solve --agent greedy-best-first
+uv run --frozen aczero solve --agent breadth-first
+uv run --frozen aczero solve --agent iterative-deepening
+uv run --frozen aczero solve --agent puct
+```
+
+Validate a dataset against the schema (structure, label fields, and recomputed
+content hashes):
+
+```bash
+uv run --frozen aczero dataset validate --input data/generated/train_rank2.json
+```
+
+Improve a dataset's labels by searching each entry for a better trivialization.
+Updates are merge-only: a shorter known solution is never replaced by a longer
+one and known triviality is never demoted, duplicates are merged by content
+hash, and proven-optimal entries are skipped so repeated passes are cheap. The
+file is rewritten atomically.
+
+```bash
+uv run --frozen aczero dataset improve \
+  --input data/generated/train_rank2.json --search all --max-difficulty 8
 ```
 
 Verify a certificate:
