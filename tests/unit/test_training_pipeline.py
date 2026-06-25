@@ -65,6 +65,35 @@ def test_training_pipeline_writes_checkpoint_and_summary(tmp_path: Path) -> None
     assert summary_json["optimizer_updates"] == 2
 
 
+def test_training_pipeline_model_is_invariant_to_worker_count(tmp_path: Path) -> None:
+    def _run(workers: int, name: str) -> dict:
+        config = TrainingPipelineConfig(
+            scramble_depth=1,
+            max_moves=4,
+            model="residual_mlp",
+            mcts_simulations=4,
+            iterations=2,
+            episodes_per_iteration=3,
+            optimizer_updates=2,
+            batch_size=2,
+            workers=workers,
+            run_directory=str(tmp_path / name),
+        )
+        run_training_pipeline(config, seed=11)
+        return CheckpointManager(tmp_path / name / "checkpoints").load_json("latest")["model_state"]
+
+    # Self-play episodes run in order, so multi-process self-play trains the exact
+    # same weights as the single-process run.
+    assert _run(1, "seq") == _run(2, "par")
+
+
+def test_config_reads_worker_count_from_mapping() -> None:
+    assert TrainingPipelineConfig.from_mapping({"training": {"workers": 4}}).workers == 4
+    # The default autodetects: 0 means "use every CPU core".
+    assert TrainingPipelineConfig().workers == 0
+    assert TrainingPipelineConfig.from_mapping({"training": {"workers": 1}}).workers == 1
+
+
 def test_cli_train_uses_configured_pipeline(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     config_path = tmp_path / "train.yaml"

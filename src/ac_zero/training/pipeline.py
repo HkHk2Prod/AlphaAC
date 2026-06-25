@@ -4,7 +4,7 @@ import json
 import random
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -15,10 +15,11 @@ from ac_zero.datasets.generator import generate_solvable
 from ac_zero.encoding.padded import PaddedEncoding, StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.models.base import PolicyValueModel
-from ac_zero.models.registry import create_trainable_model
+from ac_zero.models.registry import create_trainable_model, model_from_json
 from ac_zero.models.trainable import TrainablePolicyValueModel
 from ac_zero.search.puct import PUCTMCTS, PUCTConfig
 from ac_zero.system.manifests import ReproducibilityManifest
+from ac_zero.system.parallel import parallel_map, resolve_worker_count
 from ac_zero.training.callbacks import CallbackManager, default_training_callbacks
 from ac_zero.training.checkpointing import CheckpointManager
 from ac_zero.training.losses import (
@@ -26,131 +27,8 @@ from ac_zero.training.losses import (
     return_to_go,
     visit_count_policy,
 )
+from ac_zero.training.pipeline_config import TrainingPipelineConfig
 from ac_zero.training.replay_buffer import ReplayBuffer
-
-
-@dataclass(frozen=True, slots=True)
-class TrainingPipelineConfig:
-    """Configuration for the CPU policy/value training pipeline."""
-
-    rank: int = 2
-    scramble_depth: int = 3
-    max_moves: int = 8
-    total_length_cap: int = 128
-    max_word_length: int = 32
-    model: str = "linear_policy_value"
-    mcts_simulations: int = 16
-    c_puct: float = 1.5
-    iterations: int = 2
-    episodes_per_iteration: int = 4
-    optimizer_updates: int = 4
-    batch_size: int = 8
-    replay_capacity: int = 512
-    learning_rate: float = 0.05
-    value_loss_weight: float = 1.0
-    checkpoint_every: int = 1
-    run_directory: str = "runs/train"
-
-    @classmethod
-    def from_mapping(cls, data: dict[str, Any]) -> TrainingPipelineConfig:
-        """Build a pipeline config from the repository's experiment YAML shape."""
-        defaults = cls()
-        dataset = _dict_value(data, "dataset")
-        training = _dict_value(data, "training")
-        return cls(
-            rank=int(data.get("rank", defaults.rank)),
-            scramble_depth=int(
-                dataset.get("depth", data.get("scramble_depth", defaults.scramble_depth))
-            ),
-            max_moves=int(data.get("max_moves", defaults.max_moves)),
-            total_length_cap=int(data.get("total_length_cap", defaults.total_length_cap)),
-            max_word_length=int(data.get("max_word_length", defaults.max_word_length)),
-            model=str(data.get("model", defaults.model)),
-            mcts_simulations=int(
-                training.get(
-                    "mcts_simulations",
-                    data.get("mcts_simulations", defaults.mcts_simulations),
-                )
-            ),
-            c_puct=float(training.get("c_puct", data.get("c_puct", defaults.c_puct))),
-            iterations=int(training.get("iterations", data.get("iterations", defaults.iterations))),
-            episodes_per_iteration=int(
-                training.get(
-                    "episodes_per_iteration",
-                    dataset.get(
-                        "count",
-                        data.get(
-                            "episodes_per_iteration",
-                            defaults.episodes_per_iteration,
-                        ),
-                    ),
-                )
-            ),
-            optimizer_updates=int(
-                training.get(
-                    "optimizer_updates",
-                    data.get("optimizer_updates", defaults.optimizer_updates),
-                )
-            ),
-            batch_size=int(training.get("batch_size", data.get("batch_size", defaults.batch_size))),
-            replay_capacity=int(
-                training.get(
-                    "replay_capacity",
-                    data.get("replay_capacity", defaults.replay_capacity),
-                )
-            ),
-            learning_rate=float(
-                training.get("learning_rate", data.get("learning_rate", defaults.learning_rate))
-            ),
-            value_loss_weight=float(
-                training.get(
-                    "value_loss_weight",
-                    data.get("value_loss_weight", defaults.value_loss_weight),
-                )
-            ),
-            checkpoint_every=int(
-                training.get(
-                    "checkpoint_every",
-                    data.get("checkpoint_every", defaults.checkpoint_every),
-                )
-            ),
-            run_directory=str(
-                training.get("run_directory", data.get("run_directory", defaults.run_directory))
-            ),
-        )
-
-    def validate(self) -> None:
-        """Reject impossible training settings before allocating run artifacts."""
-        if self.rank <= 0:
-            raise ValueError("rank must be positive")
-        if self.scramble_depth < 0:
-            raise ValueError("scramble_depth must be non-negative")
-        if self.max_moves <= 0:
-            raise ValueError("max_moves must be positive")
-        if self.total_length_cap <= 0:
-            raise ValueError("total_length_cap must be positive")
-        if self.max_word_length <= 0:
-            raise ValueError("max_word_length must be positive")
-        if self.mcts_simulations <= 0:
-            raise ValueError("mcts_simulations must be positive")
-        if self.c_puct <= 0.0:
-            raise ValueError("c_puct must be positive")
-        if self.iterations <= 0:
-            raise ValueError("iterations must be positive")
-        if self.episodes_per_iteration <= 0:
-            raise ValueError("episodes_per_iteration must be positive")
-        if self.optimizer_updates <= 0:
-            raise ValueError("optimizer_updates must be positive")
-        if self.batch_size <= 0:
-            raise ValueError("batch_size must be positive")
-        if self.replay_capacity <= 0:
-            raise ValueError("replay_capacity must be positive")
-        if self.learning_rate <= 0.0:
-            raise ValueError("learning_rate must be positive")
-        if self.value_loss_weight < 0.0:
-            raise ValueError("value_loss_weight must be non-negative")
-        if self.checkpoint_every <= 0:
-            raise ValueError("checkpoint_every must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,11 +114,8 @@ def run_training_pipeline(
         )
         for iteration in range(1, config.iterations + 1):
             episodes = []
-            for episode_index in range(config.episodes_per_iteration):
-                episode_seed = seed + iteration * 10_000 + episode_index
-                examples, episode_metrics = _collect_episode(
-                    config, encoder, episode_seed, rng, model
-                )
+            collected = _collect_episodes(config, encoder, model, seed, iteration)
+            for examples, episode_metrics in collected:
                 replay.extend(examples)
                 episodes.append(episode_metrics)
             total_episodes += len(episodes)
@@ -386,13 +261,65 @@ def run_training_pipeline(
         manager.close()
 
 
+def _collect_episodes(
+    config: TrainingPipelineConfig,
+    encoder: StateEncoder,
+    model: TrainablePolicyValueModel,
+    seed: int,
+    iteration: int,
+) -> list[tuple[list[ReplayExample], EpisodeMetrics]]:
+    """Collect one iteration's self-play episodes, fanning out across processes.
+
+    Each episode is fully determined by its seed and the current model, so the
+    episodes run independently and are reassembled in order; the result is
+    identical whether one or many worker processes are used.
+    """
+    episode_seeds = [
+        seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)
+    ]
+    if resolve_worker_count(config.workers) <= 1:
+        return [
+            _collect_episode(config, encoder, episode_seed, model) for episode_seed in episode_seeds
+        ]
+    return parallel_map(
+        _episode_worker,
+        episode_seeds,
+        workers=config.workers,
+        initializer=_init_episode_worker,
+        initargs=(config, model.to_json()),
+    )
+
+
+# Per-worker state, populated once by the process-pool initializer so the model
+# is rebuilt from its serialized weights a single time per worker rather than
+# pickled with every episode task.
+_WORKER_CONFIG: TrainingPipelineConfig | None = None
+_WORKER_ENCODER: StateEncoder | None = None
+_WORKER_MODEL: PolicyValueModel | None = None
+
+
+def _init_episode_worker(config: TrainingPipelineConfig, model_state: dict[str, Any]) -> None:
+    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL
+    _WORKER_CONFIG = config
+    _WORKER_ENCODER = StateEncoder(config.max_word_length)
+    _WORKER_MODEL = model_from_json(model_state)
+
+
+def _episode_worker(episode_seed: int) -> tuple[list[ReplayExample], EpisodeMetrics]:
+    assert _WORKER_CONFIG is not None and _WORKER_ENCODER is not None and _WORKER_MODEL is not None
+    return _collect_episode(_WORKER_CONFIG, _WORKER_ENCODER, episode_seed, _WORKER_MODEL)
+
+
 def _collect_episode(
     config: TrainingPipelineConfig,
     encoder: StateEncoder,
     episode_seed: int,
-    rng: random.Random,
     model: PolicyValueModel,
 ) -> tuple[list[ReplayExample], EpisodeMetrics]:
+    # A per-episode RNG seeded from the episode seed keeps action sampling
+    # independent of execution order, so episodes can run in parallel and still
+    # reproduce exactly.
+    rng = random.Random(episode_seed)
     instance = generate_solvable(config.rank, config.scramble_depth, episode_seed)
     env = ACEnvironment(instance.presentation, _env_config(config))
     mcts = PUCTMCTS(
@@ -481,10 +408,3 @@ def _env_config(config: TrainingPipelineConfig) -> ACEnvironmentConfig:
         max_moves=config.max_moves,
         total_length_cap=config.total_length_cap,
     )
-
-
-def _dict_value(data: dict[str, Any], key: str) -> dict[str, Any]:
-    value = data.get(key, {})
-    if isinstance(value, dict):
-        return cast(dict[str, Any], value)
-    return {}

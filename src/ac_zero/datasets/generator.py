@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import random
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.labels import known_solution
@@ -15,6 +17,10 @@ from ac_zero.moves.primitive import (
     MultiplyRelatorsMove,
     PrimitiveMove,
 )
+from ac_zero.system.parallel import resolve_worker_count
+
+# Emitted incrementally during long generation runs: (message, metrics).
+ProgressCallback = Callable[[str, dict[str, Any]], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +93,50 @@ def _inverse_primitive_sequence(move: PrimitiveMove) -> tuple[PrimitiveMove, ...
     raise TypeError(f"unsupported primitive move {move!r}")
 
 
+def _generate_candidate(args: tuple[int, int, int]) -> GeneratedInstance:
+    """Worker entry point: build the candidate for one attempt index's parameters."""
+    rank, depth, seed = args
+    return generate_solvable(rank, depth, seed)
+
+
+def _candidate_stream(
+    *,
+    rank: int,
+    depth_cycle: Sequence[int],
+    seed: int,
+    budget: int,
+    workers: int,
+) -> Iterator[GeneratedInstance]:
+    """Yield candidates for attempt indices ``0..budget-1`` in order.
+
+    Attempt ``i`` is the pure function ``generate_solvable(rank, depth_cycle[i %
+    len], seed + i)``, so candidates can be produced out of order and re-sorted.
+    With a single worker they are generated lazily in-process; otherwise a reused
+    process pool fills the stream in chunks. Either way candidates are yielded in
+    attempt order, so the downstream accept/reject pass — and thus the dataset —
+    is identical regardless of the worker count.
+    """
+    cycle = len(depth_cycle)
+    resolved = resolve_worker_count(workers)
+    if resolved <= 1:
+        for index in range(budget):
+            yield generate_solvable(rank, depth_cycle[index % cycle], seed + index)
+        return
+    # A bounded chunk keeps wasted work small when the consumer stops early: at
+    # most one in-flight chunk is generated past the point the target is reached.
+    round_size = max(resolved * 256, 1)
+    chunksize = max(1, round_size // (resolved * 8))
+    with ProcessPoolExecutor(max_workers=resolved) as executor:
+        start = 0
+        while start < budget:
+            stop = min(start + round_size, budget)
+            args = [
+                (rank, depth_cycle[index % cycle], seed + index) for index in range(start, stop)
+            ]
+            yield from executor.map(_generate_candidate, args, chunksize=chunksize)
+            start = stop
+
+
 def generate_dataset(
     *,
     rank: int,
@@ -98,6 +148,8 @@ def generate_dataset(
     unique: bool = True,
     max_attempts: int | None = None,
     depths: Sequence[int] | None = None,
+    workers: int = 0,
+    progress: ProgressCallback | None = None,
 ) -> list[GeneratedInstance]:
     """Generate `count` distinct guaranteed-solvable instances with difficulty labels.
 
@@ -108,6 +160,12 @@ def generate_dataset(
     so the set spans an easy-to-hard difficulty range; otherwise the single
     `depth` is used. Raises if the constraints cannot be satisfied within the
     attempt budget.
+
+    Candidate construction fans out across `workers` processes; the default `0`
+    autodetects and uses every CPU core (set 1 for in-process, or a negative count
+    to leave that many free). The deterministic accept/reject pass runs on
+    candidates in attempt order, so the dataset is identical regardless of the
+    worker count.
     """
     if count < 0:
         raise ValueError("count must be non-negative")
@@ -123,26 +181,50 @@ def generate_dataset(
     trivial_hash = BalancedPresentation.standard(rank).content_hash
     seen: set[str] = set()
     instances: list[GeneratedInstance] = []
-    candidate_seed = seed
     attempt = 0
-    while len(instances) < count and candidate_seed < seed + budget:
-        instance = generate_solvable(rank, depth_cycle[attempt % len(depth_cycle)], candidate_seed)
-        candidate_seed += 1
+    skipped_length = 0
+    skipped_duplicate = 0
+    # Report progress at ~10 checkpoints so large runs stay visible without spam.
+    interval = max(1, count // 10)
+    candidates = _candidate_stream(
+        rank=rank, depth_cycle=depth_cycle, seed=seed, budget=budget, workers=workers
+    )
+    while len(instances) < count:
+        instance = next(candidates, None)
+        if instance is None:
+            break
         attempt += 1
         pres = instance.presentation
         relator_lengths = [len(relator) for relator in pres.relators]
         if sum(relator_lengths) < min_total_length or min(relator_lengths) < min_relator_length:
+            skipped_length += 1
             continue
         if unique:
             content = pres.content_hash
             if content == trivial_hash or content in seen:
+                skipped_duplicate += 1
                 continue
             seen.add(content)
         instances.append(instance)
+        if progress is not None and len(instances) % interval == 0:
+            progress(
+                "generating instances",
+                {"generated": len(instances), "target": count, "attempts": attempt},
+            )
     if len(instances) < count:
         raise ValueError(
             "could not generate enough distinct presentations matching dataset constraints; "
             "increase depth or max_attempts, or relax length/uniqueness constraints"
+        )
+    if progress is not None:
+        progress(
+            "generation complete",
+            {
+                "generated": len(instances),
+                "attempts": attempt,
+                "skipped_duplicate": skipped_duplicate,
+                "skipped_length": skipped_length,
+            },
         )
     return instances
 
@@ -159,8 +241,12 @@ def write_dataset(
     unique: bool = True,
     max_attempts: int | None = None,
     depths: Sequence[int] | None = None,
+    workers: int = 0,
+    progress: ProgressCallback | None = None,
 ) -> None:
     """Write a versioned JSON dataset of distinct seeded solvable presentations."""
+    if progress is not None:
+        progress("starting generation", {"target": count, "rank": rank})
     instances = generate_dataset(
         rank=rank,
         count=count,
@@ -171,6 +257,8 @@ def write_dataset(
         unique=unique,
         max_attempts=max_attempts,
         depths=depths,
+        workers=workers,
+        progress=progress,
     )
     difficulties = [instance.difficulty for instance in instances]
     provenance: dict[str, int | str | bool | list[int]] = {
@@ -207,3 +295,5 @@ def write_dataset(
     }
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    if progress is not None:
+        progress("dataset written", {"path": str(path), "instances": len(instances)})

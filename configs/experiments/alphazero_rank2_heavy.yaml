@@ -1,9 +1,11 @@
-# Heavy / "serious" RL run. Calibrated to ~2 hours on a single modern CPU core
-# (~73 s/iteration measured: 24 episodes x 256 PUCT simulations, depth-6
-# instances). Wall-clock scales ~linearly with iterations x episodes_per_iteration
-# x mcts_simulations, so dial `iterations` up or down for your machine and budget.
-# Peak memory is tiny (~50 MB); checkpoints are written every 5 iterations so a
-# long run is resumable.
+# Heavy / "serious" RL run. ~73 s/iteration on a single CPU core (24 episodes x
+# 256 PUCT simulations, depth-6 instances), so ~2 hours for 100 iterations on one
+# core. `training.workers: 0` fans the 24 self-play episodes across every CPU core,
+# cutting wall-clock by roughly the core count (set a positive number to cap it).
+# Episodes are reassembled in order, so the trained model is identical regardless
+# of the worker count. Wall-clock otherwise scales ~linearly with iterations x
+# episodes_per_iteration x mcts_simulations. Peak memory is ~50 MB per worker;
+# checkpoints are written every 5 iterations so a long run is resumable.
 rank: 2
 agent: alphazero
 model: residual_mlp
@@ -23,4 +25,5 @@ training:
   mcts_simulations: 256
   c_puct: 1.5
   checkpoint_every: 5
+  workers: 0
   run_directory: runs/train/alphazero_rank2_heavy

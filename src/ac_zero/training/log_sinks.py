@@ -124,7 +124,7 @@ class TerminalProgressLogger:
         """Print and persist one progress line when it meets the level threshold."""
         if event.level < self._min_level:
             return
-        metric_text = _format_metrics(event.metrics)
+        metric_text = format_metrics(event.metrics)
         suffix = f" | {metric_text}" if metric_text else ""
         line = (
             f"[step {event.step:03d}] {event.level.name:<7} {event.phase}: {event.message}{suffix}"
@@ -202,7 +202,8 @@ class AsciiGraphLogger:
         return "\n".join(lines)
 
 
-def _format_metrics(metrics: dict[str, float | int | bool | str]) -> str:
+def format_metrics(metrics: dict[str, float | int | bool | str]) -> str:
+    """Render metric key/values as a compact ``key=value`` comma-separated string."""
     parts = []
     for key, value in metrics.items():
         if isinstance(value, float):

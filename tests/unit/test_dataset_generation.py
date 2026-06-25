@@ -12,6 +12,19 @@ def test_generate_solvable_reports_difficulty() -> None:
     assert instance.presentation.provenance["difficulty"] == instance.difficulty
 
 
+def test_generate_dataset_is_identical_across_worker_counts() -> None:
+    sequential = generate_dataset(rank=2, count=40, depths=[2, 3, 4], seed=0, min_total_length=3)
+    parallel = generate_dataset(
+        rank=2, count=40, depths=[2, 3, 4], seed=0, min_total_length=3, workers=4
+    )
+    # Candidates are built out of order across processes but re-sorted, so the
+    # deduplicated, length-filtered dataset is byte-identical to the serial run.
+    assert [inst.presentation.to_json() for inst in sequential] == [
+        inst.presentation.to_json() for inst in parallel
+    ]
+    assert [inst.difficulty for inst in sequential] == [inst.difficulty for inst in parallel]
+
+
 def test_generate_dataset_is_deduplicated_and_nontrivial() -> None:
     instances = generate_dataset(rank=2, count=60, depth=10, seed=0)
     assert len(instances) == 60
@@ -61,3 +74,34 @@ def test_write_dataset_emits_v2_with_difficulty_labels(tmp_path) -> None:
         assert instance["ac_trivial"] is True
         assert instance["minimal_known_operations"] >= 1
         assert instance["optimal"] is False
+
+
+def test_generate_dataset_reports_progress() -> None:
+    events: list[tuple[str, dict]] = []
+    generate_dataset(
+        rank=2, count=20, depth=10, seed=0, progress=lambda m, k: events.append((m, k))
+    )
+
+    messages = [message for message, _ in events]
+    assert "generating instances" in messages
+    # the final summary always fires and accounts for every accepted instance
+    completion = next(metrics for message, metrics in events if message == "generation complete")
+    assert completion["generated"] == 20
+    assert completion["attempts"] >= 20
+
+
+def test_write_dataset_reports_start_and_write(tmp_path) -> None:
+    events: list[tuple[str, dict]] = []
+    write_dataset(
+        tmp_path / "set.json",
+        rank=2,
+        count=8,
+        depth=9,
+        seed=1,
+        progress=lambda m, k: events.append((m, k)),
+    )
+
+    messages = [message for message, _ in events]
+    assert messages[0] == "starting generation"
+    assert messages[-1] == "dataset written"
+    assert events[-1][1]["instances"] == 8

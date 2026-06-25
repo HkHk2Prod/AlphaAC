@@ -4,6 +4,7 @@ import argparse
 import json
 import random
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -31,7 +32,8 @@ from ac_zero.search.iterative_deepening import IterativeDeepeningConfig, Iterati
 from ac_zero.search.mcts import UniformMCTS
 from ac_zero.search.puct import PUCTMCTS
 from ac_zero.system.reporting import CliReporter
-from ac_zero.training.pipeline import TrainingPipelineConfig, run_training_pipeline
+from ac_zero.training.pipeline import run_training_pipeline
+from ac_zero.training.pipeline_config import TrainingPipelineConfig
 from ac_zero.training.smoke import run_smoke_training
 
 
@@ -59,9 +61,21 @@ def main(argv: list[str] | None = None) -> int:
     ds.add_argument("--max-difficulty", type=int, default=8, help="negative searches all entries")
     ds.add_argument("--max-expansions", type=int, default=3000, help="per-entry search node budget")
     ds.add_argument("--max-generated", type=int, default=30000, help="per-entry generated node cap")
+    ds.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="parallel worker processes; default 0 uses all CPU cores, 1 stays in-process",
+    )
     train = sub.add_parser("train")
     train.add_argument("--config", default="configs/experiments/smoke.yaml")
     train.add_argument("--seed", type=int, default=0)
+    train.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="self-play worker processes; 0 uses all cores, overrides the config",
+    )
     bench = sub.add_parser("benchmark")
     bench.add_argument("--config", default="configs/experiments/benchmark_rank2.yaml")
     solve = sub.add_parser("solve")
@@ -103,7 +117,12 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
         if args.subcmd == "generate":
             output = args.output or "data/generated/smoke.json"
             params = _dataset_generation_params(Path(args.config))
-            write_dataset(output, **params)
+            write_dataset(
+                output,
+                workers=args.workers,
+                progress=lambda message, metrics: reporter.progress("generate", message, metrics),
+                **params,
+            )
             reporter.result_text(output)
             return 0
         if args.subcmd == "candidates":
@@ -122,7 +141,7 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             reporter.warning("dataset", "dataset failed validation", {"errors": len(report.errors)})
         return 0 if report.ok else 1
     if args.cmd == "train":
-        return _train(Path(args.config), args.seed, reporter)
+        return _train(Path(args.config), args.seed, args.workers, reporter)
     if args.cmd == "benchmark":
         return _benchmark(reporter)
     if args.cmd == "solve":
@@ -182,9 +201,11 @@ def _smoke_train(seed: int, reporter: CliReporter) -> int:
     return 0
 
 
-def _train(config_path: Path, seed: int, reporter: CliReporter) -> int:
+def _train(config_path: Path, seed: int, workers: int | None, reporter: CliReporter) -> int:
     """Run the config-driven replay and policy/value training pipeline."""
     config = TrainingPipelineConfig.from_mapping(_load_config(config_path))
+    if workers is not None:
+        config = replace(config, workers=workers)
     summary = run_training_pipeline(config, seed)
     reporter.result_json(
         {
@@ -413,6 +434,8 @@ def _dataset_improve(args: argparse.Namespace, reporter: CliReporter) -> int:
         strategies=strategies,
         output=output,
         max_difficulty=max_difficulty,
+        workers=args.workers,
+        progress=lambda message, metrics: reporter.progress("improve", message, metrics),
     )
     reporter.result_json(
         {
