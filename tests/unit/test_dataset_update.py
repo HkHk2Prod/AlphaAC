@@ -80,6 +80,42 @@ def test_improve_does_not_overwrite_an_existing_better_label(tmp_path) -> None:
         assert entry["optimal"] is True
 
 
+def test_improve_dataset_reports_progress(tmp_path) -> None:
+    path = tmp_path / "ds.json"
+    write_dataset(path, rank=2, count=6, depths=[2, 3], seed=0, min_total_length=3)
+
+    events: list[tuple[str, dict]] = []
+    report = improve_dataset(
+        path,
+        strategies=[_FAST_BFS],
+        max_difficulty=6,
+        progress=lambda message, metrics: events.append((message, metrics)),
+    )
+
+    messages = [message for message, _ in events]
+    assert messages[0] == "deduplicated entries"
+    assert "improving dataset" in messages
+    # the last improvement event accounts for every entry in the dataset
+    final = next(metrics for message, metrics in reversed(events) if message == "improving dataset")
+    assert final["processed"] == report.total
+    assert final["total"] == report.total
+
+
+def test_improve_dataset_is_identical_across_worker_counts(tmp_path) -> None:
+    sequential = tmp_path / "seq.json"
+    parallel = tmp_path / "par.json"
+    write_dataset(sequential, rank=2, count=8, depths=[2, 3], seed=0, min_total_length=3)
+    # An identical input dataset under both worker counts.
+    parallel.write_text(sequential.read_text())
+
+    seq_report = improve_dataset(sequential, strategies=[_FAST_BFS], max_difficulty=6, workers=1)
+    par_report = improve_dataset(parallel, strategies=[_FAST_BFS], max_difficulty=6, workers=2)
+
+    assert seq_report == par_report
+    # Fanning the per-entry searches across processes does not change the result.
+    assert json.loads(sequential.read_text()) == json.loads(parallel.read_text())
+
+
 def test_label_round_trips_through_entry_dict() -> None:
     entry = {"rank": 2, "relators": [[1]], **known_solution(7, optimal=True).to_json()}
     label = label_from_entry(entry)

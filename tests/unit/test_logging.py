@@ -191,6 +191,28 @@ def test_training_pipeline_emits_error_event_on_failure(tmp_path: Path, monkeypa
     assert any(event.level is LogLevel.ERROR for event in captured)
 
 
+def test_cli_reporter_progress_echoes_to_stderr_and_logs(tmp_path: Path) -> None:
+    out = io.StringIO()
+    err = io.StringIO()
+    reporter = CliReporter("gen", run_directory=tmp_path / "cli", stream=out, error_stream=err)
+    reporter.progress("generate", "generating instances", {"generated": 5, "target": 10})
+    reporter.close()
+
+    # progress is visible on the progress stream but never pollutes stdout
+    assert out.getvalue() == ""
+    printed = err.getvalue()
+    assert "generate: generating instances" in printed
+    assert "generated=5" in printed
+    assert "target=10" in printed
+
+    rows = [
+        json.loads(line) for line in (tmp_path / "cli/logs/events.jsonl").read_text().splitlines()
+    ]
+    progress_row = next(row for row in rows if row["message"] == "generating instances")
+    assert progress_row["level"] == "INFO"
+    assert progress_row["metrics"]["generated"] == 5
+
+
 def test_cli_reporter_logs_errors_with_exception(tmp_path: Path) -> None:
     err = io.StringIO()
     reporter = CliReporter(

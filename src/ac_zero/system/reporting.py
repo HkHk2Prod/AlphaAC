@@ -7,7 +7,11 @@ from typing import Any, TextIO
 
 from ac_zero.training.callbacks import CallbackManager
 from ac_zero.training.events import LogLevel
-from ac_zero.training.log_sinks import JsonlEventLogger, TerminalProgressLogger
+from ac_zero.training.log_sinks import (
+    JsonlEventLogger,
+    TerminalProgressLogger,
+    format_metrics,
+)
 
 
 class CliReporter:
@@ -41,11 +45,24 @@ class CliReporter:
         )
         self._command = command
         self._stream = stream or sys.stdout
+        self._progress_stream = error_stream or sys.stderr
         self._step = 0
 
     def info(self, phase: str, message: str, metrics: dict[str, Any] | None = None) -> None:
         """Record an informational event (captured to logs, not stdout)."""
         self._emit(LogLevel.INFO, phase, message, metrics)
+
+    def progress(self, phase: str, message: str, metrics: dict[str, Any] | None = None) -> None:
+        """Record a progress update: logged at INFO and echoed to the progress stream.
+
+        Long-running commands call this to report incremental status. The event is
+        captured to the structured logs like any info event, and a concise line is
+        mirrored to the progress stream (stderr by default) so the run stays visible
+        without polluting the machine-readable stdout result.
+        """
+        self._emit(LogLevel.INFO, phase, message, metrics)
+        suffix = f" | {format_metrics(metrics)}" if metrics else ""
+        print(f"{phase}: {message}{suffix}", file=self._progress_stream, flush=True)
 
     def warning(self, phase: str, message: str, metrics: dict[str, Any] | None = None) -> None:
         """Record a warning event, mirrored to stderr."""

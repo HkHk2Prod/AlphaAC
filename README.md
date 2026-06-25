@@ -175,23 +175,36 @@ make dataset-refine ARGS="--max-difficulty -1 --max-expansions 200000 --max-gene
 # or directly:
 uv run --frozen aczero dataset improve \
   --input data/generated/train_rank2.json \
-  --search all --max-difficulty 15 --max-expansions 200000 --max-generated 2000000
+  --search all --max-difficulty 15 --max-expansions 200000 --max-generated 2000000 --workers 0
 ```
+
+Generation, refinement, and training are all CPU-bound, so they fan independent
+work across worker *processes* (threads cannot help under the GIL). This is on by
+default: every CPU core is used unless you say otherwise. Pass `--workers N` to
+`dataset generate` (candidate construction) or `dataset improve` (per-entry
+searches), or set `training.workers` in a train config (self-play episodes), where
+`0` (the default) autodetects and uses every physical core (hyperthreads excluded,
+since they add little for CPU-bound work), a negative count leaves that many free,
+and `1` stays single-process. Results are reassembled in input order,
+so the generated and refined datasets and the trained model are bit-for-bit
+identical regardless of the worker count — parallelism trades cores for wall-clock
+without touching reproducibility.
 
 Harder RL — copy `configs/experiments/alphazero_rank2_heavy.yaml` and scale the
 knobs: `model` (`residual_mlp`/`gru`/`transformer`), `rank`, `dataset.depth`,
 `training.{iterations,episodes_per_iteration,optimizer_updates,batch_size,
-replay_capacity,mcts_simulations,c_puct,learning_rate}`. Then:
+replay_capacity,mcts_simulations,c_puct,learning_rate,workers}`. Then:
 
 ```bash
 make train CONFIG=configs/experiments/alphazero_rank2_heavy.yaml SEED=0
 ```
 
-The committed `alphazero_rank2_heavy.yaml` is calibrated to **~2 hours on one
-modern CPU core** (~73 s/iteration at 24 episodes × 256 simulations on depth-6
-instances; ~50 MB peak RAM). Wall-clock scales ~linearly with `iterations ×
-episodes_per_iteration × mcts_simulations`, so scale `iterations` to your machine
-and budget. Each run writes a reproducibility manifest (lockfile, platform,
+The committed `alphazero_rank2_heavy.yaml` is **~2 hours on one modern CPU core**
+(~73 s/iteration at 24 episodes × 256 simulations on depth-6 instances; ~50 MB
+peak RAM per worker) and ships with `training.workers: 0`, which spreads the 24
+self-play episodes across every core to cut that roughly by the core count.
+Wall-clock otherwise scales ~linearly with `iterations × episodes_per_iteration ×
+mcts_simulations`, so scale `iterations` to your machine and budget. Each run writes a reproducibility manifest (lockfile, platform,
 config, seed), JSON checkpoints (every `checkpoint_every` iterations),
 `metrics.jsonl`, and progress logs/graphs under `training.run_directory`, so a
 long run on another machine is fully auditable and resumable from its checkpoint.

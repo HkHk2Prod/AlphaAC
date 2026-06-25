@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import shutil
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -13,6 +15,10 @@ from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.labels import UNKNOWN, TrivializationLabel, known_solution, merge_labels
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.search.breadth_first import BreadthFirstConfig, BreadthFirstSearch
+from ac_zero.system.parallel import imap_ordered
+
+# Emitted incrementally during long improvement passes: (message, metrics).
+ProgressCallback = Callable[[str, dict[str, Any]], None]
 
 _LABEL_FIELDS = ("ac_trivial", "minimal_known_operations", "optimal")
 
@@ -127,12 +133,59 @@ class ImproveReport:
     proved_optimal: int
 
 
+@dataclass(frozen=True, slots=True)
+class _EntryResult:
+    """Outcome of searching one entry, computed in a (possibly remote) worker."""
+
+    label: TrivializationLabel
+    found: bool
+    improved: bool
+    newly_optimal: bool
+
+
+# Per-worker state populated once by the process-pool initializer: the strategies
+# to run and a scratch certificate path private to this process, so parallel
+# searches never write the same file.
+_WORKER_STRATEGIES: Sequence[SearchStrategy] = ()
+_WORKER_CERT: Path | None = None
+
+
+def _init_search_worker(strategies: Sequence[SearchStrategy]) -> None:
+    global _WORKER_STRATEGIES, _WORKER_CERT
+    _WORKER_STRATEGIES = strategies
+    tmp = tempfile.mkdtemp(prefix="aczero-improve-")
+    atexit.register(shutil.rmtree, tmp, ignore_errors=True)
+    _WORKER_CERT = Path(tmp) / "candidate.json"
+
+
+def _search_entry(entry: dict[str, Any]) -> _EntryResult:
+    """Run every strategy on one entry and merge the results into its label."""
+    assert _WORKER_CERT is not None
+    presentation = BalancedPresentation.from_json(entry)
+    before = label_from_entry(entry)
+    merged = before
+    found = False
+    for strategy in _WORKER_STRATEGIES:
+        label = strategy.label(presentation, certificate_path=_WORKER_CERT)
+        if label.minimal_known_operations is not None:
+            found = True
+        merged = merge_labels(merged, label)
+    return _EntryResult(
+        label=merged,
+        found=found,
+        improved=merged != before,
+        newly_optimal=bool(merged.optimal and not before.optimal),
+    )
+
+
 def improve_dataset(
     path: str | Path,
     *,
     strategies: Sequence[SearchStrategy],
     output: str | Path | None = None,
     max_difficulty: int | None = None,
+    workers: int = 0,
+    progress: ProgressCallback | None = None,
 ) -> ImproveReport:
     """Search every entry for a better trivialization and merge improvements in place.
 
@@ -141,35 +194,59 @@ def improve_dataset(
     :func:`merge_labels`, which never replaces a shorter known solution with a
     longer one or demotes a known triviality result. The file is written
     atomically so an interrupted run cannot corrupt the dataset.
+
+    Per-entry searches are independent, so they fan out across ``workers``
+    processes; the default ``0`` autodetects and uses every CPU core (set 1 for
+    in-process, or a negative count to leave that many free). Results are merged
+    back in entry order, so the output is identical regardless of the worker count.
     """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     raw = data.get("instances", [])
     entries, duplicates = dedupe_entries(raw)
+    if progress is not None:
+        progress(
+            "deduplicated entries",
+            {"unique": len(entries), "duplicates_merged": duplicates},
+        )
 
+    total = len(entries)
+    # Report progress at ~10 checkpoints so long search passes stay visible.
+    interval = max(1, total // 10)
     searched = solved = improved = optimal = 0
-    with tempfile.TemporaryDirectory() as tmp:
-        certificate = Path(tmp) / "candidate.json"
-        for entry in entries:
-            optimal += 1 if label_from_entry(entry).optimal else 0
-            if not _should_search(entry, max_difficulty):
-                continue
+    search_positions = [
+        i for i, entry in enumerate(entries) if _should_search(entry, max_difficulty)
+    ]
+    results = imap_ordered(
+        _search_entry,
+        [entries[i] for i in search_positions],
+        workers=workers,
+        initializer=_init_search_worker,
+        initargs=(tuple(strategies),),
+    )
+    pending = set(search_positions)
+    for index, entry in enumerate(entries, start=1):
+        optimal += 1 if label_from_entry(entry).optimal else 0
+        if (index - 1) in pending:
             searched += 1
-            presentation = BalancedPresentation.from_json(entry)
-            before = label_from_entry(entry)
-            merged = before
-            found = False
-            for strategy in strategies:
-                label = strategy.label(presentation, certificate_path=certificate)
-                if label.minimal_known_operations is not None:
-                    found = True
-                merged = merge_labels(merged, label)
-            if found:
+            result = next(results)
+            if result.found:
                 solved += 1
-            if merged != before:
+            if result.improved:
                 improved += 1
-                if merged.optimal and not before.optimal:
+                if result.newly_optimal:
                     optimal += 1
-                apply_label(entry, merged)
+                apply_label(entry, result.label)
+        if progress is not None and (index % interval == 0 or index == total):
+            progress(
+                "improving dataset",
+                {
+                    "processed": index,
+                    "total": total,
+                    "searched": searched,
+                    "solved": solved,
+                    "improved": improved,
+                },
+            )
 
     data["instances"] = entries
     _refresh_provenance(data, entries)
