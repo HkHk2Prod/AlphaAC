@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Portable setup for fresh machines: pinned interpreter (`.python-version`),
+  `make setup` / `make verify` targets, and a documented uv/pip install path.
+- `aczero dataset improve` exposes per-entry search budgets (`--max-expansions`,
+  `--max-generated`) and an unbounded difficulty gate (`--max-difficulty -1`) for
+  harder refinement runs; `make dataset-refine` wraps it.
+- Training exposes `c_puct` in the experiment config; `make train` and a heavier
+  `alphazero_rank2_heavy.yaml` config support scaled RL runs.
+
 - Added a real single-player PUCT MCTS (`search/puct.py`) guided by the policy/
   value model. Training self-play now uses it for visit-count targets (replacing
   the uniform placeholder), and it is exposed as the `puct` solve/benchmark agent.

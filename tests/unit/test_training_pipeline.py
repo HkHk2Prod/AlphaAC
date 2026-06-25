@@ -2,11 +2,23 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from ac_zero.cli import main
 from ac_zero.training.checkpointing import CheckpointManager
 from ac_zero.training.losses import masked_softmax, policy_value_loss, visit_count_policy
 from ac_zero.training.pipeline import TrainingPipelineConfig, run_training_pipeline
+
+
+def test_config_exposes_c_puct_for_harder_runs() -> None:
+    config = TrainingPipelineConfig.from_mapping(
+        {"training": {"c_puct": 2.5, "mcts_simulations": 64}}
+    )
+    assert config.c_puct == 2.5
+    assert config.mcts_simulations == 64
+    assert TrainingPipelineConfig().c_puct == 1.5  # default
+    with pytest.raises(ValueError, match="c_puct must be positive"):
+        TrainingPipelineConfig(c_puct=0.0).validate()
 
 
 def test_visit_policy_and_masked_loss_ignore_illegal_actions() -> None:

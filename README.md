@@ -19,14 +19,25 @@ certificate.
 
 ## Install
 
+On a fresh machine, install [uv](https://docs.astral.sh/uv/) (`curl -LsSf
+https://astral.sh/uv/install.sh | sh`), then from the repo root:
+
 ```bash
-python scripts/bootstrap.py --accelerator cpu
-uv sync --frozen
+make setup     # uv sync --frozen — creates .venv from the committed lockfile
+make verify    # lint + typecheck + tests + smoke path, to confirm the install
 ```
 
-The bootstrap script reports the requested accelerator and selected backend. The
-current training implementation is CPU-first; optional JAX accelerator extras
-are declared for future larger neural training work.
+`.python-version` pins the interpreter (3.12) and `uv.lock` pins every
+dependency, so `make setup` reproduces the exact environment. No network access
+is needed beyond fetching the locked wheels. The accelerator probe is optional:
+
+```bash
+python scripts/bootstrap.py --accelerator cpu   # reports the selected backend
+```
+
+The training implementation is CPU-first and pure-NumPy, so it runs anywhere
+Python does; optional JAX extras are declared for future accelerator work. If you
+prefer pip over uv, `pip install -e .` against Python 3.11–3.14 also works.
 
 ## Five-Minute Smoke Test
 
@@ -150,6 +161,38 @@ The certificate artifact, not a checkpoint, is the mathematical object of
 interest. The verifier parses the initial presentation, replays only strict
 primitive AC moves, freely reduces after each move, checks intermediate hashes,
 and checks the configured goal predicate.
+
+## Scaling Up For A Serious Run
+
+Everything is CPU-only and deterministic, so a bigger run is just bigger numbers.
+
+Harder dataset refinement — raise the per-entry search budget and the difficulty
+gate (a negative gate searches every entry). Improvement is monotonic, so a
+longer run can only add shorter/optimal labels:
+
+```bash
+make dataset-refine ARGS="--max-difficulty -1 --max-expansions 200000 --max-generated 2000000"
+# or directly:
+uv run --frozen aczero dataset improve \
+  --input data/generated/train_rank2.json \
+  --search all --max-difficulty 15 --max-expansions 200000 --max-generated 2000000
+```
+
+Harder RL — copy `configs/experiments/alphazero_rank2_heavy.yaml` and scale the
+knobs: `model` (`residual_mlp`/`gru`/`transformer`), `rank`, `dataset.depth`,
+`training.{iterations,episodes_per_iteration,optimizer_updates,batch_size,
+replay_capacity,mcts_simulations,c_puct,learning_rate}`. Then:
+
+```bash
+make train CONFIG=configs/experiments/alphazero_rank2_heavy.yaml SEED=0
+```
+
+Each run writes a reproducibility manifest (lockfile, platform, config, seed),
+JSON checkpoints, `metrics.jsonl`, and progress logs/graphs under
+`training.run_directory`, so a long run on another machine is fully auditable and
+resumable from its checkpoint. PUCT self-play cost scales roughly with
+`iterations × episodes_per_iteration × max_moves × mcts_simulations`; budget
+wall-clock accordingly.
 
 ## Repository Layout
 

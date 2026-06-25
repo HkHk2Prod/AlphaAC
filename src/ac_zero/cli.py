@@ -56,7 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     ds.add_argument("--search", choices=["bfs", "greedy-best-first", "all"], default="all")
     ds.add_argument("--max-moves", type=int, default=12)
     ds.add_argument("--total-length-cap", type=int, default=48)
-    ds.add_argument("--max-difficulty", type=int, default=8)
+    ds.add_argument("--max-difficulty", type=int, default=8, help="negative searches all entries")
+    ds.add_argument("--max-expansions", type=int, default=3000, help="per-entry search node budget")
+    ds.add_argument("--max-generated", type=int, default=30000, help="per-entry generated node cap")
     train = sub.add_parser("train")
     train.add_argument("--config", default="configs/experiments/smoke.yaml")
     train.add_argument("--seed", type=int, default=0)
@@ -388,16 +390,29 @@ def _dataset_improve(args: argparse.Namespace, reporter: CliReporter) -> int:
     strategies: list[SearchStrategy] = []
     if args.search in ("bfs", "all"):
         strategies.append(
-            BreadthFirstStrategy(max_moves=args.max_moves, total_length_cap=args.total_length_cap)
+            BreadthFirstStrategy(
+                max_moves=args.max_moves,
+                total_length_cap=args.total_length_cap,
+                max_expansions=args.max_expansions,
+                max_generated=args.max_generated,
+            )
         )
     if args.search in ("greedy-best-first", "all"):
-        strategies.append(GreedyBestFirstStrategy())
+        strategies.append(
+            GreedyBestFirstStrategy(
+                total_length_cap=args.total_length_cap,
+                max_expansions=args.max_expansions,
+                max_generated=args.max_generated,
+            )
+        )
+    # A negative gate means "search every entry regardless of difficulty".
+    max_difficulty = None if args.max_difficulty < 0 else args.max_difficulty
     output = args.output or args.input
     report = improve_dataset(
         args.input,
         strategies=strategies,
         output=output,
-        max_difficulty=args.max_difficulty,
+        max_difficulty=max_difficulty,
     )
     reporter.result_json(
         {

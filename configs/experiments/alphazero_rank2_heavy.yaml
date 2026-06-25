@@ -1,0 +1,20 @@
+rank: 2
+agent: alphazero
+model: residual_mlp
+max_moves: 12
+total_length_cap: 128
+dataset:
+  count: 8
+  depth: 4
+training:
+  iterations: 12
+  episodes_per_iteration: 8
+  optimizer_updates: 16
+  batch_size: 16
+  replay_capacity: 2048
+  learning_rate: 0.05
+  value_loss_weight: 1.0
+  mcts_simulations: 96
+  c_puct: 1.5
+  checkpoint_every: 2
+  run_directory: runs/train/alphazero_rank2_heavy

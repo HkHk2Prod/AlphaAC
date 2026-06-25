@@ -40,6 +40,7 @@ class TrainingPipelineConfig:
     max_word_length: int = 32
     model: str = "linear_policy_value"
     mcts_simulations: int = 16
+    c_puct: float = 1.5
     iterations: int = 2
     episodes_per_iteration: int = 4
     optimizer_updates: int = 4
@@ -71,6 +72,7 @@ class TrainingPipelineConfig:
                     data.get("mcts_simulations", defaults.mcts_simulations),
                 )
             ),
+            c_puct=float(training.get("c_puct", data.get("c_puct", defaults.c_puct))),
             iterations=int(training.get("iterations", data.get("iterations", defaults.iterations))),
             episodes_per_iteration=int(
                 training.get(
@@ -131,6 +133,8 @@ class TrainingPipelineConfig:
             raise ValueError("max_word_length must be positive")
         if self.mcts_simulations <= 0:
             raise ValueError("mcts_simulations must be positive")
+        if self.c_puct <= 0.0:
+            raise ValueError("c_puct must be positive")
         if self.iterations <= 0:
             raise ValueError("iterations must be positive")
         if self.episodes_per_iteration <= 0:
@@ -391,7 +395,9 @@ def _collect_episode(
 ) -> tuple[list[ReplayExample], EpisodeMetrics]:
     instance = generate_solvable(config.rank, config.scramble_depth, episode_seed)
     env = ACEnvironment(instance.presentation, _env_config(config))
-    mcts = PUCTMCTS(model, encoder, PUCTConfig(simulations=config.mcts_simulations))
+    mcts = PUCTMCTS(
+        model, encoder, PUCTConfig(simulations=config.mcts_simulations, c_puct=config.c_puct)
+    )
     pending: list[tuple[PaddedEncoding, tuple[bool, ...], NDArray[np.float64], int, float]] = []
     rewards: list[float] = []
     terminated = False
