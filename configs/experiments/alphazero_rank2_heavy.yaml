@@ -1,20 +1,26 @@
+# Heavy / "serious" RL run. Calibrated to ~2 hours on a single modern CPU core
+# (~73 s/iteration measured: 24 episodes x 256 PUCT simulations, depth-6
+# instances). Wall-clock scales ~linearly with iterations x episodes_per_iteration
+# x mcts_simulations, so dial `iterations` up or down for your machine and budget.
+# Peak memory is tiny (~50 MB); checkpoints are written every 5 iterations so a
+# long run is resumable.
 rank: 2
 agent: alphazero
 model: residual_mlp
-max_moves: 12
+max_moves: 16
 total_length_cap: 128
 dataset:
   count: 8
-  depth: 4
+  depth: 6
 training:
-  iterations: 12
-  episodes_per_iteration: 8
-  optimizer_updates: 16
-  batch_size: 16
-  replay_capacity: 2048
-  learning_rate: 0.05
+  iterations: 100
+  episodes_per_iteration: 24
+  optimizer_updates: 32
+  batch_size: 32
+  replay_capacity: 8192
+  learning_rate: 0.01
   value_loss_weight: 1.0
-  mcts_simulations: 96
+  mcts_simulations: 256
   c_puct: 1.5
-  checkpoint_every: 2
+  checkpoint_every: 5
   run_directory: runs/train/alphazero_rank2_heavy

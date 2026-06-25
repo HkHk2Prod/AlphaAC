@@ -187,12 +187,14 @@ replay_capacity,mcts_simulations,c_puct,learning_rate}`. Then:
 make train CONFIG=configs/experiments/alphazero_rank2_heavy.yaml SEED=0
 ```
 
-Each run writes a reproducibility manifest (lockfile, platform, config, seed),
-JSON checkpoints, `metrics.jsonl`, and progress logs/graphs under
-`training.run_directory`, so a long run on another machine is fully auditable and
-resumable from its checkpoint. PUCT self-play cost scales roughly with
-`iterations × episodes_per_iteration × max_moves × mcts_simulations`; budget
-wall-clock accordingly.
+The committed `alphazero_rank2_heavy.yaml` is calibrated to **~2 hours on one
+modern CPU core** (~73 s/iteration at 24 episodes × 256 simulations on depth-6
+instances; ~50 MB peak RAM). Wall-clock scales ~linearly with `iterations ×
+episodes_per_iteration × mcts_simulations`, so scale `iterations` to your machine
+and budget. Each run writes a reproducibility manifest (lockfile, platform,
+config, seed), JSON checkpoints (every `checkpoint_every` iterations),
+`metrics.jsonl`, and progress logs/graphs under `training.run_directory`, so a
+long run on another machine is fully auditable and resumable from its checkpoint.
 
 ## Repository Layout
 
