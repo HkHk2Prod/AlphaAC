@@ -93,8 +93,14 @@ def test_improve_dataset_reports_progress(tmp_path) -> None:
     )
 
     messages = [message for message, _ in events]
-    assert messages[0] == "deduplicated entries"
-    assert "improving dataset" in messages
+    # The run opens with a full task description naming the input, output, search
+    # strategies, and difficulty gate.
+    assert messages[0] == "improving dataset"
+    descriptor = events[0][1]
+    assert descriptor["input"] == str(path)
+    assert "breadth_first" in descriptor["strategies"]
+    assert descriptor["max_difficulty"] == 6
+    assert "deduplicated entries" in messages
     # the last improvement event accounts for every entry in the dataset
     final = next(metrics for message, metrics in reversed(events) if message == "improving dataset")
     assert final["processed"] == report.total

@@ -107,12 +107,32 @@ uv run --frozen aczero train \
 The training command generates a solvable curriculum, collects MCTS visit-count
 policy targets into replay, optimizes the architecture named by `model:` in the
 config, writes JSON checkpoints and metrics, emits progress logs/ASCII graphs,
-and verifies a fixture certificate. The registered architectures
+and verifies a fixture certificate. When it finishes it renders PNG plots of the
+training progress (`artifacts/loss_curves.png` and `artifacts/selfplay_progress.png`)
+and reports their paths; on an interactive terminal with a display they are also
+opened in the default image viewer. The registered architectures
 (`linear_policy_value`, `residual_mlp`, `deepsets`, `gru`, `transformer`) are
 genuine trainable NumPy models built on a small reverse-mode autodiff engine and
 trained by exact gradient descent; see [docs/architectures.md](docs/architectures.md).
 They are deterministic CPU baselines, not a claim of production-scale neural
 performance.
+
+The same pipeline also offers an on-policy PPO backend. Select it with
+`agent: ppo` in a train config (see
+[configs/experiments/ppo_rank2.yaml](configs/experiments/ppo_rank2.yaml)):
+
+```bash
+uv run --frozen aczero train --config configs/experiments/ppo_rank2.yaml --seed 0
+```
+
+Instead of MCTS self-play it samples rollouts from the current policy, estimates
+advantages with GAE(`ppo_gamma`, `ppo_lambda`), and runs `ppo_epochs` of
+minibatch clipped-surrogate updates (`ppo_clip`, `entropy_coef`, reusing
+`value_loss_weight` for the value term) over that on-policy data — writing the
+same checkpoints, metrics, plots, and verified certificate. Rollout collection
+fans out across worker processes exactly like self-play, so the trained model is
+independent of the worker count. A trained checkpoint can then drive a greedy
+policy decode via `aczero solve --agent ppo --checkpoint <path>`.
 
 Run the dedicated greedy RL agent test pipeline:
 
@@ -123,7 +143,8 @@ sh scripts/test_greedy_rl_agent.sh
 Run a solve with any implemented agent. Greedy stops honestly at a local
 minimum; greedy best-first explores a length-ordered frontier; breadth-first and
 iterative-deepening return shortest (and, within their caps, provably optimal)
-certificates; `puct` runs the model-guided PUCT search.
+certificates; `puct` runs the model-guided PUCT search; `ppo` greedily decodes a
+policy-value model (add `--checkpoint <path>` to use a PPO-trained one).
 
 ```bash
 uv run --frozen aczero solve --agent greedy
@@ -131,6 +152,7 @@ uv run --frozen aczero solve --agent greedy-best-first
 uv run --frozen aczero solve --agent breadth-first
 uv run --frozen aczero solve --agent iterative-deepening
 uv run --frozen aczero solve --agent puct
+uv run --frozen aczero solve --agent ppo --checkpoint runs/train/ppo_rank2/checkpoints/latest.json
 ```
 
 Validate a dataset against the schema (structure, label fields, and recomputed
@@ -242,8 +264,9 @@ This repository provides a runnable research-grade foundation, a CPU smoke path,
 and a deterministic CPU policy/value training baseline. The registered
 architectures (`residual_mlp`, `deepsets`, `gru`, `transformer`, and the linear
 baseline) are genuine trainable NumPy models trained end-to-end by exact gradient
-descent. They are intentionally small CPU baselines; production-scale JAX/Flax
-AlphaZero, PPO, and DQN systems on accelerators remain future work. Numerical
+descent, with both AlphaZero (PUCT self-play) and PPO training backends. They are
+intentionally small CPU baselines; production-scale JAX/Flax training on
+accelerators, and a DQN backend, remain future work. Numerical
 nondeterminism is expected on future GPU/TPU training runs; the manifest
 machinery records lockfile, platform, configuration, and backend metadata to
 make such differences auditable.

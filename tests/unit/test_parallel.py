@@ -1,6 +1,7 @@
 import os
 
 from ac_zero.system.parallel import (
+    describe_worker_pool,
     detect_core_count,
     imap_ordered,
     parallel_map,
@@ -60,6 +61,21 @@ def test_imap_ordered_runs_initializer_in_each_mode() -> None:
         imap_ordered(_label, [1, 2, 3], workers=2, initializer=_init_prefix, initargs=("p",))
     )
     assert parallel == ["p1", "p2", "p3"]
+
+
+def test_describe_worker_pool_reports_parallel_run() -> None:
+    resolved, message, metrics = describe_worker_pool(3)
+    assert resolved == 3
+    assert "3 worker processes" in message
+    assert metrics == {"workers": 3, "cores": detect_core_count(), "parallel": True}
+
+
+def test_describe_worker_pool_reports_in_process_run() -> None:
+    resolved, message, metrics = describe_worker_pool(1)
+    assert resolved == 1
+    assert "in-process" in message
+    assert metrics["parallel"] is False
+    assert metrics["workers"] == 1
 
 
 def test_imap_ordered_is_lazy_for_single_item() -> None:

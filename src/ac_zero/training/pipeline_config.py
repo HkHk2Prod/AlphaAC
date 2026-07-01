@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
+from ac_zero.environment.rewards import REWARD_MODES
+
 
 @dataclass(frozen=True, slots=True)
 class TrainingPipelineConfig:
@@ -13,9 +15,22 @@ class TrainingPipelineConfig:
     max_moves: int = 8
     total_length_cap: int = 128
     max_word_length: int = 32
+    goal_mode: str = "exact_standard"
+    reward_mode: str = "length_reduction_and_goal"
+    goal_reward: float = 1.0
     model: str = "linear_policy_value"
+    # Training backend: "alphazero" (PUCT self-play) or "ppo" (on-policy PPO).
+    agent: str = "alphazero"
     mcts_simulations: int = 16
     c_puct: float = 1.5
+    # PPO backend hyperparameters (ignored by the AlphaZero backend). Rollout
+    # count reuses `episodes_per_iteration`, the minibatch size `batch_size`, and
+    # the value-loss coefficient `value_loss_weight`.
+    ppo_gamma: float = 0.99
+    ppo_lambda: float = 0.95
+    ppo_clip: float = 0.2
+    ppo_epochs: int = 4
+    entropy_coef: float = 0.01
     iterations: int = 2
     episodes_per_iteration: int = 4
     optimizer_updates: int = 4
@@ -43,10 +58,18 @@ class TrainingPipelineConfig:
             scramble_depth=int(
                 dataset.get("depth", data.get("scramble_depth", defaults.scramble_depth))
             ),
-            max_moves=int(data.get("max_moves", defaults.max_moves)),
+            max_moves=int(data.get("max_moves", data.get("horizon", defaults.max_moves))),
             total_length_cap=int(data.get("total_length_cap", defaults.total_length_cap)),
             max_word_length=int(data.get("max_word_length", defaults.max_word_length)),
+            goal_mode=str(data.get("goal_mode", defaults.goal_mode)),
+            reward_mode=str(
+                training.get("reward_mode", data.get("reward_mode", defaults.reward_mode))
+            ),
+            goal_reward=float(
+                training.get("goal_reward", data.get("goal_reward", defaults.goal_reward))
+            ),
             model=str(data.get("model", defaults.model)),
+            agent=str(data.get("agent", defaults.agent)),
             mcts_simulations=int(
                 training.get(
                     "mcts_simulations",
@@ -54,6 +77,15 @@ class TrainingPipelineConfig:
                 )
             ),
             c_puct=float(training.get("c_puct", data.get("c_puct", defaults.c_puct))),
+            ppo_gamma=float(training.get("ppo_gamma", data.get("ppo_gamma", defaults.ppo_gamma))),
+            ppo_lambda=float(
+                training.get("ppo_lambda", data.get("ppo_lambda", defaults.ppo_lambda))
+            ),
+            ppo_clip=float(training.get("ppo_clip", data.get("ppo_clip", defaults.ppo_clip))),
+            ppo_epochs=int(training.get("ppo_epochs", data.get("ppo_epochs", defaults.ppo_epochs))),
+            entropy_coef=float(
+                training.get("entropy_coef", data.get("entropy_coef", defaults.entropy_coef))
+            ),
             iterations=int(training.get("iterations", data.get("iterations", defaults.iterations))),
             episodes_per_iteration=int(
                 training.get(
@@ -113,10 +145,26 @@ class TrainingPipelineConfig:
             raise ValueError("total_length_cap must be positive")
         if self.max_word_length <= 0:
             raise ValueError("max_word_length must be positive")
+        if self.reward_mode not in REWARD_MODES:
+            raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
+        if self.goal_reward < 0.0:
+            raise ValueError("goal_reward must be non-negative")
+        if self.agent not in ("alphazero", "ppo"):
+            raise ValueError("agent must be 'alphazero' or 'ppo'")
         if self.mcts_simulations <= 0:
             raise ValueError("mcts_simulations must be positive")
         if self.c_puct <= 0.0:
             raise ValueError("c_puct must be positive")
+        if not 0.0 < self.ppo_gamma <= 1.0:
+            raise ValueError("ppo_gamma must be in (0, 1]")
+        if not 0.0 <= self.ppo_lambda <= 1.0:
+            raise ValueError("ppo_lambda must be in [0, 1]")
+        if self.ppo_clip <= 0.0:
+            raise ValueError("ppo_clip must be positive")
+        if self.ppo_epochs <= 0:
+            raise ValueError("ppo_epochs must be positive")
+        if self.entropy_coef < 0.0:
+            raise ValueError("entropy_coef must be non-negative")
         if self.iterations <= 0:
             raise ValueError("iterations must be positive")
         if self.episodes_per_iteration <= 0:

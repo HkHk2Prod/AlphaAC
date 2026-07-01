@@ -1,23 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 from ac_zero.algebra.presentation import BalancedPresentation
 
 
 class MoveError(ValueError):
     """Raised when an AC move is invalid."""
-
-
-class ACMove(Protocol):
-    """Protocol for primitive Andrews-Curtis moves."""
-
-    def apply(self, presentation: BalancedPresentation) -> BalancedPresentation: ...
-
-    def to_json(self) -> dict[str, Any]: ...
-
-    def notation(self) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,10 +31,6 @@ class MultiplyRelatorsMove:
         """Serialize this primitive move to certificate JSON."""
         return {"type": self.kind, "target": self.target, "source": self.source}
 
-    def notation(self) -> str:
-        """Return a human-readable mathematical notation string."""
-        return f"AC1(r{self.target + 1} <- r{self.target + 1} r{self.source + 1})"
-
 
 @dataclass(frozen=True, slots=True)
 class InvertRelatorMove:
@@ -63,10 +49,6 @@ class InvertRelatorMove:
     def to_json(self) -> dict[str, Any]:
         """Serialize this primitive move to certificate JSON."""
         return {"type": self.kind, "target": self.target}
-
-    def notation(self) -> str:
-        """Return a human-readable mathematical notation string."""
-        return f"AC2(r{self.target + 1} <- r{self.target + 1}^-1)"
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,26 +71,21 @@ class ConjugateRelatorMove:
         """Serialize this primitive move to certificate JSON."""
         return {"type": self.kind, "target": self.target, "generator": self.generator}
 
-    def notation(self) -> str:
-        """Return a human-readable mathematical notation string."""
-        return (
-            f"AC3(r{self.target + 1} <- x{self.generator} r{self.target + 1} x{self.generator}^-1)"
-        )
-
 
 PrimitiveMove = MultiplyRelatorsMove | InvertRelatorMove | ConjugateRelatorMove
 
 
 def move_from_json(data: dict[str, Any]) -> PrimitiveMove:
     """Deserialize one strict primitive move from certificate JSON."""
-    typ = data.get("type")
-    if typ == "AC1":
-        return MultiplyRelatorsMove(int(data["target"]), int(data["source"]))
-    if typ == "AC2":
-        return InvertRelatorMove(int(data["target"]))
-    if typ == "AC3":
-        return ConjugateRelatorMove(int(data["target"]), int(data["generator"]))
-    raise MoveError(f"unknown primitive move type {typ!r}")
+    match data.get("type"):
+        case "AC1":
+            return MultiplyRelatorsMove(int(data["target"]), int(data["source"]))
+        case "AC2":
+            return InvertRelatorMove(int(data["target"]))
+        case "AC3":
+            return ConjugateRelatorMove(int(data["target"]), int(data["generator"]))
+        case typ:
+            raise MoveError(f"unknown primitive move type {typ!r}")
 
 
 def _check_index(presentation: BalancedPresentation, index: int) -> None:

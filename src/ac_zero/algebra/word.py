@@ -26,8 +26,8 @@ class FreeGroupWord:
     letters: tuple[int, ...]
     rank: int
 
-    def __init__(self, letters: Iterable[int] = (), rank: int = 0, *, reduce: bool = True) -> None:
-        """Validate and optionally freely reduce a signed-integer word."""
+    def __init__(self, letters: Iterable[int] = (), rank: int = 0) -> None:
+        """Validate and freely reduce a signed-integer word."""
         object.__setattr__(self, "rank", int(rank))
         raw = tuple(int(x) for x in letters)
         if self.rank < 0:
@@ -37,7 +37,7 @@ class FreeGroupWord:
                 raise WordError("0 is not a valid free-group letter")
             if self.rank and abs(letter) > self.rank:
                 raise WordError(f"letter {letter} exceeds rank {self.rank}")
-        object.__setattr__(self, "letters", _reduce_letters(raw) if reduce else raw)
+        object.__setattr__(self, "letters", _reduce_letters(raw))
 
     def __iter__(self) -> Iterator[int]:
         return iter(self.letters)
@@ -59,18 +59,14 @@ class FreeGroupWord:
         """Return the inverse word with reversed order and flipped signs."""
         return FreeGroupWord((-x for x in reversed(self.letters)), self.rank)
 
-    def concat(self, other: FreeGroupWord) -> FreeGroupWord:
-        """Concatenate two same-rank words and freely reduce the product."""
+    def __mul__(self, other: FreeGroupWord) -> FreeGroupWord:
+        """Return the freely reduced product `self * other`."""
         self._check_rank(other)
         return FreeGroupWord((*self.letters, *other.letters), self.rank)
 
-    def left_multiply(self, other: FreeGroupWord) -> FreeGroupWord:
-        """Return `other * self` with free reduction."""
-        return other.concat(self)
-
-    def right_multiply(self, other: FreeGroupWord) -> FreeGroupWord:
-        """Return `self * other` with free reduction."""
-        return self.concat(other)
+    def concat(self, other: FreeGroupWord) -> FreeGroupWord:
+        """Concatenate two same-rank words and freely reduce the product."""
+        return self * other
 
     def conjugate_by_letter(self, generator: int) -> FreeGroupWord:
         """Return `g self g^-1` for one signed generator `g`."""
@@ -98,29 +94,6 @@ class FreeGroupWord:
             parts.append(name if letter > 0 else f"{name}^-1")
         return " ".join(parts)
 
-    @classmethod
-    def parse(
-        cls, text: str, rank: int, generator_names: tuple[str, ...] | None = None
-    ) -> FreeGroupWord:
-        """Parse whitespace-separated generator tokens into a free-group word."""
-        text = text.strip()
-        if text in {"", "1"}:
-            return cls((), rank)
-        names = generator_names or tuple(f"x{i}" for i in range(1, rank + 1))
-        mapping: dict[str, int] = {}
-        for idx, name in enumerate(names, start=1):
-            mapping[name] = idx
-            mapping[f"{name}^-1"] = -idx
-            mapping[f"{name}^-"] = -idx
-            mapping[f"{name}-1"] = -idx
-        try:
-            return cls((mapping[token] for token in text.split()), rank)
-        except KeyError as exc:
-            raise WordError(f"unknown token {exc.args[0]!r}") from exc
-
     def _check_rank(self, other: FreeGroupWord) -> None:
         if self.rank != other.rank:
             raise WordError("cannot combine words with different ranks")
-
-
-IDENTITY = FreeGroupWord(())

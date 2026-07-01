@@ -102,6 +102,12 @@ def test_write_dataset_reports_start_and_write(tmp_path) -> None:
     )
 
     messages = [message for message, _ in events]
-    assert messages[0] == "starting generation"
+    # The run opens with a full task description naming every shaping parameter.
+    assert messages[0] == "generating dataset"
+    descriptor = events[0][1]
+    assert descriptor["rank"] == 2
+    assert descriptor["count"] == 8
+    assert descriptor["depths"] == "[9]"
+    assert descriptor["seed"] == 1
     assert messages[-1] == "dataset written"
     assert events[-1][1]["instances"] == 8

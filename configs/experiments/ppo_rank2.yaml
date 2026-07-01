@@ -1,3 +1,21 @@
 rank: 2
 agent: ppo
-horizon: 16
+model: residual_mlp
+max_moves: 16
+total_length_cap: 128
+dataset:
+  count: 8
+  depth: 3
+training:
+  iterations: 3
+  episodes_per_iteration: 8
+  batch_size: 16
+  ppo_epochs: 4
+  ppo_gamma: 0.99
+  ppo_lambda: 0.95
+  ppo_clip: 0.2
+  entropy_coef: 0.01
+  value_loss_weight: 0.5
+  learning_rate: 0.02
+  checkpoint_every: 1
+  run_directory: runs/train/ppo_rank2

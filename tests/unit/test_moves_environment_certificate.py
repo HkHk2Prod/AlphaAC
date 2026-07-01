@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.certificate import build_certificate
 from ac_zero.certificates.verifier import CertificateVerifier
@@ -14,6 +16,30 @@ def test_catalog_size_and_order_rank_two() -> None:
     assert len(catalog) == 12
     assert catalog.move(0) == MultiplyRelatorsMove(0, 1)
     assert catalog.action_id(InvertRelatorMove(0)) == 2
+
+
+def test_catalog_moves_built_once_and_cached() -> None:
+    catalog = ActionCatalog(3)
+    # The property returns the same tuple object on every access (no rebuild).
+    assert catalog.moves is catalog.moves
+
+
+def test_catalog_action_id_round_trips_for_every_move() -> None:
+    catalog = ActionCatalog(3)
+    for expected_id, move in enumerate(catalog.moves):
+        assert catalog.action_id(move) == expected_id
+        assert catalog.move(expected_id) == move
+
+
+def test_catalog_action_id_rejects_unknown_move() -> None:
+    catalog = ActionCatalog(2)
+    with pytest.raises(ValueError, match="not in catalog"):
+        catalog.action_id(InvertRelatorMove(5))
+
+
+def test_catalog_equality_ignores_internal_lookup() -> None:
+    assert ActionCatalog(2) == ActionCatalog(2)
+    assert hash(ActionCatalog(2)) == hash(ActionCatalog(2))
 
 
 def test_hand_checked_moves_do_not_mutate_original() -> None:

@@ -8,7 +8,6 @@ from ac_zero.datasets.candidates import (
     akbulut_kirby,
     candidate_entries,
     miller_schupp,
-    standard_candidates,
     write_candidates,
 )
 
@@ -31,8 +30,8 @@ def test_miller_schupp_requires_zero_x_exponent_sum() -> None:
         miller_schupp(2, [3])
 
 
-def test_standard_candidates_are_distinct_and_round_trip() -> None:
-    presentations = standard_candidates()
+def test_candidate_presentations_are_distinct_and_round_trip() -> None:
+    presentations = [presentation for presentation, _ in candidate_entries()]
     assert len(presentations) >= 5
     hashes = {p.content_hash for p in presentations}
     assert len(hashes) == len(presentations)

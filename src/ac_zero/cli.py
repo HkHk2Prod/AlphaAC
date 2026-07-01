@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
+import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, TypedDict
@@ -12,6 +15,7 @@ import yaml  # type: ignore[import-untyped]
 
 from ac_zero.agents.base import SolverResult
 from ac_zero.agents.greedy import GreedyBestFirstSearch, GreedySolver
+from ac_zero.agents.ppo import PPOAgent
 from ac_zero.agents.random_agent import RandomLegalActionAgent
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.verifier import CertificateVerifier
@@ -26,7 +30,8 @@ from ac_zero.datasets.update import (
 from ac_zero.datasets.validation import validate_dataset
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
-from ac_zero.models.registry import create_trainable_model
+from ac_zero.models.registry import create_trainable_model, model_from_json
+from ac_zero.search.bidirectional import BidirectionalSearch
 from ac_zero.search.breadth_first import BreadthFirstSearch
 from ac_zero.search.iterative_deepening import IterativeDeepeningConfig, IterativeDeepeningSearch
 from ac_zero.search.mcts import UniformMCTS
@@ -87,8 +92,10 @@ def main(argv: list[str] | None = None) -> int:
             "greedy",
             "greedy-best-first",
             "breadth-first",
+            "bidirectional",
             "iterative-deepening",
             "puct",
+            "ppo",
             "uniform-mcts",
         ],
         default="greedy",
@@ -145,7 +152,7 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
     if args.cmd == "benchmark":
         return _benchmark(reporter)
     if args.cmd == "solve":
-        return _solve(Path(args.presentation), args.agent, reporter)
+        return _solve(Path(args.presentation), args.agent, args.checkpoint, reporter)
     if args.cmd == "certificate":
         result = CertificateVerifier().verify_path(args.path)
         if args.subcmd == "render":
@@ -207,19 +214,62 @@ def _train(config_path: Path, seed: int, workers: int | None, reporter: CliRepor
     if workers is not None:
         config = replace(config, workers=workers)
     summary = run_training_pipeline(config, seed)
+    _present_plots(summary.plot_paths, reporter)
     reporter.result_json(
         {
             "training": summary.run_directory,
             "checkpoint": summary.checkpoint_path,
             "certificate": summary.certificate_path,
             "optimizer_updates": summary.optimizer_updates,
+            "plots": list(summary.plot_paths),
         },
         sort_keys=True,
     )
     return 0
 
 
-def _solve(path: Path, agent_name: str, reporter: CliReporter) -> int:
+def _present_plots(plot_paths: Sequence[str], reporter: CliReporter) -> None:
+    """Surface the rendered training plots: report them and open in a viewer.
+
+    Each plot path is reported so the run log records where the figures live.
+    When stdout is an interactive terminal with a display, the figures are also
+    opened in the OS default image viewer; opening is best-effort and never fails
+    the command.
+    """
+    if not plot_paths:
+        return
+    for path in plot_paths:
+        reporter.progress("plots", "training plot ready", {"path": path})
+    if not (sys.stdout.isatty() and _has_display()):
+        return
+    for path in plot_paths:
+        try:
+            _open_in_viewer(path)
+        except OSError as exc:
+            reporter.warning(
+                "plots", "could not open plot in a viewer", {"path": path, "error": str(exc)}
+            )
+
+
+def _has_display() -> bool:
+    """Whether a GUI viewer can plausibly be launched on this platform."""
+    if sys.platform.startswith("darwin") or sys.platform.startswith("win"):
+        return True
+    # On Linux a viewer needs an X11 or Wayland session.
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _open_in_viewer(path: str) -> None:
+    """Open one file in the platform's default application."""
+    if sys.platform.startswith("darwin"):
+        subprocess.Popen(["open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif sys.platform.startswith("win"):
+        os.startfile(path)  # type: ignore[attr-defined]  # Windows-only
+    else:
+        subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _solve(path: Path, agent_name: str, checkpoint: str, reporter: CliReporter) -> int:
     """Load one presentation and solve it with the requested smoke agent."""
     max_moves = 8
     if path.exists() and path.suffix == ".json":
@@ -257,6 +307,13 @@ def _solve(path: Path, agent_name: str, reporter: CliReporter) -> int:
             certificate_path=cert_path,
             experiment_id="solve",
         )
+    elif agent_name == "bidirectional":
+        result = BidirectionalSearch().solve(
+            pres,
+            env_template=env,
+            certificate_path=cert_path,
+            experiment_id="solve",
+        )
     elif agent_name == "iterative-deepening":
         result = IterativeDeepeningSearch().solve(
             pres,
@@ -266,6 +323,8 @@ def _solve(path: Path, agent_name: str, reporter: CliReporter) -> int:
         )
     elif agent_name == "puct":
         result = _puct_solve(pres, env, cert_path)
+    elif agent_name == "ppo":
+        result = _ppo_solve(pres, env, cert_path, checkpoint)
     else:
         mcts = UniformMCTS(8)
         path_ids: list[int] = []
@@ -330,6 +389,52 @@ def _puct_solve(pres: BalancedPresentation, env: ACEnvironment, cert_path: Path)
     )
 
 
+def _ppo_solve(
+    pres: BalancedPresentation, env: ACEnvironment, cert_path: Path, checkpoint: str = ""
+) -> SolverResult:
+    """Greedily decode a PPO-trained policy to termination, writing a certificate.
+
+    With a checkpoint the policy comes from that trained model; without one it
+    falls back to an untrained model so the agent path stays runnable in smoke
+    workflows, mirroring how the PUCT smoke solver behaves.
+    """
+    model = (
+        _load_checkpoint_model(checkpoint)
+        if checkpoint
+        else create_trainable_model("residual_mlp", seed=0)
+    )
+    agent = PPOAgent(model, StateEncoder())
+    path_ids: list[int] = []
+    terminated = False
+    while len(path_ids) < env.config.max_moves:
+        if not any(env.legal_action_mask()):
+            break
+        action = agent.select_action(env)
+        path_ids.append(action)
+        _, _, terminated, truncated, _ = env.step(action)
+        if terminated or truncated:
+            break
+    return GreedySolver()._result(
+        pres,
+        env.state.presentation,
+        tuple(path_ids),
+        len(path_ids),
+        len(path_ids),
+        "goal" if terminated else "horizon",
+        terminated,
+        cert_path,
+        env.config.goal_mode,
+        "solve",
+        0,
+    )
+
+
+def _load_checkpoint_model(checkpoint: str) -> Any:
+    """Rebuild a trainable model from a training checkpoint's saved weights."""
+    data = json.loads(Path(checkpoint).read_text())
+    return model_from_json(data.get("model_state", data))
+
+
 def _benchmark(reporter: CliReporter) -> int:
     """Run every implemented solver on a shared fixture and write verified results."""
     run = Path("runs/smoke/evaluation")
@@ -343,8 +448,10 @@ def _benchmark(reporter: CliReporter) -> int:
         "greedy",
         "greedy_best_first",
         "breadth_first",
+        "bidirectional",
         "iterative_deepening",
         "puct",
+        "ppo",
     ):
         env = ACEnvironment(pres, config)
         cert = certs / f"{name}.json"
@@ -368,12 +475,18 @@ def _benchmark_agent(
         return BreadthFirstSearch().solve(
             pres, env_template=env, certificate_path=cert, experiment_id="benchmark"
         )
+    if name == "bidirectional":
+        return BidirectionalSearch().solve(
+            pres, env_template=env, certificate_path=cert, experiment_id="benchmark"
+        )
     if name == "iterative_deepening":
         return IterativeDeepeningSearch(IterativeDeepeningConfig(max_generated=50_000)).solve(
             pres, env_template=env, certificate_path=cert, experiment_id="benchmark"
         )
     if name == "puct":
         return _puct_solve(pres, env, cert)
+    if name == "ppo":
+        return _ppo_solve(pres, env, cert)
     return _random_rollout(pres, env, cert)
 
 

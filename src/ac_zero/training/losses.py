@@ -1,10 +1,25 @@
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
+
+
+def sample_from_policy(policy: NDArray[np.float64], rng: random.Random) -> int:
+    """Sample one action index from a (possibly unnormalized) policy vector."""
+    total = float(np.sum(policy))
+    if total <= 0.0:
+        raise RuntimeError("cannot sample from an empty policy")
+    threshold = rng.random()
+    cumulative = 0.0
+    for idx, probability in enumerate(policy):
+        cumulative += float(probability) / total
+        if threshold <= cumulative:
+            return idx
+    return int(np.argmax(policy))
 
 
 def return_to_go(rewards: list[float]) -> list[float]:
@@ -24,6 +39,23 @@ class PolicyValueLoss:
     policy_loss: float
     value_loss: float
     total_loss: float
+
+
+@dataclass(frozen=True, slots=True)
+class PPOBatchStats:
+    """Mean diagnostics from one PPO minibatch update.
+
+    `clip_fraction` is the share of samples whose probability ratio left the
+    trust region, and `approx_kl` the mean ``old_logp - new_logp``; both are the
+    standard signals for whether the step size and clip range are well matched.
+    """
+
+    policy_loss: float
+    value_loss: float
+    entropy: float
+    total_loss: float
+    clip_fraction: float
+    approx_kl: float
 
 
 def visit_count_policy(

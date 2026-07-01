@@ -13,15 +13,21 @@ class PaddedEncoding:
     """Fixed-shape NumPy representation of an `ACSearchState`.
 
     `tokens` stores shifted signed-generator IDs with zero reserved for padding.
-    `relator_indices` preserves tuple structure after padding. `mask` marks real
-    token positions. `scalar_features` carries non-word Markov information such
-    as remaining horizon and normalized lengths.
+    `mask` marks real token positions. `scalar_features` carries non-word Markov
+    information such as remaining horizon and normalized lengths.
     """
 
     tokens: NDArray[np.int64]
-    relator_indices: NDArray[np.int64]
     mask: NDArray[np.bool_]
     scalar_features: NDArray[np.float64]
+
+    def as_observation(self) -> dict[str, NDArray[np.generic]]:
+        """Return a Gymnasium-space-conformant dict of the encoded arrays."""
+        return {
+            "tokens": self.tokens,
+            "mask": self.mask.astype(np.int8),
+            "scalar_features": self.scalar_features,
+        }
 
 
 class StateEncoder:
@@ -40,13 +46,11 @@ class StateEncoder:
         """Convert one immutable search state into padded token arrays."""
         rank = state.presentation.rank
         rows = []
-        rel_indices = []
         masks = []
-        for ridx, relator in enumerate(state.presentation.relators):
+        for relator in state.presentation.relators:
             row = [letter + rank + 1 for letter in relator.letters[: self.max_word_length]]
             pad = self.max_word_length - len(row)
             rows.append(row + [0] * pad)
-            rel_indices.append([ridx] * self.max_word_length)
             masks.append([True] * len(row) + [False] * pad)
         scalars = np.asarray(
             [
@@ -59,7 +63,6 @@ class StateEncoder:
         )
         return PaddedEncoding(
             np.asarray(rows, dtype=np.int64),
-            np.asarray(rel_indices, dtype=np.int64),
             np.asarray(masks, dtype=np.bool_),
             scalars,
         )
