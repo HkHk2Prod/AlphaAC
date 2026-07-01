@@ -4,53 +4,33 @@ import json
 import random
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
 
 from ac_zero.agents.greedy import GreedySolver
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.generator import generate_solvable
-from ac_zero.encoding.padded import PaddedEncoding, StateEncoder
-from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
-from ac_zero.models.base import PolicyValueModel
-from ac_zero.models.registry import create_trainable_model, model_from_json
-from ac_zero.models.trainable import TrainablePolicyValueModel
-from ac_zero.search.puct import PUCTMCTS, PUCTConfig
+from ac_zero.encoding.padded import StateEncoder
+from ac_zero.environment.env import ACEnvironment
+from ac_zero.models.registry import create_trainable_model
 from ac_zero.system.manifests import ReproducibilityManifest
-from ac_zero.system.parallel import parallel_map, resolve_worker_count
+from ac_zero.system.parallel import describe_worker_pool
 from ac_zero.training.callbacks import CallbackManager, default_training_callbacks
 from ac_zero.training.checkpointing import CheckpointManager
-from ac_zero.training.losses import (
-    PolicyValueLoss,
-    return_to_go,
-    visit_count_policy,
-)
+from ac_zero.training.events import LogLevel
+from ac_zero.training.losses import PolicyValueLoss
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.pipeline_episodes import (
+    EpisodeMetrics,
+    ReplayExample,
+    build_env_config,
+    collect_episodes,
+)
+from ac_zero.training.plots import PlotsUnavailable, render_training_plots
+from ac_zero.training.ppo import PPOTrainer
 from ac_zero.training.replay_buffer import ReplayBuffer
 
-
-@dataclass(frozen=True, slots=True)
-class ReplayExample:
-    """One policy/value training target collected from a search state."""
-
-    encoding: PaddedEncoding
-    legal_mask: tuple[bool, ...]
-    policy_target: NDArray[np.float64]
-    value_target: float
-    reward: float
-    action: int
-
-
-@dataclass(frozen=True, slots=True)
-class EpisodeMetrics:
-    """Small aggregate metrics from one generated episode."""
-
-    total_return: float
-    normalized_return: float
-    success: bool
-    moves: int
+MetricsRow = dict[str, float | int | bool | str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +52,32 @@ class TrainingPipelineSummary:
     progress_log_path: str
     live_graph_path: str
     final_graph_path: str
+    plot_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _RunDirectories:
+    """The output subdirectories of a single training run."""
+
+    run: Path
+    checkpoints: Path
+    certificates: Path
+    artifacts: Path
+    logs: Path
+
+    @classmethod
+    def create(cls, run_directory: str) -> _RunDirectories:
+        run = Path(run_directory)
+        dirs = cls(
+            run=run,
+            checkpoints=run / "checkpoints",
+            certificates=run / "certificates",
+            artifacts=run / "artifacts",
+            logs=run / "logs",
+        )
+        for directory in (dirs.checkpoints, dirs.certificates, dirs.artifacts, dirs.logs):
+            directory.mkdir(parents=True, exist_ok=True)
+        return dirs
 
 
 def run_training_pipeline(
@@ -80,331 +86,332 @@ def run_training_pipeline(
     callbacks: CallbackManager | None = None,
 ) -> TrainingPipelineSummary:
     """Run config-driven data generation, replay training, and artifact writing."""
-    config.validate()
-    run = Path(config.run_directory)
-    checkpoint_dir = run / "checkpoints"
-    certificate_dir = run / "certificates"
-    artifact_dir = run / "artifacts"
-    log_dir = run / "logs"
-    for directory in (checkpoint_dir, certificate_dir, artifact_dir, log_dir):
-        directory.mkdir(parents=True, exist_ok=True)
-    manager = callbacks or default_training_callbacks(run)
-    replay = ReplayBuffer[ReplayExample](config.replay_capacity)
-    encoder = StateEncoder(config.max_word_length)
-    rng = random.Random(seed)
-    model = create_trainable_model(config.model, seed=seed)
-    checkpoint_manager = CheckpointManager(checkpoint_dir)
-    metrics_rows: list[dict[str, float | int | bool | str]] = []
-    optimizer_step = 0
-    final_loss = PolicyValueLoss(0.0, 0.0, 0.0)
-    total_episodes = 0
+    return _TrainingRun(config, seed, callbacks).execute()
 
-    try:
-        manager.emit(
-            0,
-            "start",
-            "starting training pipeline",
-            {
-                "seed": seed,
-                "rank": config.rank,
-                "requested_model": config.model,
-                "training_model": model.architecture,
-                "mcts_simulations": config.mcts_simulations,
-            },
-        )
-        for iteration in range(1, config.iterations + 1):
-            episodes = []
-            collected = _collect_episodes(config, encoder, model, seed, iteration)
-            for examples, episode_metrics in collected:
-                replay.extend(examples)
-                episodes.append(episode_metrics)
-            total_episodes += len(episodes)
-            mean_return = float(np.mean([episode.normalized_return for episode in episodes]))
-            success_rate = float(np.mean([1.0 if episode.success else 0.0 for episode in episodes]))
-            manager.emit(
-                iteration * 100,
-                "self_play",
-                "collected search-guided replay",
+
+class _TrainingRun:
+    """One config-driven training run: self-play, replay training, and artifacts.
+
+    Holds the state shared across the run — the model, replay buffer, RNG, log
+    manager, and the running optimizer-step/loss/episode counters — so the step
+    methods operate on `self` instead of threading that state through arguments.
+    """
+
+    def __init__(
+        self, config: TrainingPipelineConfig, seed: int, callbacks: CallbackManager | None
+    ) -> None:
+        config.validate()
+        self.config = config
+        self.seed = seed
+        self.dirs = _RunDirectories.create(config.run_directory)
+        self.manager = callbacks or default_training_callbacks(self.dirs.run)
+        self.replay = ReplayBuffer[ReplayExample](config.replay_capacity)
+        self.encoder = StateEncoder(config.max_word_length)
+        self.rng = random.Random(seed)
+        self.model = create_trainable_model(config.model, seed=seed)
+        self.checkpoints = CheckpointManager(self.dirs.checkpoints)
+        self.metrics_rows: list[MetricsRow] = []
+        self.optimizer_step = 0
+        self.final_loss = PolicyValueLoss(0.0, 0.0, 0.0)
+        self.total_episodes = 0
+        self.ppo = PPOTrainer(config, self.encoder) if config.agent == "ppo" else None
+
+    def execute(self) -> TrainingPipelineSummary:
+        try:
+            self.manager.emit(0, "start", "starting training pipeline", self._run_description())
+            _, worker_message, worker_metrics = describe_worker_pool(self.config.workers)
+            self.manager.emit(1, "self_play", worker_message, worker_metrics)
+
+            for iteration in range(1, self.config.iterations + 1):
+                self._train_iteration(iteration)
+
+            checkpoint_path = self._save_checkpoint(self.config.iterations)
+            restored = self.checkpoints.load_json("latest")
+            checkpoint_restored = restored["optimizer_state"]["step"] == self.optimizer_step
+            self._write_metrics()
+            plot_paths = self._render_plots()
+            ReproducibilityManifest.create(
+                "training", self.seed, {"pipeline": asdict(self.config)}
+            ).write(self.dirs.run / "manifest.json")
+
+            certificate_path, certificate_verified = self._write_certificate()
+            self.manager.emit(
+                self._late_event_id(2),
+                "certificate",
+                "solved fixture and verified certificate",
                 {
-                    "iteration": iteration,
-                    "episodes": total_episodes,
-                    "mean_return": mean_return,
-                    "success_rate": success_rate,
-                    "replay_size": len(replay),
+                    "certificate_verified": certificate_verified,
+                    "optimizer_updates": self.optimizer_step,
                 },
             )
 
-            for _ in range(config.optimizer_updates):
-                batch = replay.sample(config.batch_size, rng)
-                final_loss = model.train_batch(
-                    batch,
-                    learning_rate=config.learning_rate,
-                    value_loss_weight=config.value_loss_weight,
-                )
-                optimizer_step += 1
-                row: dict[str, float | int | bool | str] = {
-                    "iteration": iteration,
-                    "optimizer_step": optimizer_step,
-                    "batch_size": len(batch),
-                    "replay_size": len(replay),
-                    "policy_loss": final_loss.policy_loss,
-                    "value_loss": final_loss.value_loss,
-                    "total_loss": final_loss.total_loss,
-                    "mean_return": mean_return,
-                    "success_rate": success_rate,
-                }
-                metrics_rows.append(row)
-                manager.emit(
-                    iteration * 100 + optimizer_step,
-                    "optimizer",
-                    "updated policy-value model",
-                    row,
-                )
+            summary = self._build_summary(
+                str(checkpoint_path),
+                str(certificate_path),
+                checkpoint_restored,
+                certificate_verified,
+                plot_paths,
+            )
+            self.manager.emit(
+                self._late_event_id(3),
+                "completed",
+                "training pipeline completed",
+                {
+                    "optimizer_updates": summary.optimizer_updates,
+                    "replay_size": summary.replay_size,
+                    "total_loss": summary.final_total_loss,
+                },
+            )
+            (self.dirs.artifacts / "training_summary.json").write_text(
+                json.dumps(asdict(summary), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            return summary
+        except Exception as exc:
+            self.manager.emit_error("error", "training pipeline failed", exc)
+            raise
+        finally:
+            self.manager.close()
 
-            if iteration % config.checkpoint_every == 0:
-                checkpoint_path = _save_checkpoint(
-                    checkpoint_manager,
-                    config,
-                    seed,
-                    model,
-                    optimizer_step,
-                    len(replay),
-                    iteration,
-                    final_loss,
-                )
-                manager.emit(
-                    iteration * 100 + optimizer_step + 1,
-                    "checkpoint",
-                    "saved training checkpoint",
-                    {"iteration": iteration, "optimizer_step": optimizer_step},
-                )
-
-        checkpoint_path = _save_checkpoint(
-            checkpoint_manager,
-            config,
-            seed,
-            model,
-            optimizer_step,
-            len(replay),
-            config.iterations,
-            final_loss,
+    def _train_iteration(self, iteration: int) -> None:
+        """Run one iteration's self-play, then its optimizer updates and checkpoint."""
+        if self.ppo is not None:
+            self._train_iteration_ppo(iteration)
+            return
+        episodes = self._collect_iteration(iteration)
+        self.total_episodes += len(episodes)
+        mean_return, success_rate = _episode_stats(episodes)
+        self.manager.emit(
+            iteration * 100,
+            "self_play",
+            "collected search-guided replay",
+            {
+                "iteration": iteration,
+                "episodes": self.total_episodes,
+                "mean_return": mean_return,
+                "success_rate": success_rate,
+                "replay_size": len(self.replay),
+            },
         )
-        restored = checkpoint_manager.load_json("latest")
-        checkpoint_restored = restored["optimizer_state"]["step"] == optimizer_step
-        metrics_path = run / "metrics.jsonl"
-        metrics_path.write_text(
-            "".join(json.dumps(row, sort_keys=True) + "\n" for row in metrics_rows),
+        self._run_optimizer_updates(iteration, mean_return, success_rate)
+        if iteration % self.config.checkpoint_every == 0:
+            self._save_checkpoint(iteration)
+            self.manager.emit(
+                iteration * 100 + self.optimizer_step + 1,
+                "checkpoint",
+                "saved training checkpoint",
+                {"iteration": iteration, "optimizer_step": self.optimizer_step},
+            )
+
+    def _train_iteration_ppo(self, iteration: int) -> None:
+        """Run one PPO iteration: on-policy rollouts, clipped updates, checkpoint."""
+        assert self.ppo is not None
+        result = self.ppo.run_iteration(self.model, self.seed, iteration, self.rng)
+        self.total_episodes += len(result.episodes)
+        mean_return, success_rate = _episode_stats(result.episodes)
+        self.manager.emit(
+            iteration * 100,
+            "self_play",
+            "collected on-policy PPO rollouts",
+            {
+                "iteration": iteration,
+                "episodes": self.total_episodes,
+                "mean_return": mean_return,
+                "success_rate": success_rate,
+                "examples": result.example_count,
+            },
+        )
+        for stats in result.updates:
+            self.optimizer_step += 1
+            self.final_loss = PolicyValueLoss(stats.policy_loss, stats.value_loss, stats.total_loss)
+            row: MetricsRow = {
+                "iteration": iteration,
+                "optimizer_step": self.optimizer_step,
+                "examples": result.example_count,
+                "policy_loss": stats.policy_loss,
+                "value_loss": stats.value_loss,
+                "total_loss": stats.total_loss,
+                "entropy": stats.entropy,
+                "clip_fraction": stats.clip_fraction,
+                "approx_kl": stats.approx_kl,
+                "mean_return": mean_return,
+                "success_rate": success_rate,
+            }
+            self.metrics_rows.append(row)
+            self.manager.emit(
+                iteration * 100 + self.optimizer_step, "optimizer", "updated policy via PPO", row
+            )
+        if iteration % self.config.checkpoint_every == 0:
+            self._save_checkpoint(iteration)
+            self.manager.emit(
+                iteration * 100 + self.optimizer_step + 1,
+                "checkpoint",
+                "saved training checkpoint",
+                {"iteration": iteration, "optimizer_step": self.optimizer_step},
+            )
+
+    def _collect_iteration(self, iteration: int) -> list[EpisodeMetrics]:
+        """Collect this iteration's self-play episodes into the replay buffer."""
+        episodes: list[EpisodeMetrics] = []
+        collected = collect_episodes(self.config, self.encoder, self.model, self.seed, iteration)
+        for examples, episode_metrics in collected:
+            self.replay.extend(examples)
+            episodes.append(episode_metrics)
+        return episodes
+
+    def _run_optimizer_updates(
+        self, iteration: int, mean_return: float, success_rate: float
+    ) -> None:
+        """Sample replay batches and update the model, logging one row per step."""
+        self.final_loss = PolicyValueLoss(0.0, 0.0, 0.0)
+        for _ in range(self.config.optimizer_updates):
+            batch = self.replay.sample(self.config.batch_size, self.rng)
+            self.final_loss = self.model.train_batch(
+                batch,
+                learning_rate=self.config.learning_rate,
+                value_loss_weight=self.config.value_loss_weight,
+            )
+            self.optimizer_step += 1
+            row: MetricsRow = {
+                "iteration": iteration,
+                "optimizer_step": self.optimizer_step,
+                "batch_size": len(batch),
+                "replay_size": len(self.replay),
+                "policy_loss": self.final_loss.policy_loss,
+                "value_loss": self.final_loss.value_loss,
+                "total_loss": self.final_loss.total_loss,
+                "mean_return": mean_return,
+                "success_rate": success_rate,
+            }
+            self.metrics_rows.append(row)
+            self.manager.emit(
+                iteration * 100 + self.optimizer_step,
+                "optimizer",
+                "updated policy-value model",
+                row,
+            )
+
+    def _save_checkpoint(self, iteration: int) -> Path:
+        return self.checkpoints.save_json(
+            "latest",
+            {
+                "schema_version": "aczero-training-checkpoint-v1",
+                "seed": self.seed,
+                "iteration": iteration,
+                "config": asdict(self.config),
+                "model_state": self.model.to_json(),
+                "optimizer_state": {
+                    "step": self.optimizer_step,
+                    "learning_rate": self.config.learning_rate,
+                },
+                "replay_size": len(self.replay),
+                "loss": asdict(self.final_loss),
+            },
+        )
+
+    def _write_metrics(self) -> None:
+        (self.dirs.run / "metrics.jsonl").write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in self.metrics_rows),
             encoding="utf-8",
         )
-        ReproducibilityManifest.create("training", seed, {"pipeline": asdict(config)}).write(
-            run / "manifest.json"
-        )
 
-        certificate_path = certificate_dir / "example.json"
-        fixture = generate_solvable(config.rank, min(config.scramble_depth, 2), seed)
-        solve_env = ACEnvironment(fixture.presentation, _env_config(config))
+    def _write_certificate(self) -> tuple[Path, bool]:
+        """Solve a small fixture with the greedy solver and check its certificate verifies."""
+        certificate_path = self.dirs.certificates / "example.json"
+        fixture = generate_solvable(self.config.rank, min(self.config.scramble_depth, 2), self.seed)
+        solve_env = ACEnvironment(fixture.presentation, build_env_config(self.config))
         result = GreedySolver().solve(
             solve_env,
             certificate_path=certificate_path,
             experiment_id="training",
-            seed=seed,
+            seed=self.seed,
         )
-        certificate_verified = bool(
-            result.success and CertificateVerifier().verify_path(certificate_path).ok
-        )
-        manager.emit(
-            config.iterations * 100 + optimizer_step + 2,
-            "certificate",
-            "solved fixture and verified certificate",
-            {
-                "certificate_verified": certificate_verified,
-                "optimizer_updates": optimizer_step,
-            },
-        )
+        verified = bool(result.success and CertificateVerifier().verify_path(certificate_path).ok)
+        return certificate_path, verified
 
-        summary = TrainingPipelineSummary(
-            run_directory=str(run),
-            checkpoint_path=str(checkpoint_path),
-            certificate_path=str(certificate_path),
-            model_name=model.architecture,
-            iterations=config.iterations,
-            episodes=total_episodes,
-            replay_size=len(replay),
-            optimizer_updates=optimizer_step,
-            final_total_loss=final_loss.total_loss,
+    def _render_plots(self) -> tuple[str, ...]:
+        """Render training-progress plots, reporting the outcome through the log.
+
+        Returns the written PNG paths. If matplotlib is not installed the run still
+        succeeds — a warning is logged pointing at the always-available ASCII graphs
+        and an empty tuple is returned.
+        """
+        try:
+            paths = render_training_plots(self.metrics_rows, self.dirs.artifacts)
+        except PlotsUnavailable:
+            self.manager.emit(
+                self.optimizer_step + 10,
+                "plots",
+                "matplotlib not installed; skipping image plots (ASCII graphs still written)",
+                {"matplotlib": False},
+                level=LogLevel.WARNING,
+            )
+            return ()
+        if paths:
+            self.manager.emit(
+                self.optimizer_step + 10,
+                "plots",
+                "rendered training-progress plots",
+                {"count": len(paths), "directory": str(self.dirs.artifacts)},
+            )
+        return tuple(str(path) for path in paths)
+
+    def _build_summary(
+        self,
+        checkpoint_path: str,
+        certificate_path: str,
+        checkpoint_restored: bool,
+        certificate_verified: bool,
+        plot_paths: tuple[str, ...],
+    ) -> TrainingPipelineSummary:
+        return TrainingPipelineSummary(
+            run_directory=str(self.dirs.run),
+            checkpoint_path=checkpoint_path,
+            certificate_path=certificate_path,
+            model_name=self.model.architecture,
+            iterations=self.config.iterations,
+            episodes=self.total_episodes,
+            replay_size=len(self.replay),
+            optimizer_updates=self.optimizer_step,
+            final_total_loss=self.final_loss.total_loss,
             checkpoint_restored=checkpoint_restored,
             certificate_verified=certificate_verified,
-            event_log_path=str(log_dir / "training_events.jsonl"),
-            progress_log_path=str(log_dir / "progress.log"),
-            live_graph_path=str(artifact_dir / "live_graphs.txt"),
-            final_graph_path=str(artifact_dir / "final_graphs.txt"),
+            event_log_path=str(self.dirs.logs / "training_events.jsonl"),
+            progress_log_path=str(self.dirs.logs / "progress.log"),
+            live_graph_path=str(self.dirs.artifacts / "live_graphs.txt"),
+            final_graph_path=str(self.dirs.artifacts / "final_graphs.txt"),
+            plot_paths=plot_paths,
         )
-        manager.emit(
-            config.iterations * 100 + optimizer_step + 3,
-            "completed",
-            "training pipeline completed",
-            {
-                "optimizer_updates": summary.optimizer_updates,
-                "replay_size": summary.replay_size,
-                "total_loss": summary.final_total_loss,
-            },
-        )
-        (artifact_dir / "training_summary.json").write_text(
-            json.dumps(asdict(summary), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        return summary
-    except Exception as exc:
-        manager.emit_error("error", "training pipeline failed", exc)
-        raise
-    finally:
-        manager.close()
+
+    def _late_event_id(self, offset: int) -> int:
+        """Monotonic event id for the post-loop artifact/certificate/completion events."""
+        return self.config.iterations * 100 + self.optimizer_step + offset
+
+    def _run_description(self) -> MetricsRow:
+        """Full description of the run: every parameter that shapes the trained model,
+        so the run is reproducible from its opening log entry alone."""
+        config = self.config
+        return {
+            "seed": self.seed,
+            "rank": config.rank,
+            "agent": config.agent,
+            "requested_model": config.model,
+            "training_model": self.model.architecture,
+            "scramble_depth": config.scramble_depth,
+            "iterations": config.iterations,
+            "episodes_per_iteration": config.episodes_per_iteration,
+            "mcts_simulations": config.mcts_simulations,
+            "c_puct": config.c_puct,
+            "optimizer_updates": config.optimizer_updates,
+            "batch_size": config.batch_size,
+            "replay_capacity": config.replay_capacity,
+            "learning_rate": config.learning_rate,
+            "value_loss_weight": config.value_loss_weight,
+            "run_directory": config.run_directory,
+        }
 
 
-def _collect_episodes(
-    config: TrainingPipelineConfig,
-    encoder: StateEncoder,
-    model: TrainablePolicyValueModel,
-    seed: int,
-    iteration: int,
-) -> list[tuple[list[ReplayExample], EpisodeMetrics]]:
-    """Collect one iteration's self-play episodes, fanning out across processes.
-
-    Each episode is fully determined by its seed and the current model, so the
-    episodes run independently and are reassembled in order; the result is
-    identical whether one or many worker processes are used.
-    """
-    episode_seeds = [
-        seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)
-    ]
-    if resolve_worker_count(config.workers) <= 1:
-        return [
-            _collect_episode(config, encoder, episode_seed, model) for episode_seed in episode_seeds
-        ]
-    return parallel_map(
-        _episode_worker,
-        episode_seeds,
-        workers=config.workers,
-        initializer=_init_episode_worker,
-        initargs=(config, model.to_json()),
-    )
-
-
-# Per-worker state, populated once by the process-pool initializer so the model
-# is rebuilt from its serialized weights a single time per worker rather than
-# pickled with every episode task.
-_WORKER_CONFIG: TrainingPipelineConfig | None = None
-_WORKER_ENCODER: StateEncoder | None = None
-_WORKER_MODEL: PolicyValueModel | None = None
-
-
-def _init_episode_worker(config: TrainingPipelineConfig, model_state: dict[str, Any]) -> None:
-    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL
-    _WORKER_CONFIG = config
-    _WORKER_ENCODER = StateEncoder(config.max_word_length)
-    _WORKER_MODEL = model_from_json(model_state)
-
-
-def _episode_worker(episode_seed: int) -> tuple[list[ReplayExample], EpisodeMetrics]:
-    assert _WORKER_CONFIG is not None and _WORKER_ENCODER is not None and _WORKER_MODEL is not None
-    return _collect_episode(_WORKER_CONFIG, _WORKER_ENCODER, episode_seed, _WORKER_MODEL)
-
-
-def _collect_episode(
-    config: TrainingPipelineConfig,
-    encoder: StateEncoder,
-    episode_seed: int,
-    model: PolicyValueModel,
-) -> tuple[list[ReplayExample], EpisodeMetrics]:
-    # A per-episode RNG seeded from the episode seed keeps action sampling
-    # independent of execution order, so episodes can run in parallel and still
-    # reproduce exactly.
-    rng = random.Random(episode_seed)
-    instance = generate_solvable(config.rank, config.scramble_depth, episode_seed)
-    env = ACEnvironment(instance.presentation, _env_config(config))
-    mcts = PUCTMCTS(
-        model, encoder, PUCTConfig(simulations=config.mcts_simulations, c_puct=config.c_puct)
-    )
-    pending: list[tuple[PaddedEncoding, tuple[bool, ...], NDArray[np.float64], int, float]] = []
-    rewards: list[float] = []
-    terminated = False
-    truncated = False
-    while not terminated and not truncated:
-        encoding = encoder.encode(env.state)
-        legal_mask = env.legal_action_mask()
-        if not any(legal_mask):
-            break
-        stats = mcts.search(env)
-        policy_target = visit_count_policy(stats.visit_counts, legal_mask)
-        action = _sample_action(policy_target, rng)
-        _, reward, terminated, truncated, _ = env.step(action)
-        normalized_reward = reward / max(1.0, float(env.initial.total_length))
-        pending.append((encoding, legal_mask, policy_target, action, normalized_reward))
-        rewards.append(normalized_reward)
-    returns = return_to_go(rewards)
-    examples = [
-        ReplayExample(
-            encoding=encoding,
-            legal_mask=legal_mask,
-            policy_target=policy_target,
-            value_target=returns[idx],
-            reward=reward,
-            action=action,
-        )
-        for idx, (encoding, legal_mask, policy_target, action, reward) in enumerate(pending)
-    ]
-    total_return = float(sum(rewards))
-    return examples, EpisodeMetrics(
-        total_return=total_return,
-        normalized_return=total_return,
-        success=terminated,
-        moves=len(pending),
-    )
-
-
-def _save_checkpoint(
-    checkpoint_manager: CheckpointManager,
-    config: TrainingPipelineConfig,
-    seed: int,
-    model: TrainablePolicyValueModel,
-    optimizer_step: int,
-    replay_size: int,
-    iteration: int,
-    loss: PolicyValueLoss,
-) -> Path:
-    return checkpoint_manager.save_json(
-        "latest",
-        {
-            "schema_version": "aczero-training-checkpoint-v1",
-            "seed": seed,
-            "iteration": iteration,
-            "config": asdict(config),
-            "model_state": model.to_json(),
-            "optimizer_state": {
-                "step": optimizer_step,
-                "learning_rate": config.learning_rate,
-            },
-            "replay_size": replay_size,
-            "loss": asdict(loss),
-        },
-    )
-
-
-def _sample_action(policy: NDArray[np.float64], rng: random.Random) -> int:
-    total = float(np.sum(policy))
-    if total <= 0.0:
-        raise RuntimeError("cannot sample from an empty policy")
-    threshold = rng.random()
-    cumulative = 0.0
-    for idx, probability in enumerate(policy):
-        cumulative += float(probability) / total
-        if threshold <= cumulative:
-            return idx
-    return int(np.argmax(policy))
-
-
-def _env_config(config: TrainingPipelineConfig) -> ACEnvironmentConfig:
-    return ACEnvironmentConfig(
-        max_moves=config.max_moves,
-        total_length_cap=config.total_length_cap,
-    )
+def _episode_stats(episodes: list[EpisodeMetrics]) -> tuple[float, float]:
+    mean_return = float(np.mean([episode.normalized_return for episode in episodes]))
+    success_rate = float(np.mean([1.0 if episode.success else 0.0 for episode in episodes]))
+    return mean_return, success_rate

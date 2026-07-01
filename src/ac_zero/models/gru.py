@@ -1,24 +1,42 @@
 from __future__ import annotations
 
-import numpy as np
+import torch
+from torch import nn
 
 from ac_zero.encoding.padded import PaddedEncoding
-from ac_zero.models.autograd import Node, concat_cols, embedding_lookup
 from ac_zero.models.features import (
     GLOBAL_FEATURE_COUNT,
     global_features,
     token_sequence,
     vocabulary_size,
 )
+from ac_zero.models.torch_utils import float_tensor, long_tensor
 from ac_zero.models.trainable import TrainablePolicyValueModel
+
+
+class _GRUTrunk(nn.Module):
+    """Embed the token sequence, run a GRU, and concatenate global features."""
+
+    def __init__(self, vocab: int, embed_dim: int, hidden_dim: int, max_steps: int) -> None:
+        super().__init__()
+        self.max_steps = max_steps
+        self.embedding = nn.Embedding(vocab, embed_dim)
+        self.gru = nn.GRU(embed_dim, hidden_dim, batch_first=True)
+
+    def forward(self, encoding: PaddedEncoding) -> torch.Tensor:
+        tokens = long_tensor(token_sequence(encoding, self.max_steps))
+        embeds = self.embedding(tokens).unsqueeze(0)
+        _, hidden = self.gru(embeds)
+        globals_ = float_tensor(global_features(encoding)).unsqueeze(0)
+        return torch.cat([hidden[-1], globals_], dim=1)
 
 
 class GRUPolicyValueModel(TrainablePolicyValueModel):
     """Gated recurrent unit over the flattened relator token sequence.
 
-    Tokens are embedded and consumed by a standard GRU cell; the final hidden
-    state is concatenated with global features for the heads. Training propagates
-    gradients through the full recurrence (backpropagation through time).
+    Tokens are embedded and consumed by a GRU; the final hidden state is
+    concatenated with global features for the heads. Training propagates gradients
+    through the full recurrence (backpropagation through time).
     """
 
     architecture = "gru"
@@ -33,39 +51,8 @@ class GRUPolicyValueModel(TrainablePolicyValueModel):
     ) -> None:
         super().__init__(seed=seed, embed_dim=embed_dim, hidden_dim=hidden_dim, max_steps=max_steps)
 
-    def _build_trunk(self, rng: np.random.Generator, encoding: PaddedEncoding) -> int:
+    def _build_trunk(self, encoding: PaddedEncoding) -> tuple[nn.Module, int]:
         embed = self._hp["embed_dim"]
         hidden = self._hp["hidden_dim"]
-        vocab = vocabulary_size(encoding)
-        self._param("embed", rng.normal(0.0, 0.1, (vocab, embed)))
-        scale_in = 1.0 / np.sqrt(embed)
-        scale_hidden = 1.0 / np.sqrt(hidden)
-        for gate in ("z", "r", "n"):
-            self._param(f"w_{gate}", rng.normal(0.0, scale_in, (embed, hidden)))
-            self._param(f"u_{gate}", rng.normal(0.0, scale_hidden, (hidden, hidden)))
-            self._param(f"b_{gate}", np.zeros((1, hidden)))
-        return hidden + GLOBAL_FEATURE_COUNT
-
-    def _forward_trunk(self, encoding: PaddedEncoding) -> Node:
-        tokens = token_sequence(encoding, self._hp["max_steps"])
-        embeds = embedding_lookup(self._params["embed"], tokens)
-        hidden = Node(np.zeros((1, self._hp["hidden_dim"])))
-        for step in range(tokens.shape[0]):
-            current = embedding_lookup(embeds, np.asarray([step], dtype=np.int64))
-            hidden = self._cell(current, hidden)
-        return concat_cols([hidden, Node(global_features(encoding)[np.newaxis, :])])
-
-    def _cell(self, x: Node, hidden: Node) -> Node:
-        update = self._gate("z", x, hidden).sigmoid()
-        reset = self._gate("r", x, hidden).sigmoid()
-        candidate = (
-            x @ self._params["w_n"] + (reset * hidden) @ self._params["u_n"] + self._params["b_n"]
-        ).tanh()
-        return (1.0 - update) * candidate + update * hidden
-
-    def _gate(self, name: str, x: Node, hidden: Node) -> Node:
-        return (
-            x @ self._params[f"w_{name}"]
-            + hidden @ self._params[f"u_{name}"]
-            + self._params[f"b_{name}"]
-        )
+        trunk = _GRUTrunk(vocabulary_size(encoding), embed, hidden, self._hp["max_steps"])
+        return trunk, hidden + GLOBAL_FEATURE_COUNT

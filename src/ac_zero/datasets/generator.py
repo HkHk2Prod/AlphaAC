@@ -17,7 +17,7 @@ from ac_zero.moves.primitive import (
     MultiplyRelatorsMove,
     PrimitiveMove,
 )
-from ac_zero.system.parallel import resolve_worker_count
+from ac_zero.system.parallel import describe_worker_pool, resolve_worker_count
 
 # Emitted incrementally during long generation runs: (message, metrics).
 ProgressCallback = Callable[[str, dict[str, Any]], None]
@@ -178,6 +178,22 @@ def generate_dataset(
         raise ValueError("each scramble depth must be positive")
 
     budget = max_attempts if max_attempts is not None else max(count * 200, 2000)
+    if progress is not None:
+        # Describe the task up front with every parameter that shapes the output,
+        # so a run is reproducible from its log alone.
+        progress(
+            "generating dataset",
+            {
+                "rank": rank,
+                "count": count,
+                "depths": str(depth_cycle),
+                "seed": seed,
+                "min_total_length": min_total_length,
+                "min_relator_length": min_relator_length,
+                "unique": unique,
+                "max_attempts": budget,
+            },
+        )
     trivial_hash = BalancedPresentation.standard(rank).content_hash
     seen: set[str] = set()
     instances: list[GeneratedInstance] = []
@@ -186,6 +202,9 @@ def generate_dataset(
     skipped_duplicate = 0
     # Report progress at ~10 checkpoints so large runs stay visible without spam.
     interval = max(1, count // 10)
+    if progress is not None:
+        _, message, metrics = describe_worker_pool(workers)
+        progress(message, metrics)
     candidates = _candidate_stream(
         rank=rank, depth_cycle=depth_cycle, seed=seed, budget=budget, workers=workers
     )
@@ -245,8 +264,6 @@ def write_dataset(
     progress: ProgressCallback | None = None,
 ) -> None:
     """Write a versioned JSON dataset of distinct seeded solvable presentations."""
-    if progress is not None:
-        progress("starting generation", {"target": count, "rank": rank})
     instances = generate_dataset(
         rank=rank,
         count=count,

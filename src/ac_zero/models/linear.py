@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-import numpy as np
+import torch
+from torch import nn
 
 from ac_zero.encoding.padded import PaddedEncoding
-from ac_zero.models.autograd import Node
 from ac_zero.models.features import GLOBAL_FEATURE_COUNT, global_features
+from ac_zero.models.torch_utils import float_tensor
 from ac_zero.models.trainable import TrainablePolicyValueModel
+
+
+class _LinearTrunk(nn.Module):
+    """Identity trunk that hands the global feature vector to the heads."""
+
+    def forward(self, encoding: PaddedEncoding) -> torch.Tensor:
+        return float_tensor(global_features(encoding)).unsqueeze(0)
 
 
 class LinearPolicyValueModel(TrainablePolicyValueModel):
@@ -17,9 +25,6 @@ class LinearPolicyValueModel(TrainablePolicyValueModel):
 
     architecture = "linear_policy_value"
 
-    def _build_trunk(self, rng: np.random.Generator, encoding: PaddedEncoding) -> int:
-        del rng, encoding
-        return GLOBAL_FEATURE_COUNT
-
-    def _forward_trunk(self, encoding: PaddedEncoding) -> Node:
-        return Node(global_features(encoding)[np.newaxis, :])
+    def _build_trunk(self, encoding: PaddedEncoding) -> tuple[nn.Module, int]:
+        del encoding
+        return _LinearTrunk(), GLOBAL_FEATURE_COUNT

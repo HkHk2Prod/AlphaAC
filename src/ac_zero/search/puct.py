@@ -101,7 +101,8 @@ class PUCTMCTS:
             if action is None:
                 break
             prev_key = state.key
-            state, reward, terminated, truncated, _ = env.step(action)
+            _, reward, terminated, truncated, _ = env.step(action)
+            state = env.state
             path.append((prev_key, action, reward * reward_scale))
             if state.key not in nodes:
                 self._expand(env, state, nodes, terminated or truncated, terminated)

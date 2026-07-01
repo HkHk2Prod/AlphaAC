@@ -71,6 +71,26 @@ def resolve_worker_count(workers: int | None) -> int:
     return workers
 
 
+def describe_worker_pool(
+    workers: int | None,
+) -> tuple[int, str, dict[str, float | int | bool | str]]:
+    """Resolve a worker count and describe it for the run log.
+
+    Returns the concrete worker count alongside a human-readable message and a
+    metrics dict (``workers``, detected ``cores``, and a ``parallel`` flag).
+    Callers emit these through the project's event/progress logs so every run
+    records whether it fanned work out across multiple worker processes or stayed
+    in-process, making the degree of parallelism auditable after the fact.
+    """
+    resolved = resolve_worker_count(workers)
+    cores = detect_core_count()
+    if resolved > 1:
+        message = f"fanning out across {resolved} worker processes"
+    else:
+        message = "running in-process (single worker)"
+    return resolved, message, {"workers": resolved, "cores": cores, "parallel": resolved > 1}
+
+
 def imap_ordered(
     func: Callable[[T], R],
     items: Iterable[T],

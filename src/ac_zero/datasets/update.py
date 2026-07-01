@@ -15,7 +15,7 @@ from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.labels import UNKNOWN, TrivializationLabel, known_solution, merge_labels
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.search.breadth_first import BreadthFirstConfig, BreadthFirstSearch
-from ac_zero.system.parallel import imap_ordered
+from ac_zero.system.parallel import describe_worker_pool, imap_ordered
 
 # Emitted incrementally during long improvement passes: (message, metrics).
 ProgressCallback = Callable[[str, dict[str, Any]], None]
@@ -200,6 +200,22 @@ def improve_dataset(
     in-process, or a negative count to leave that many free). Results are merged
     back in entry order, so the output is identical regardless of the worker count.
     """
+    if progress is not None:
+        # Open with a full description of the task so the run is reproducible
+        # from its log: the input, where it writes, the search strategies, and the
+        # difficulty gate.
+        _, worker_message, worker_metrics = describe_worker_pool(workers)
+        progress(
+            "improving dataset",
+            {
+                "input": str(path),
+                "output": str(output if output is not None else path),
+                "strategies": ", ".join(getattr(s, "name", type(s).__name__) for s in strategies),
+                "max_difficulty": "all" if max_difficulty is None else max_difficulty,
+            },
+        )
+        progress(worker_message, worker_metrics)
+
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     raw = data.get("instances", [])
     entries, duplicates = dedupe_entries(raw)

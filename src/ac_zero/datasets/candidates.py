@@ -99,11 +99,6 @@ def candidate_entries() -> list[tuple[BalancedPresentation, TrivializationLabel]
     return entries
 
 
-def standard_candidates() -> list[BalancedPresentation]:
-    """Return the curated catalog of standard potential AC counterexamples."""
-    return [presentation for presentation, _ in candidate_entries()]
-
-
 def write_candidates(path: str | Path) -> int:
     """Write the curated candidate catalog as a separate, non-training dataset."""
     entries = candidate_entries()

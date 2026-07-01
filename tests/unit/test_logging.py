@@ -15,12 +15,6 @@ from ac_zero.training.log_sinks import (
 )
 
 
-def test_log_level_from_name_is_case_insensitive_with_default() -> None:
-    assert LogLevel.from_name("warning") is LogLevel.WARNING
-    assert LogLevel.from_name(" ERROR ") is LogLevel.ERROR
-    assert LogLevel.from_name("nonsense") is LogLevel.INFO
-
-
 def test_rotating_writer_rotates_and_keeps_backups(tmp_path: Path) -> None:
     path = tmp_path / "log.txt"
     writer = RotatingFileWriter(path, max_bytes=10, backup_count=2)
@@ -164,6 +158,7 @@ def test_smoke_training_emits_error_event_on_failure(tmp_path: Path, monkeypatch
 
 def test_training_pipeline_emits_error_event_on_failure(tmp_path: Path, monkeypatch) -> None:
     import ac_zero.training.pipeline as pipeline
+    import ac_zero.training.pipeline_episodes as pipeline_episodes
 
     captured: list[TrainingEvent] = []
 
@@ -177,7 +172,7 @@ def test_training_pipeline_emits_error_event_on_failure(tmp_path: Path, monkeypa
     def _boom(*_args: object, **_kwargs: object) -> None:
         raise RuntimeError("episode collection failed")
 
-    monkeypatch.setattr(pipeline, "_collect_episode", _boom)
+    monkeypatch.setattr(pipeline_episodes, "_collect_episode", _boom)
     config = pipeline.TrainingPipelineConfig(
         iterations=1,
         episodes_per_iteration=1,

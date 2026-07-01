@@ -13,14 +13,6 @@ class LogLevel(IntEnum):
     WARNING = 30
     ERROR = 40
 
-    @classmethod
-    def from_name(cls, name: str) -> LogLevel:
-        """Resolve a level from a case-insensitive name, defaulting to INFO."""
-        try:
-            return cls[name.strip().upper()]
-        except KeyError:
-            return cls.INFO
-
 
 @dataclass(frozen=True, slots=True)
 class TrainingEvent:

@@ -23,11 +23,9 @@ class GreedyActionEvaluation:
     """
 
     action_id: int
-    current_total_length: int
     next_total_length: int
     immediate_reduction: int
     reaches_goal: bool
-    presentation_hash: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,11 +70,9 @@ class GreedyLengthAgent:
             evaluations.append(
                 GreedyActionEvaluation(
                     action_id=action_id,
-                    current_total_length=current_length,
                     next_total_length=next_length,
                     immediate_reduction=current_length - next_length,
                     reaches_goal=self._is_goal(nxt),
-                    presentation_hash=nxt.content_hash,
                 )
             )
         return tuple(sorted(evaluations, key=_evaluation_sort_key))
@@ -169,7 +165,8 @@ class GreedySolver:
                 termination_reason = "local_minimum"
                 break
             path.append(evaluation.action_id)
-            state, _, terminated, truncated, info = env.step(evaluation.action_id)
+            _, _, terminated, truncated, info = env.step(evaluation.action_id)
+            state = env.state
             current_reduction = state.initial_length - state.best_length
             if current_reduction > best_reduction:
                 best_reduction = current_reduction

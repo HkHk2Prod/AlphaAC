@@ -9,14 +9,21 @@ def test_free_reduction_idempotent_and_inverse_identity() -> None:
     assert word.concat(word.inverse()).letters == ()
 
 
+def test_mul_operator_and_concat() -> None:
+    u = FreeGroupWord((1, 2), rank=2)
+    v = FreeGroupWord((-2, 1), rank=2)
+    assert (u * v).letters == (1, 1)
+    assert u.concat(v) == u * v
+
+
 def test_inversion_reverses_order() -> None:
     u = FreeGroupWord((1, 2), rank=2)
     v = FreeGroupWord((-1,), rank=2)
     assert u.concat(v).inverse() == v.inverse().concat(u.inverse())
 
 
-def test_parser_and_json_roundtrip() -> None:
-    word = FreeGroupWord.parse("x1 x2^-1", rank=2)
+def test_format_and_json_roundtrip() -> None:
+    word = FreeGroupWord((1, -2), rank=2)
     assert word.format() == "x1 x2^-1"
     assert FreeGroupWord.from_json(word.to_json(), rank=2) == word
 
