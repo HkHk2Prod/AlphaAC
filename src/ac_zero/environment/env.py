@@ -31,7 +31,7 @@ class ACEnvironmentConfig:
     goal_reward: float = 1.0
 
 
-class ACEnvironment(gymnasium.Env):
+class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
     """Gymnasium environment for strict Andrews-Curtis transformations.
 
     Observations are the padded encoder arrays (a `spaces.Dict`), so standard RL

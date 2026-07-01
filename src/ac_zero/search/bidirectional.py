@@ -66,11 +66,12 @@ class BidirectionalSearch:
             if goal.content_hash not in seen_b:
                 seen_b[goal.content_hash] = ()
                 frontier_b.append((goal, ()))
-        frontier_f = [(initial, ())]
+        frontier_f: list[tuple[BalancedPresentation, tuple[int, ...]]] = [(initial, ())]
 
         best_total: int | None = 0 if initial.content_hash in seen_b else None
         best_path: tuple[int, ...] = ()
-        best_len_state, best_len_path = initial, ()
+        best_len_state: BalancedPresentation = initial
+        best_len_path: tuple[int, ...] = ()
         expanded = generated = 0
         peak = len(frontier_f) + len(frontier_b)
         cap_pruned = budget_hit = False
