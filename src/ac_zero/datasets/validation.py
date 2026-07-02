@@ -65,6 +65,7 @@ def _validate_entry(entry: Any) -> list[str]:
     difficulty = entry.get("difficulty")
     if difficulty is not None and (not isinstance(difficulty, int) or difficulty < 0):
         problems.append("difficulty must be a non-negative integer or absent")
+    problems.extend(_check_descent(entry))
     try:
         presentation = BalancedPresentation.from_json(entry)
     except Exception as exc:
@@ -93,6 +94,26 @@ def _check_graph_fields(entry: dict[str, Any]) -> list[str]:
             problems.append(f"predecessor {index}: parent_hash must be a string")
         if not isinstance(edge.get("move"), dict):
             problems.append(f"predecessor {index}: move must be an object")
+    return problems
+
+
+def _check_descent(entry: dict[str, Any]) -> list[str]:
+    """Validate the length-descent annotation fields when present (grow omits them).
+
+    ``descent_distance`` is the fewest moves that strictly shorten the
+    presentation: a positive integer, or null when none is known. ``descent_proven``
+    flags whether that answer is exact, so it is meaningful only alongside a
+    written distance field.
+    """
+    problems: list[str] = []
+    distance = entry.get("descent_distance")
+    if distance is not None and (not isinstance(distance, int) or distance < 1):
+        problems.append("descent_distance must be a positive integer or null")
+    proven = entry.get("descent_proven")
+    if proven is not None and not isinstance(proven, bool):
+        problems.append("descent_proven must be a boolean or absent")
+    if proven is not None and "descent_distance" not in entry:
+        problems.append("descent_proven requires a descent_distance field")
     return problems
 
 

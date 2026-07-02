@@ -129,6 +129,32 @@ def test_checkpoints_dump_a_valid_snapshot_without_changing_the_result(tmp_path)
     assert _load(checkpointed)["instances"] == _load(end_only)["instances"]
 
 
+def _round_logs(events: list[tuple[str, dict]]) -> int:
+    # The per-round status line reuses "growing dataset"; the start banner shares
+    # that message but carries "path", so exclude it.
+    return sum(
+        1 for message, metrics in events if message == "growing dataset" and "path" not in metrics
+    )
+
+
+def test_log_every_throttles_progress_output(tmp_path) -> None:
+    def run(name: str, log_every: int) -> list[tuple[str, dict]]:
+        events: list[tuple[str, dict]] = []
+        grow_dataset(
+            tmp_path / name,
+            GrowConfig(rank=2, target=60, log_every=log_every, checkpoint_every=0, workers=1),
+            progress=lambda message, metrics: events.append((message, metrics)),
+        )
+        return events
+
+    frequent = _round_logs(run("frequent.json", log_every=5))
+    rare = _round_logs(run("rare.json", log_every=40))
+    # A larger interval emits strictly fewer status lines for the same run.
+    assert frequent > rare
+    # Silencing per-round logs leaves only the start/finish banners.
+    assert _round_logs(run("silent.json", log_every=0)) == 0
+
+
 def test_multiprocess_run_produces_a_valid_dataset(tmp_path) -> None:
     path = tmp_path / "g.json"
     report = grow_dataset(path, GrowConfig(rank=2, target=50, workers=4))

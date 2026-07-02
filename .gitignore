@@ -9,3 +9,5 @@ runs/
 # Generated datasets are ad-hoc by default, but the committed training set is tracked.
 data/generated/*.json
 !data/generated/train_rank2.json
+# Dataset summaries are derived artifacts, regenerated on every `grow` run.
+data/summaries/
