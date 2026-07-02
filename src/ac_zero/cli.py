@@ -23,6 +23,7 @@ from ac_zero.datasets.candidates import write_candidates
 from ac_zero.datasets.descent import DescentAnnotateConfig, annotate_descent
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
+from ac_zero.datasets.hub import DEFAULT_BUCKET, download_dataset, upload_dataset
 from ac_zero.datasets.summary import write_dataset_summary
 from ac_zero.datasets.update import (
     BreadthFirstStrategy,
@@ -59,10 +60,21 @@ def main(argv: list[str] | None = None) -> int:
     hw = sub.add_parser("hardware")
     hw.add_argument("subcmd", choices=["inspect"])
     ds = sub.add_parser("dataset")
-    ds.add_argument("subcmd", choices=["grow", "validate", "candidates", "improve", "descent"])
+    ds.add_argument(
+        "subcmd",
+        choices=["grow", "validate", "candidates", "improve", "descent", "upload", "download"],
+    )
     ds.add_argument("--config", default="configs/experiments/smoke.yaml")
     ds.add_argument("--output", default="")
     ds.add_argument("--input", default="data/generated/train_rank2.json")
+    ds.add_argument(
+        "--bucket", default="", help="`upload`/`download`: Hugging Face bucket (default AlphaAC's)"
+    )
+    ds.add_argument(
+        "--remote-name",
+        default="",
+        help="`upload`/`download`: bucket file name (default: the local basename)",
+    )
     ds.add_argument("--search", choices=["bfs", "greedy-best-first", "all"], default="all")
     ds.add_argument("--max-moves", type=int, default=12)
     ds.add_argument("--total-length-cap", type=int, default=48)
@@ -173,6 +185,10 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             return _dataset_improve(args, reporter)
         if args.subcmd == "descent":
             return _dataset_descent(args, reporter)
+        if args.subcmd == "upload":
+            return _dataset_upload(args, reporter)
+        if args.subcmd == "download":
+            return _dataset_download(args, reporter)
         report = validate_dataset(args.input)
         reporter.result_json(
             {"ok": report.ok, "instances": report.instances, "errors": report.errors[:20]},
@@ -589,6 +605,23 @@ def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
         reporter.progress("grow", "summary written", {"path": str(summary_path)})
         result["summary"] = str(summary_path)
     reporter.result_json(result, sort_keys=True)
+    return 0
+
+
+def _dataset_upload(args: argparse.Namespace, reporter: CliReporter) -> int:
+    """Push a local dataset file to the Hugging Face bucket."""
+    bucket = args.bucket or DEFAULT_BUCKET
+    uri = upload_dataset(args.input, remote_name=args.remote_name or None, bucket=bucket)
+    reporter.result_json({"uploaded": args.input, "uri": uri, "bucket": bucket}, sort_keys=True)
+    return 0
+
+
+def _dataset_download(args: argparse.Namespace, reporter: CliReporter) -> int:
+    """Pull a dataset file from the Hugging Face bucket to a local path."""
+    local = args.output or args.input
+    bucket = args.bucket or DEFAULT_BUCKET
+    path = download_dataset(local, remote_name=args.remote_name or None, bucket=bucket)
+    reporter.result_json({"downloaded": str(path), "bucket": bucket}, sort_keys=True)
     return 0
 
 

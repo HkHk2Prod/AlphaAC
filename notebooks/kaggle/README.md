@@ -43,11 +43,15 @@ Markdown summary) live on a feature branch — set `REPO_BRANCH` to that branch 
 
 ## Resuming generation beyond one session
 
-Grow is resumable. To keep growing the same database across multiple 12 h
-sessions, attach a previous run's output dataset as an input and set
-`RESUME_FROM` to its `.json` path (e.g.
-`/kaggle/input/ac-zero-dataset/train_rank2.json`). Training does not resume
-across sessions — one run is a single session up to the time budget.
+Grow is resumable via the **Hugging Face bucket** (`HkHk2Prod/alphaac-data`). The
+generation notebook pulls the current dataset at start and pushes the grown one
+back when the session ends, so each 12 h session continues the last — no manual
+Kaggle-dataset attaching needed. Add a Kaggle secret named **`HF_TOKEN`** (with
+write access to the bucket namespace) under *Add-ons → Secrets*, and keep
+`HF_DOWNLOAD_ON_START` / `HF_UPLOAD_ON_FINISH` set to `True` in the config cell.
+
+Training does not resume across sessions — one run is a single session up to the
+time budget.
 
 > Generation and training are **independent**: training self-plays its own
 > instances and does not read the generated dataset.

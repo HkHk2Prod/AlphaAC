@@ -1,4 +1,5 @@
-.PHONY: setup install verify test smoke greedy-rl lint typecheck train dataset-refine
+.PHONY: setup install verify test smoke greedy-rl lint typecheck train dataset-refine \
+	dataset-pull dataset-push
 
 # One-command environment setup on a fresh machine (requires `uv`).
 setup:
@@ -38,3 +39,11 @@ INPUT ?= data/generated/train_rank2.json
 ARGS ?= --max-difficulty 12 --max-expansions 100000 --max-generated 1000000
 dataset-refine:
 	uv run --frozen aczero dataset improve --input $(INPUT) $(ARGS)
+
+# Sync the training dataset with the Hugging Face bucket (needs ac-zero[hub] and
+# an HF_TOKEN). `data/generated/` is gitignored, so pull before refining/using it.
+dataset-pull:
+	uv run --frozen aczero dataset download --output $(INPUT)
+
+dataset-push:
+	uv run --frozen aczero dataset upload --input $(INPUT)

@@ -6,8 +6,8 @@ __pycache__/
 .coverage
 htmlcov/
 runs/
-# Generated datasets are ad-hoc by default, but the committed training set is tracked.
-data/generated/*.json
-!data/generated/train_rank2.json
+# Generated datasets live in the Hugging Face bucket (too big for GitHub's 100 MB
+# limit); pull them with `aczero dataset download`.
+data/generated/
 # Dataset summaries are derived artifacts, regenerated on every `grow` run.
 data/summaries/

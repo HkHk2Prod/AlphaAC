@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The grown dataset now lives in a Hugging Face storage bucket
+  (`HkHk2Prod/alphaac-data`) instead of git — it outgrew GitHub's 100 MB per-file
+  limit. `aczero dataset upload` / `download` push and pull it (optional
+  `ac-zero[hub]` dependency, `HF_TOKEN` auth), `make dataset-pull` / `dataset-push`
+  wrap them, and `data/generated/` is now gitignored. The Kaggle generation
+  notebook resumes from the bucket at start and publishes the grown dataset back
+  at the end.
 - `aczero dataset descent` annotates each entry with its length-descent distance
   — the fewest AC moves that strictly shorten the presentation — as the training
   example-difficulty label (`descent_distance` / `descent_proven`, exact within a
