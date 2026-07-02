@@ -96,11 +96,14 @@ push the current dataset:
 
 ```bash
 # Download the current training set into data/generated/train_rank2.json
-uv run --frozen aczero dataset download --output data/generated/train_rank2.json
+uv run --frozen --extra hub aczero dataset download --output data/generated/train_rank2.json
 
 # Push a locally grown dataset back to the bucket
-uv run --frozen aczero dataset upload --input data/generated/train_rank2.json
+uv run --frozen --extra hub aczero dataset upload --input data/generated/train_rank2.json
 ```
+
+`uv run` re-syncs the environment per invocation, so pass `--extra hub` on the
+command itself (it isn't enough to `uv sync --extra hub` once).
 
 `--bucket` and `--remote-name` override the defaults. The Kaggle generation
 notebook does this automatically — it pulls the dataset at start (resume) and
