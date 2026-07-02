@@ -14,18 +14,19 @@ trivialization-label fields:
 - `optimal`: whether `minimal_known_operations` is proven minimal (`null` when
   there is no number to qualify).
 
-`generated/` contains synthetic guaranteed-solvable strict-AC scrambles
-(`aczero-dataset-v2`). Each instance is `ac_trivial: true` with a known but not
-proven-optimal trivialization (the reverse scramble path), and carries a
-`difficulty` label: the number of scramble moves that actually changed the
-presentation. `write_dataset` / `generate_dataset` deduplicate by content hash
-and exclude the trivial presentation, so the set scales to large counts without
-repetition (pass `depths=[...]` to span an easy-to-hard difficulty range):
+`generated/` holds the training dataset built by `aczero dataset grow`
+(`aczero-dataset-v3`): a graph of guaranteed-solvable presentations expanded
+outward from the trivial group. Each instance is `ac_trivial: true` with a known
+(best-effort optimal) trivialization, a `difficulty` label (its construction
+depth from the trivial group), and a `predecessors` list recording every
+co-optimal construction move (multiple back-pointers, for supervised learning).
+Groups are deduplicated by content hash, and every run resumes from the
+accumulated frontier so the database only ever grows:
 
 ```bash
-uv run --frozen aczero dataset generate \
-  --config configs/experiments/greedy_rl.yaml \
-  --output data/generated/greedy_rl.json
+uv run --frozen aczero dataset grow \
+  --output data/generated/train_rank2.json \
+  --rank 2 --target 1000
 ```
 
 `candidates/` holds curated literature presentations (`aczero-candidates-v1`):

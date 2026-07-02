@@ -88,6 +88,27 @@ def move_from_json(data: dict[str, Any]) -> PrimitiveMove:
             raise MoveError(f"unknown primitive move type {typ!r}")
 
 
+def inverse_primitive_sequence(move: PrimitiveMove) -> tuple[PrimitiveMove, ...]:
+    """Expand the inverse of one primitive move into strict primitive moves.
+
+    Inversion (AC2) is its own inverse, and conjugation (AC3) inverts by negating
+    the generator, so both undo in a single move. A relator multiply (AC1) has no
+    single-move inverse in the catalog, so it is undone by inverting the source,
+    multiplying, and inverting the source back -- three strict primitives.
+    """
+    if isinstance(move, InvertRelatorMove):
+        return (move,)
+    if isinstance(move, ConjugateRelatorMove):
+        return (ConjugateRelatorMove(move.target, -move.generator),)
+    if isinstance(move, MultiplyRelatorsMove):
+        return (
+            InvertRelatorMove(move.source),
+            MultiplyRelatorsMove(move.target, move.source),
+            InvertRelatorMove(move.source),
+        )
+    raise TypeError(f"unsupported primitive move {move!r}")
+
+
 def _check_index(presentation: BalancedPresentation, index: int) -> None:
     if not 0 <= index < presentation.rank:
         raise MoveError("relator index out of range")

@@ -1,6 +1,7 @@
 import json
+from pathlib import Path
 
-from ac_zero.datasets.generator import write_dataset
+from ac_zero.datasets.grow import GrowConfig, grow_dataset
 from ac_zero.datasets.labels import UNKNOWN, known_solution, known_trivial, merge_labels
 from ac_zero.datasets.update import (
     BreadthFirstStrategy,
@@ -12,6 +13,11 @@ from ac_zero.datasets.update import (
 _FAST_BFS = BreadthFirstStrategy(
     max_moves=6, total_length_cap=28, max_expansions=300, max_generated=3000
 )
+
+
+def _grow_fixture(path: Path, *, target: int, seed: int = 0) -> None:
+    """Grow a small deterministic rank-2 dataset for the improvement tests."""
+    grow_dataset(path, GrowConfig(rank=2, target=target, select="smallest", seed=seed, workers=1))
 
 
 def test_merge_never_replaces_a_better_solution_with_a_worse_one() -> None:
@@ -45,7 +51,7 @@ def test_dedupe_merges_duplicates_keeping_best_label_and_min_difficulty() -> Non
 
 def test_improve_dataset_only_improves_and_is_idempotent(tmp_path) -> None:
     path = tmp_path / "ds.json"
-    write_dataset(path, rank=2, count=6, depths=[2, 3], seed=0, min_total_length=3)
+    _grow_fixture(path, target=12, seed=0)
     instances = json.loads(path.read_text())["instances"]
     before = {i["content_hash"]: i["minimal_known_operations"] for i in instances}
 
@@ -66,7 +72,7 @@ def test_improve_dataset_only_improves_and_is_idempotent(tmp_path) -> None:
 
 def test_improve_does_not_overwrite_an_existing_better_label(tmp_path) -> None:
     path = tmp_path / "ds.json"
-    write_dataset(path, rank=2, count=4, depths=[3], seed=1, min_total_length=3)
+    _grow_fixture(path, target=8, seed=1)
     data = json.loads(path.read_text())
     # plant an artificially strong (short, optimal) label on every entry
     for entry in data["instances"]:
@@ -82,7 +88,7 @@ def test_improve_does_not_overwrite_an_existing_better_label(tmp_path) -> None:
 
 def test_improve_dataset_reports_progress(tmp_path) -> None:
     path = tmp_path / "ds.json"
-    write_dataset(path, rank=2, count=6, depths=[2, 3], seed=0, min_total_length=3)
+    _grow_fixture(path, target=12, seed=0)
 
     events: list[tuple[str, dict]] = []
     report = improve_dataset(
@@ -110,7 +116,7 @@ def test_improve_dataset_reports_progress(tmp_path) -> None:
 def test_improve_dataset_is_identical_across_worker_counts(tmp_path) -> None:
     sequential = tmp_path / "seq.json"
     parallel = tmp_path / "par.json"
-    write_dataset(sequential, rank=2, count=8, depths=[2, 3], seed=0, min_total_length=3)
+    _grow_fixture(sequential, target=16, seed=0)
     # An identical input dataset under both worker counts.
     parallel.write_text(sequential.read_text())
 
