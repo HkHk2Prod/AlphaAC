@@ -315,9 +315,9 @@ def _node_to_entry(node: GraphNode) -> dict[str, Any]:
     entry["predecessors"] = [
         {"parent_hash": edge.parent_hash, "move": edge.move.to_json()} for edge in node.predecessors
     ]
-    # Only the trivial root has no construction edge; its empty trivialization is
-    # provably optimal, while every constructed group carries a best-known bound.
-    entry.update(known_solution(node.reverse_operations, optimal=not node.predecessors).to_json())
+    # Only the trivial root sits at depth 0; its empty trivialization is provably
+    # optimal, while every constructed group carries a best-known upper bound.
+    entry.update(known_solution(node.reverse_operations, optimal=node.difficulty == 0).to_json())
     return entry
 
 
