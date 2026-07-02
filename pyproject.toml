@@ -62,6 +62,12 @@ python_version = "3.12"
 strict = true
 packages = ["ac_zero"]
 
+# `huggingface_hub` is an optional dependency (the `hub` extra); type-check the
+# codebase without requiring it to be installed.
+[[tool.mypy.overrides]]
+module = "huggingface_hub.*"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=ac_zero --cov-report=term-missing"

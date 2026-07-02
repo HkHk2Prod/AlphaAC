@@ -14,10 +14,7 @@ optional dependency -- install it with ``pip install ac-zero[hub]``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from types import ModuleType
+from typing import Any
 
 # Bucket holding the AlphaAC training datasets (namespace/bucket-name).
 DEFAULT_BUCKET = "HkHk2Prod/alphaac-data"
@@ -28,8 +25,13 @@ _INSTALL_HINT = (
 )
 
 
-def _hub() -> ModuleType:
-    """Import ``huggingface_hub`` lazily with a friendly error if it is absent."""
+def _hub() -> Any:
+    """Import ``huggingface_hub`` lazily with a friendly error if it is absent.
+
+    Typed as ``Any`` because ``huggingface_hub`` is an optional dependency that
+    need not be installed for type-checking or for code paths that never touch
+    the bucket.
+    """
     try:
         import huggingface_hub
     except ImportError as exc:
