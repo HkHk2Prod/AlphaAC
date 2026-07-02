@@ -87,6 +87,26 @@ Re-run the command (or point `--input` at the same file) to expand it further.
 `--select smallest` gives one deterministic canonical frontier; use `--select
 weighted-random --seed N` so independent machines explore divergent regions.
 
+The grown dataset outgrows GitHub's 100 MB per-file limit, so it is **not** kept
+in git (`data/generated/` is gitignored) — it lives in a Hugging Face
+[storage bucket](https://huggingface.co/docs/hub/storage-buckets)
+(`HkHk2Prod/alphaac-data`). Install the optional dependency and authenticate once
+(`pip install ac-zero[hub]`; set `HF_TOKEN` or run `hf auth login`), then pull or
+push the current dataset:
+
+```bash
+# Download the current training set into data/generated/train_rank2.json
+uv run --frozen aczero dataset download --output data/generated/train_rank2.json
+
+# Push a locally grown dataset back to the bucket
+uv run --frozen aczero dataset upload --input data/generated/train_rank2.json
+```
+
+`--bucket` and `--remote-name` override the defaults. The Kaggle generation
+notebook does this automatically — it pulls the dataset at start (resume) and
+uploads the grown one when the session ends (see
+[notebooks/kaggle/](notebooks/kaggle/)).
+
 Write the curated catalog of standard potential Andrews-Curtis counterexamples
 (Akbulut-Kirby and Miller-Schupp series) to `data/candidates/`, kept separate
 from training data to avoid leakage:
