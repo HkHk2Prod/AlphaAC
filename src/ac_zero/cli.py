@@ -20,8 +20,10 @@ from ac_zero.agents.random_agent import RandomLegalActionAgent
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.candidates import write_candidates
+from ac_zero.datasets.descent import DescentAnnotateConfig, annotate_descent
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
+from ac_zero.datasets.summary import write_dataset_summary
 from ac_zero.datasets.update import (
     BreadthFirstStrategy,
     GreedyBestFirstStrategy,
@@ -57,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     hw = sub.add_parser("hardware")
     hw.add_argument("subcmd", choices=["inspect"])
     ds = sub.add_parser("dataset")
-    ds.add_argument("subcmd", choices=["grow", "validate", "candidates", "improve"])
+    ds.add_argument("subcmd", choices=["grow", "validate", "candidates", "improve", "descent"])
     ds.add_argument("--config", default="configs/experiments/smoke.yaml")
     ds.add_argument("--output", default="")
     ds.add_argument("--input", default="data/generated/train_rank2.json")
@@ -67,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     ds.add_argument("--max-difficulty", type=int, default=8, help="negative searches all entries")
     ds.add_argument("--max-expansions", type=int, default=3000, help="per-entry search node budget")
     ds.add_argument("--max-generated", type=int, default=30000, help="per-entry generated node cap")
+    ds.add_argument("--max-depth", type=int, default=32, help="`descent`: max moves per search")
     ds.add_argument("--rank", type=int, default=2, help="group rank for `grow`")
     ds.add_argument("--target", type=int, default=100, help="`grow`: new groups to add this run")
     ds.add_argument(
@@ -85,8 +88,24 @@ def main(argv: list[str] | None = None) -> int:
     ds.add_argument(
         "--checkpoint-every",
         type=int,
-        default=1000,
+        default=5000,
         help="`grow`: dump to disk every N added groups (0 = only at the end)",
+    )
+    ds.add_argument(
+        "--log-every",
+        type=int,
+        default=1000,
+        help="`grow`: emit a progress log every N added groups (0 = only start/finish)",
+    )
+    ds.add_argument(
+        "--summary-dir",
+        default="data/summaries",
+        help="`grow`: directory for the post-generation Markdown summary",
+    )
+    ds.add_argument(
+        "--no-summary",
+        action="store_true",
+        help="`grow`: skip writing the dataset summary after generation",
     )
     ds.add_argument(
         "--workers",
@@ -152,6 +171,8 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             return 0
         if args.subcmd == "improve":
             return _dataset_improve(args, reporter)
+        if args.subcmd == "descent":
+            return _dataset_descent(args, reporter)
         report = validate_dataset(args.input)
         reporter.result_json(
             {"ok": report.ok, "instances": report.instances, "errors": report.errors[:20]},
@@ -548,23 +569,26 @@ def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
         short_bias=args.short_bias,
         workers=args.workers,
         checkpoint_every=args.checkpoint_every,
+        log_every=args.log_every,
     )
     report = grow_dataset(
         path,
         config,
         progress=lambda message, metrics: reporter.progress("grow", message, metrics),
     )
-    reporter.result_json(
-        {
-            "path": str(path),
-            "groups": report.total,
-            "added": report.added,
-            "expanded": report.expanded,
-            "frontier": report.frontier,
-            "max_difficulty": report.max_difficulty,
-        },
-        sort_keys=True,
-    )
+    result: dict[str, Any] = {
+        "path": str(path),
+        "groups": report.total,
+        "added": report.added,
+        "expanded": report.expanded,
+        "frontier": report.frontier,
+        "max_difficulty": report.max_difficulty,
+    }
+    if not args.no_summary:
+        summary_path = write_dataset_summary(path, args.summary_dir)
+        reporter.progress("grow", "summary written", {"path": str(summary_path)})
+        result["summary"] = str(summary_path)
+    reporter.result_json(result, sort_keys=True)
     return 0
 
 
@@ -608,6 +632,36 @@ def _dataset_improve(args: argparse.Namespace, reporter: CliReporter) -> int:
             "solved": report.solved,
             "improved": report.improved,
             "proved_optimal": report.proved_optimal,
+        },
+        sort_keys=True,
+    )
+    return 0
+
+
+def _dataset_descent(args: argparse.Namespace, reporter: CliReporter) -> int:
+    """Annotate each entry with the fewest moves that shorten the presentation."""
+    output = args.output or args.input
+    config = DescentAnnotateConfig(
+        total_length_cap=args.total_length_cap,
+        max_depth=args.max_depth,
+        max_expansions=args.max_expansions,
+        workers=args.workers,
+        checkpoint_every=args.checkpoint_every,
+    )
+    report = annotate_descent(
+        args.input,
+        config,
+        output=output,
+        progress=lambda message, metrics: reporter.progress("descent", message, metrics),
+    )
+    reporter.result_json(
+        {
+            "output": output,
+            "total": report.total,
+            "computed": report.computed,
+            "with_descent": report.with_descent,
+            "proven": report.proven,
+            "max_distance": report.max_distance,
         },
         sort_keys=True,
     )

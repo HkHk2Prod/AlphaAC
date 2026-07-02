@@ -29,6 +29,11 @@ uv run --frozen aczero dataset grow \
   --rank 2 --target 1000
 ```
 
+After each run, `grow` writes a Markdown statistics report to
+`summaries/<dataset>.summary.md` (histograms of group difficulty, size,
+co-optimal construction moves, and known trivialization length). Redirect it
+with `--summary-dir` or skip it with `--no-summary`.
+
 `candidates/` holds curated literature presentations (`aczero-candidates-v1`):
 the Akbulut-Kirby series `AK(n)` and members of the Miller-Schupp series. These
 are balanced presentations of the trivial group used as standard potential

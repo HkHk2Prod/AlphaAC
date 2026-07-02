@@ -22,6 +22,11 @@ class BalancedPresentation:
     generator_names: tuple[str, ...] = field(default_factory=tuple)
     presentation_id: str | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
+    # Lazily memoized content hash. Excluded from init/eq/repr: it is a pure
+    # function of the immutable content above, so caching it never changes the
+    # value or identity of a presentation, only how often it is recomputed. The
+    # grow graph hashes millions of neighbours, so this stays off the hot path.
+    _content_hash: str | None = field(default=None, init=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         """Normalize generator names and relators while preserving immutability."""
@@ -63,13 +68,17 @@ class BalancedPresentation:
     @property
     def content_hash(self) -> str:
         """Deterministic SHA-256 hash of the mathematical presentation content."""
-        payload = {
-            "rank": self.rank,
-            "generator_names": self.generator_names,
-            "relators": [r.to_json() for r in self.relators],
-        }
-        blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        return hashlib.sha256(blob).hexdigest()
+        if self._content_hash is None:
+            payload = {
+                "rank": self.rank,
+                "generator_names": self.generator_names,
+                "relators": [r.to_json() for r in self.relators],
+            }
+            blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+            digest = hashlib.sha256(blob).hexdigest()
+            object.__setattr__(self, "_content_hash", digest)
+            return digest
+        return self._content_hash
 
     def replace_relator(self, index: int, relator: FreeGroupWord) -> BalancedPresentation:
         """Return a new presentation with one freely reduced relator replaced."""

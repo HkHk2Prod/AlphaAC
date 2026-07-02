@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `aczero dataset descent` annotates each entry with its length-descent distance
+  — the fewest AC moves that strictly shorten the presentation — as the training
+  example-difficulty label (`descent_distance` / `descent_proven`, exact within a
+  length/depth budget). Backed by a breadth-first `search/descent.py`; entries are
+  searched easiest-first, proven answers are skipped on re-runs, and the pass
+  checkpoints and writes atomically.
 - Portable setup for fresh machines: pinned interpreter (`.python-version`),
   `make setup` / `make verify` targets, and a documented uv/pip install path.
 - `aczero dataset improve` exposes per-entry search budgets (`--max-expansions`,

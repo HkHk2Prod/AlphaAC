@@ -27,6 +27,39 @@ def test_cli_greedy_pipeline_writes_verified_solution(monkeypatch, tmp_path: Pat
     assert greedy_row["certificate"]
 
 
+def test_cli_grow_writes_a_summary_by_default(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    dataset_path = tmp_path / "data/generated/grown.json"
+
+    assert main(["dataset", "grow", "--output", str(dataset_path), "--target", "15"]) == 0
+    summary_path = tmp_path / "data/summaries/grown.summary.md"
+    assert summary_path.exists()
+    assert summary_path.read_text().startswith("# Dataset summary: grown.json")
+
+    # --no-summary suppresses the report; a custom --summary-dir redirects it.
+    other = tmp_path / "data/generated/quiet.json"
+    assert main(["dataset", "grow", "--output", str(other), "--target", "15", "--no-summary"]) == 0
+    assert not (tmp_path / "data/summaries/quiet.summary.md").exists()
+
+    custom = tmp_path / "reports"
+    assert (
+        main(
+            [
+                "dataset",
+                "grow",
+                "--input",
+                str(dataset_path),
+                "--target",
+                "0",
+                "--summary-dir",
+                str(custom),
+            ]
+        )
+        == 0
+    )
+    assert (custom / "grown.summary.md").exists()
+
+
 def test_cli_grow_expands_the_database_across_runs(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     dataset_path = tmp_path / "data/generated/grown.json"

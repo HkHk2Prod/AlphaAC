@@ -202,9 +202,7 @@ def render_panel(
             return plot_y + plot_height / 2
         return plot_y + plot_height - ((value - min_y) / (max_y - min_y)) * plot_height
 
-    points = " ".join(
-        f"{scale_x(px) - x:.2f},{scale_y(py) - y:.2f}" for px, py in series.points
-    )
+    points = " ".join(f"{scale_x(px) - x:.2f},{scale_y(py) - y:.2f}" for px, py in series.points)
     title_size = 22 if large else 16
     tick_size = 12 if large else 10
     latest = series.points[-1][1]

@@ -179,6 +179,20 @@ uv run --frozen aczero dataset improve \
   --input data/generated/train_rank2.json --search all --max-difficulty 8
 ```
 
+Annotate each entry with its **descent distance** — the fewest AC moves that
+strictly reduce the presentation's total length. This is the intended
+example-difficulty label for training: the hard instances are exactly those stuck
+on a long plateau that must grow before they can shrink. Each entry gets
+`descent_distance` (the move count, or `null` when none is found within budget)
+and `descent_proven` (whether that value is exact). Entries are searched
+easiest-first, proven answers are skipped on re-runs, and the file is rewritten
+atomically:
+
+```bash
+uv run --frozen aczero dataset descent \
+  --input data/generated/train_rank2.json --total-length-cap 48 --max-depth 32
+```
+
 Verify a certificate:
 
 ```bash
