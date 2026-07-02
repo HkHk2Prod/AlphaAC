@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import atexit
 import json
-import os
 import shutil
 import tempfile
 from collections.abc import Callable, Sequence
@@ -12,6 +11,7 @@ from typing import Any, Protocol
 
 from ac_zero.agents.greedy import GreedyBestFirstConfig, GreedyBestFirstSearch
 from ac_zero.algebra.presentation import BalancedPresentation
+from ac_zero.datasets.io import atomic_write_json
 from ac_zero.datasets.labels import UNKNOWN, TrivializationLabel, known_solution, merge_labels
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.search.breadth_first import BreadthFirstConfig, BreadthFirstSearch
@@ -266,7 +266,7 @@ def improve_dataset(
 
     data["instances"] = entries
     _refresh_provenance(data, entries)
-    _atomic_write(Path(output) if output is not None else Path(path), data)
+    atomic_write_json(Path(output) if output is not None else Path(path), data)
     return ImproveReport(
         total=len(entries),
         duplicates_merged=duplicates,
@@ -303,20 +303,6 @@ def _refresh_provenance(data: dict[str, Any], entries: list[dict[str, Any]]) -> 
     if solved_lengths:
         provenance["min_known_operations"] = min(solved_lengths)
         provenance["max_known_operations"] = max(solved_lengths)
-
-
-def _atomic_write(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile(
-        "w", dir=path.parent, prefix=path.name, suffix=".tmp", delete=False, encoding="utf-8"
-    )
-    try:
-        with handle:
-            handle.write(json.dumps(data, indent=2, sort_keys=True) + "\n")
-        os.replace(handle.name, path)
-    except BaseException:
-        Path(handle.name).unlink(missing_ok=True)
-        raise
 
 
 def _min_optional(left: int | None, right: int | None) -> int | None:

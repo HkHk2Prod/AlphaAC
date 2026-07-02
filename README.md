@@ -70,16 +70,22 @@ uv run --frozen aczero solve --presentation data/examples/standard_rank_2.json
 uv run --frozen aczero solve --presentation data/examples/standard_rank_3.json
 ```
 
-Generate a synthetic training dataset. Instances are deduplicated by content
-hash, exclude the trivial presentation, and each carries a `difficulty` label
-(an upper bound on its strict-AC solution length), so the set scales to large
-counts without repetition:
+Grow a training dataset outward from the trivial group. Each run expands known
+groups by every AC move and records each newly reached group together with *all*
+of its co-optimal construction moves (multiple back-pointers, for later
+supervised learning), deduplicated by content hash. The database only ever grows:
+the first run bootstraps from the trivial presentation, and every later run
+resumes from the accumulated frontier and appends more groups.
 
 ```bash
-uv run --frozen aczero dataset generate \
-  --config configs/experiments/smoke.yaml \
-  --output data/generated/smoke.json
+uv run --frozen aczero dataset grow \
+  --output data/generated/train_rank2.json \
+  --rank 2 --target 1000 --select smallest
 ```
+
+Re-run the command (or point `--input` at the same file) to expand it further.
+`--select smallest` gives one deterministic canonical frontier; use `--select
+weighted-random --seed N` so independent machines explore divergent regions.
 
 Write the curated catalog of standard potential Andrews-Curtis counterexamples
 (Akbulut-Kirby and Miller-Schupp series) to `data/candidates/`, kept separate
@@ -203,7 +209,7 @@ uv run --frozen aczero dataset improve \
 Generation, refinement, and training are all CPU-bound, so they fan independent
 work across worker *processes* (threads cannot help under the GIL). This is on by
 default: every CPU core is used unless you say otherwise. Pass `--workers N` to
-`dataset generate` (candidate construction) or `dataset improve` (per-entry
+`dataset grow` (database expansion) or `dataset improve` (per-entry
 searches), or set `training.workers` in a train config (self-play episodes), where
 `0` (the default) autodetects and uses every physical core (hyperthreads excluded,
 since they add little for CPU-bound work), a negative count leaves that many free,

@@ -9,7 +9,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
@@ -20,7 +20,8 @@ from ac_zero.agents.random_agent import RandomLegalActionAgent
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.candidates import write_candidates
-from ac_zero.datasets.generator import generate_solvable, write_dataset
+from ac_zero.datasets.generator import generate_solvable
+from ac_zero.datasets.grow import GrowConfig, grow_dataset
 from ac_zero.datasets.update import (
     BreadthFirstStrategy,
     GreedyBestFirstStrategy,
@@ -56,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     hw = sub.add_parser("hardware")
     hw.add_argument("subcmd", choices=["inspect"])
     ds = sub.add_parser("dataset")
-    ds.add_argument("subcmd", choices=["generate", "validate", "candidates", "improve"])
+    ds.add_argument("subcmd", choices=["grow", "validate", "candidates", "improve"])
     ds.add_argument("--config", default="configs/experiments/smoke.yaml")
     ds.add_argument("--output", default="")
     ds.add_argument("--input", default="data/generated/train_rank2.json")
@@ -66,6 +67,27 @@ def main(argv: list[str] | None = None) -> int:
     ds.add_argument("--max-difficulty", type=int, default=8, help="negative searches all entries")
     ds.add_argument("--max-expansions", type=int, default=3000, help="per-entry search node budget")
     ds.add_argument("--max-generated", type=int, default=30000, help="per-entry generated node cap")
+    ds.add_argument("--rank", type=int, default=2, help="group rank for `grow`")
+    ds.add_argument("--target", type=int, default=100, help="`grow`: new groups to add this run")
+    ds.add_argument(
+        "--select",
+        choices=["smallest", "weighted-random"],
+        default="smallest",
+        help="`grow`: which open group to expand next",
+    )
+    ds.add_argument("--seed", type=int, default=0, help="`grow`: weighted-random selection seed")
+    ds.add_argument(
+        "--short-bias",
+        type=float,
+        default=2.0,
+        help="`grow`: weighted-random bias toward short groups",
+    )
+    ds.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=1000,
+        help="`grow`: dump to disk every N added groups (0 = only at the end)",
+    )
     ds.add_argument(
         "--workers",
         type=int,
@@ -121,17 +143,8 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
     if args.cmd == "hardware":
         return _hardware(reporter)
     if args.cmd == "dataset":
-        if args.subcmd == "generate":
-            output = args.output or "data/generated/smoke.json"
-            params = _dataset_generation_params(Path(args.config))
-            write_dataset(
-                output,
-                workers=args.workers,
-                progress=lambda message, metrics: reporter.progress("generate", message, metrics),
-                **params,
-            )
-            reporter.result_text(output)
-            return 0
+        if args.subcmd == "grow":
+            return _dataset_grow(args, reporter)
         if args.subcmd == "candidates":
             output = args.output or "data/candidates/standard.json"
             written = write_candidates(output)
@@ -275,7 +288,11 @@ def _solve(path: Path, agent_name: str, checkpoint: str, reporter: CliReporter) 
     if path.exists() and path.suffix == ".json":
         data = json.loads(path.read_text())
         if "instances" in data:
-            pres = BalancedPresentation.from_json(data["instances"][0])
+            instances = data["instances"]
+            # Grown datasets carry the trivial root as their first entry; solve the
+            # first genuinely non-trivial group instead.
+            entry = next((e for e in instances if e.get("difficulty", 0) > 0), instances[0])
+            pres = BalancedPresentation.from_json(entry)
             max_moves = _max_moves_for_dataset(data, pres)
         else:
             pres = BalancedPresentation.from_json(data)
@@ -519,6 +536,38 @@ def _random_rollout(pres: BalancedPresentation, env: ACEnvironment, cert: Path) 
     )
 
 
+def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
+    """Expand the persistent dataset outward from the trivial group by AC moves."""
+    path = Path(args.output or args.input)
+    config = GrowConfig(
+        rank=args.rank,
+        target=args.target,
+        select=args.select,
+        seed=args.seed,
+        total_length_cap=args.total_length_cap,
+        short_bias=args.short_bias,
+        workers=args.workers,
+        checkpoint_every=args.checkpoint_every,
+    )
+    report = grow_dataset(
+        path,
+        config,
+        progress=lambda message, metrics: reporter.progress("grow", message, metrics),
+    )
+    reporter.result_json(
+        {
+            "path": str(path),
+            "groups": report.total,
+            "added": report.added,
+            "expanded": report.expanded,
+            "frontier": report.frontier,
+            "max_difficulty": report.max_difficulty,
+        },
+        sort_keys=True,
+    )
+    return 0
+
+
 def _dataset_improve(args: argparse.Namespace, reporter: CliReporter) -> int:
     """Search dataset entries and merge in any shorter or newly found solutions."""
     strategies: list[SearchStrategy] = []
@@ -573,35 +622,6 @@ def _load_config(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"config must be a mapping: {path}")
     return dict(data)
-
-
-class _DatasetParams(TypedDict):
-    rank: int
-    count: int
-    depth: int
-    seed: int
-    min_total_length: int
-    min_relator_length: int
-
-
-def _dataset_generation_params(config_path: Path) -> _DatasetParams:
-    """Read dataset generation parameters from an experiment config."""
-    data = _load_config(config_path)
-    dataset = data.get("dataset", {})
-    if dataset is None:
-        dataset = {}
-    if not isinstance(dataset, dict):
-        raise ValueError("dataset config must be a mapping")
-    return {
-        "rank": int(data.get("rank", 2)),
-        "count": int(dataset.get("count", data.get("count", 3))),
-        "depth": int(dataset.get("depth", data.get("depth", 3))),
-        "seed": int(data.get("seed", 0)),
-        "min_total_length": int(dataset.get("min_total_length", data.get("min_total_length", 0))),
-        "min_relator_length": int(
-            dataset.get("min_relator_length", data.get("min_relator_length", 0))
-        ),
-    }
 
 
 def _max_moves_for_dataset(data: dict[str, Any], pres: BalancedPresentation) -> int:

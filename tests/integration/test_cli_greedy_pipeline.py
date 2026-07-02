@@ -9,7 +9,10 @@ def test_cli_greedy_pipeline_writes_verified_solution(monkeypatch, tmp_path: Pat
     monkeypatch.chdir(tmp_path)
 
     dataset_path = tmp_path / "data/generated/greedy_rl.json"
-    assert main(["dataset", "generate", "--output", str(dataset_path)]) == 0
+    assert (
+        main(["dataset", "grow", "--output", str(dataset_path), "--target", "20", "--workers", "1"])
+        == 0
+    )
     assert main(["solve", "--presentation", str(dataset_path), "--agent", "greedy"]) == 0
 
     cert_path = tmp_path / "runs/solve/certificates/solution.json"
@@ -24,40 +27,16 @@ def test_cli_greedy_pipeline_writes_verified_solution(monkeypatch, tmp_path: Pat
     assert greedy_row["certificate"]
 
 
-def test_dataset_generate_uses_configured_difficulty(monkeypatch, tmp_path: Path) -> None:
+def test_cli_grow_expands_the_database_across_runs(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
-    config_path = tmp_path / "dataset.yaml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "rank: 2",
-                "seed: 11",
-                "dataset:",
-                "  count: 5",
-                "  depth: 7",
-                "  min_total_length: 8",
-                "  min_relator_length: 2",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    dataset_path = tmp_path / "data/generated/configured.json"
+    dataset_path = tmp_path / "data/generated/grown.json"
 
-    assert (
-        main(["dataset", "generate", "--config", str(config_path), "--output", str(dataset_path)])
-        == 0
-    )
+    assert main(["dataset", "grow", "--output", str(dataset_path), "--target", "15"]) == 0
+    first = len(json.loads(dataset_path.read_text())["instances"])
 
+    # A second run resumes from the same file and only ever grows the database.
+    assert main(["dataset", "grow", "--input", str(dataset_path), "--target", "15"]) == 0
     data = json.loads(dataset_path.read_text())
-    assert data["rank"] == 2
-    assert data["provenance"]["seed"] == 11
-    assert data["provenance"]["depth"] == 7
-    assert data["provenance"]["min_total_length"] == 8
-    assert data["provenance"]["min_relator_length"] == 2
-    assert len(data["instances"]) == 5
-    assert {instance["provenance"]["depth"] for instance in data["instances"]} == {7}
-    for instance in data["instances"]:
-        relator_lengths = [len(relator) for relator in instance["relators"]]
-        assert sum(relator_lengths) >= 8
-        assert min(relator_lengths) >= 2
+    assert data["schema_version"] == "aczero-dataset-v3"
+    assert len(data["instances"]) > first
+    assert main(["dataset", "validate", "--input", str(dataset_path)]) == 0

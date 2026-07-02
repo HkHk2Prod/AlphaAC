@@ -7,7 +7,12 @@ from typing import Any
 
 from ac_zero.algebra.presentation import BalancedPresentation
 
-_SCHEMA_VERSIONS = {"aczero-dataset-v1", "aczero-dataset-v2", "aczero-candidates-v1"}
+_SCHEMA_VERSIONS = {
+    "aczero-dataset-v1",
+    "aczero-dataset-v2",
+    "aczero-dataset-v3",
+    "aczero-candidates-v1",
+}
 _TRISTATE = (True, False, None)
 
 
@@ -56,6 +61,7 @@ def _validate_entry(entry: Any) -> list[str]:
         return ["entry must be a JSON object"]
     problems: list[str] = []
     problems.extend(_check_label(entry))
+    problems.extend(_check_graph_fields(entry))
     difficulty = entry.get("difficulty")
     if difficulty is not None and (not isinstance(difficulty, int) or difficulty < 0):
         problems.append("difficulty must be a non-negative integer or absent")
@@ -66,6 +72,27 @@ def _validate_entry(entry: Any) -> list[str]:
     stored = entry.get("content_hash")
     if stored is not None and stored != presentation.content_hash:
         problems.append("content_hash does not match the relators")
+    return problems
+
+
+def _check_graph_fields(entry: dict[str, Any]) -> list[str]:
+    """Validate the v3 construction-graph fields when present (older files omit them)."""
+    problems: list[str] = []
+    if "exhausted" in entry and not isinstance(entry["exhausted"], bool):
+        problems.append("exhausted must be a boolean")
+    predecessors = entry.get("predecessors")
+    if predecessors is None:
+        return problems
+    if not isinstance(predecessors, list):
+        return [*problems, "predecessors must be a list"]
+    for index, edge in enumerate(predecessors):
+        if not isinstance(edge, dict):
+            problems.append(f"predecessor {index} must be an object")
+            continue
+        if not isinstance(edge.get("parent_hash"), str):
+            problems.append(f"predecessor {index}: parent_hash must be a string")
+        if not isinstance(edge.get("move"), dict):
+            problems.append(f"predecessor {index}: move must be an object")
     return problems
 
 
