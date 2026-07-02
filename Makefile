@@ -43,7 +43,7 @@ dataset-refine:
 # Sync the training dataset with the Hugging Face bucket (needs ac-zero[hub] and
 # an HF_TOKEN). `data/generated/` is gitignored, so pull before refining/using it.
 dataset-pull:
-	uv run --frozen aczero dataset download --output $(INPUT)
+	uv run --frozen --extra hub aczero dataset download --output $(INPUT)
 
 dataset-push:
-	uv run --frozen aczero dataset upload --input $(INPUT)
+	uv run --frozen --extra hub aczero dataset upload --input $(INPUT)
