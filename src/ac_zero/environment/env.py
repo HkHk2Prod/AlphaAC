@@ -54,6 +54,11 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         self.config = config or ACEnvironmentConfig()
         self.encoder = encoder or StateEncoder()
         self.catalog = ActionCatalog(presentation.rank)
+        # N for the "descent" reward: the known fewest moves that shorten this
+        # start presentation, carried on the instance's provenance by the dataset
+        # source. `None` for instances without the annotation (the descent instance
+        # source filters those out, so descent runs always have a value here).
+        self.descent_distance = presentation.provenance.get("descent_distance")
         self.action_space = spaces.Discrete(len(self.catalog))
         self.observation_space = self._build_observation_space()
         self.state = self._initial_state()
@@ -117,6 +122,8 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
                 new_best_length=best,
                 goal_reached=terminated,
                 goal_reward=self.config.goal_reward,
+                available_moves=len(self.catalog),
+                descent_distance=self.descent_distance,
             ),
         )
         remaining = max(0, prev.moves_remaining - 1)
@@ -164,6 +171,11 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         }
 
     def _is_goal(self, presentation: BalancedPresentation) -> bool:
+        # The "descent" reward bundles its own objective: the goal is the first
+        # strict length reduction from the start, so termination follows the reward
+        # choice rather than `goal_mode`.
+        if self.config.reward_mode == "descent":
+            return presentation.total_length < self.initial.total_length
         if self.config.goal_mode == "exact_standard":
             return exact_standard_goal(presentation)
         if self.config.goal_mode == "signed_permuted_basis":

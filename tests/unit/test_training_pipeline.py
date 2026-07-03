@@ -173,6 +173,13 @@ def test_config_rejects_negative_max_difficulty() -> None:
         TrainingPipelineConfig(dataset_max_difficulty=-1).validate()
 
 
+def test_config_requires_dataset_for_descent_reward() -> None:
+    with pytest.raises(ValueError, match="descent"):
+        TrainingPipelineConfig(reward_mode="descent").validate()
+    # A dataset-seeded descent run validates.
+    TrainingPipelineConfig(reward_mode="descent", dataset_path="data/train_rank2.json").validate()
+
+
 def test_ensure_training_dataset_pulls_only_when_missing(monkeypatch, tmp_path: Path) -> None:
     from ac_zero.cli import _ensure_training_dataset
     from ac_zero.system.reporting import CliReporter
