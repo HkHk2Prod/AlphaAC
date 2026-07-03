@@ -7,125 +7,104 @@ from typing import Any
 
 from ac_zero.algebra.presentation import BalancedPresentation
 
-_SCHEMA_VERSIONS = {
-    "aczero-dataset-v1",
-    "aczero-dataset-v2",
-    "aczero-dataset-v3",
-    "aczero-candidates-v1",
-}
+_GROUPS_SCHEMA = "aczero-groups-v1"
+_ANNOTATIONS_SCHEMA = "aczero-annotations-v1"
 _TRISTATE = (True, False, None)
 
 
 @dataclass(frozen=True, slots=True)
 class ValidationReport:
-    """Outcome of validating a dataset document against the AC-Zero schema."""
+    """Outcome of validating a dataset document against an AC-Zero schema."""
 
     ok: bool
-    instances: int
+    entries: int
     errors: list[str] = field(default_factory=list)
 
 
 def validate_dataset(path: str | Path) -> ValidationReport:
-    """Validate a dataset JSON file on disk."""
+    """Validate a group or annotation dataset JSON file on disk."""
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        return ValidationReport(ok=False, instances=0, errors=[f"unreadable dataset: {exc}"])
+        return ValidationReport(ok=False, entries=0, errors=[f"unreadable dataset: {exc}"])
     return validate_mapping(data)
 
 
 def validate_mapping(data: Any) -> ValidationReport:
-    """Validate an already-parsed dataset document, checking structure and labels.
+    """Validate an already-parsed dataset document, dispatching on its schema.
 
-    Beyond shape, every instance is reparsed as a presentation and its stored
-    content hash is recomputed, so corrupted relators or stale hashes are caught.
+    Group documents have their relators reparsed and content hashes recomputed, so
+    corrupted relators or stale hashes are caught; annotation documents have their
+    distance and move-list fields shape-checked.
     """
-    errors: list[str] = []
     if not isinstance(data, dict):
-        return ValidationReport(ok=False, instances=0, errors=["document must be a JSON object"])
-    if data.get("schema_version") not in _SCHEMA_VERSIONS:
-        errors.append(f"unknown schema_version {data.get('schema_version')!r}")
+        return ValidationReport(ok=False, entries=0, errors=["document must be a JSON object"])
+    schema = data.get("schema_version")
     if not isinstance(data.get("rank"), int) or data.get("rank", 0) < 1:
-        errors.append("rank must be a positive integer")
-    instances = data.get("instances")
-    if not isinstance(instances, list):
-        return ValidationReport(ok=False, instances=0, errors=[*errors, "instances must be a list"])
+        base = ["rank must be a positive integer"]
+    else:
+        base = []
+    if schema == _GROUPS_SCHEMA:
+        return _validate_list(data, "groups", _validate_group_entry, base)
+    if schema == _ANNOTATIONS_SCHEMA:
+        return _validate_list(data, "annotations", _validate_annotation_entry, base)
+    return ValidationReport(ok=False, entries=0, errors=[f"unknown schema_version {schema!r}"])
 
-    for index, entry in enumerate(instances):
-        errors.extend(f"instance {index}: {message}" for message in _validate_entry(entry))
-    return ValidationReport(ok=not errors, instances=len(instances), errors=errors)
+
+def _validate_list(
+    data: dict[str, Any],
+    key: str,
+    validate_entry: Any,
+    errors: list[str],
+) -> ValidationReport:
+    entries = data.get(key)
+    if not isinstance(entries, list):
+        return ValidationReport(ok=False, entries=0, errors=[*errors, f"{key} must be a list"])
+    for index, entry in enumerate(entries):
+        errors.extend(f"{key[:-1]} {index}: {message}" for message in validate_entry(entry))
+    return ValidationReport(ok=not errors, entries=len(entries), errors=errors)
 
 
-def _validate_entry(entry: Any) -> list[str]:
+def _validate_group_entry(entry: Any) -> list[str]:
     if not isinstance(entry, dict):
         return ["entry must be a JSON object"]
     problems: list[str] = []
-    problems.extend(_check_label(entry))
-    problems.extend(_check_graph_fields(entry))
-    difficulty = entry.get("difficulty")
-    if difficulty is not None and (not isinstance(difficulty, int) or difficulty < 0):
-        problems.append("difficulty must be a non-negative integer or absent")
-    problems.extend(_check_descent(entry))
-    try:
-        presentation = BalancedPresentation.from_json(entry)
-    except Exception as exc:
-        return [*problems, f"invalid presentation: {exc}"]
-    stored = entry.get("content_hash")
-    if stored is not None and stored != presentation.content_hash:
-        problems.append("content_hash does not match the relators")
-    return problems
-
-
-def _check_graph_fields(entry: dict[str, Any]) -> list[str]:
-    """Validate the v3 construction-graph fields when present (older files omit them)."""
-    problems: list[str] = []
-    if "exhausted" in entry and not isinstance(entry["exhausted"], bool):
-        problems.append("exhausted must be a boolean")
-    predecessors = entry.get("predecessors")
-    if predecessors is None:
-        return problems
-    if not isinstance(predecessors, list):
-        return [*problems, "predecessors must be a list"]
-    for index, edge in enumerate(predecessors):
-        if not isinstance(edge, dict):
-            problems.append(f"predecessor {index} must be an object")
-            continue
-        if not isinstance(edge.get("parent_hash"), str):
-            problems.append(f"predecessor {index}: parent_hash must be a string")
-        if not isinstance(edge.get("move"), dict):
-            problems.append(f"predecessor {index}: move must be an object")
-    return problems
-
-
-def _check_descent(entry: dict[str, Any]) -> list[str]:
-    """Validate the length-descent annotation fields when present (grow omits them).
-
-    ``descent_distance`` is the fewest moves that strictly shorten the
-    presentation: a positive integer, or null when none is known. ``descent_proven``
-    flags whether that answer is exact, so it is meaningful only alongside a
-    written distance field.
-    """
-    problems: list[str] = []
-    distance = entry.get("descent_distance")
-    if distance is not None and (not isinstance(distance, int) or distance < 1):
-        problems.append("descent_distance must be a positive integer or null")
-    proven = entry.get("descent_proven")
-    if proven is not None and not isinstance(proven, bool):
-        problems.append("descent_proven must be a boolean or absent")
-    if proven is not None and "descent_distance" not in entry:
-        problems.append("descent_proven requires a descent_distance field")
-    return problems
-
-
-def _check_label(entry: dict[str, Any]) -> list[str]:
-    problems: list[str] = []
     if entry.get("ac_trivial") not in _TRISTATE:
         problems.append("ac_trivial must be true, false, or null")
-    operations = entry.get("minimal_known_operations")
-    if operations is not None and (not isinstance(operations, int) or operations < 0):
-        problems.append("minimal_known_operations must be a non-negative integer or null")
-    if entry.get("optimal") not in _TRISTATE:
-        problems.append("optimal must be true, false, or null")
-    if entry.get("optimal") is True and operations is None:
-        problems.append("optimal cannot be true without minimal_known_operations")
+    if not isinstance(entry.get("source"), str):
+        problems.append("source must be a string")
+    transitions = entry.get("transitions")
+    if transitions is not None and not (
+        isinstance(transitions, dict)
+        and all(isinstance(k, str) and isinstance(v, str) for k, v in transitions.items())
+    ):
+        problems.append("transitions must be a map of move-id strings to hash strings")
+    try:
+        presentation = BalancedPresentation.from_letters(int(entry["rank"]), entry["relators"])
+    except Exception as exc:
+        return [*problems, f"invalid presentation: {exc}"]
+    if entry.get("hash") != presentation.content_hash:
+        problems.append("hash does not match the relators")
+    if entry.get("total_length") != presentation.total_length:
+        problems.append("total_length does not match the relators")
+    return problems
+
+
+def _validate_annotation_entry(entry: Any) -> list[str]:
+    if not isinstance(entry, dict):
+        return ["entry must be a JSON object"]
+    problems: list[str] = []
+    if not isinstance(entry.get("hash"), str):
+        problems.append("hash must be a string")
+    for field_name in ("distance_to_origin", "distance_to_shorter"):
+        value = entry.get(field_name)
+        if value is not None and (not isinstance(value, int) or value < 0):
+            problems.append(f"{field_name} must be a non-negative integer or null")
+    for field_name in ("optimal_moves_to_origin", "optimal_moves_to_shorter"):
+        moves = entry.get(field_name)
+        if not (isinstance(moves, list) and all(isinstance(m, int) for m in moves)):
+            problems.append(f"{field_name} must be a list of integer move ids")
+    for field_name in ("shorter_proven", "optimal"):
+        if not isinstance(entry.get(field_name), bool):
+            problems.append(f"{field_name} must be a boolean")
     return problems

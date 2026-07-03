@@ -1,63 +1,61 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from concurrent.futures import Future, ProcessPoolExecutor
-from typing import Any, NamedTuple, Protocol
+from typing import NamedTuple, Protocol
 
 from ac_zero.algebra.presentation import BalancedPresentation
-from ac_zero.moves.catalog import ActionCatalog
-from ac_zero.moves.primitive import inverse_primitive_sequence
+from ac_zero.moves.universal import UniversalCatalog
 from ac_zero.system.parallel import resolve_worker_count
 
 
-class ChildRecord(NamedTuple):
-    """One expansion result, kept deliberately compact for cheap IPC.
+class NeighbourRecord(NamedTuple):
+    """One universal-move neighbour, kept compact for cheap IPC.
 
-    Only what the main process needs to merge a neighbour into the graph without
-    re-deriving it: the ``move`` that produced it (as JSON), its precomputed
-    ``child_hash`` (so the merge never re-hashes), the freely reduced relator
-    ``letters`` (plain ints -- a full presentation is rebuilt only when the child
-    turns out to be new), and ``reverse_delta``, the strict-primitive length of
-    the move's inverse used to extend the trivialization bound.
+    Only what the main process needs to record an adjacency edge and, for a
+    genuinely new group, add its node -- without re-deriving anything: the
+    ``move_id`` that produced it (its universal catalog ID, the transition key),
+    the precomputed ``child_hash`` (so the merge never re-hashes), the freely
+    reduced relator ``letters`` (a full presentation is rebuilt only when the
+    child is new), and the child's ``total_length``.
     """
 
-    move: dict[str, Any]
+    move_id: int
     child_hash: str
     letters: tuple[tuple[int, ...], ...]
-    reverse_delta: int
+    total_length: int
 
 
 # Per-worker state, built once by the pool initializer so the hot expansion path
 # never re-allocates the catalog or re-reads the length cap.
-_WORKER_CATALOG: ActionCatalog | None = None
+_WORKER_CATALOG: UniversalCatalog | None = None
 _WORKER_CAP: int = 0
 
 
 def _init_expand_worker(rank: int, total_length_cap: int) -> None:
     global _WORKER_CATALOG, _WORKER_CAP
-    _WORKER_CATALOG = ActionCatalog(rank)
+    _WORKER_CATALOG = UniversalCatalog(rank)
     _WORKER_CAP = total_length_cap
 
 
-def expand_group(presentation: BalancedPresentation) -> list[ChildRecord]:
-    """Apply every catalog move to one group, hashing each neighbour in-worker.
+def expand_group(presentation: BalancedPresentation) -> list[NeighbourRecord]:
+    """Apply every universal move to one group, hashing each neighbour in-worker.
 
-    Returns the length-changing neighbours within the length cap. All the
-    expensive per-neighbour work -- applying the move, freely reducing, and
-    hashing the child -- happens here in the worker process, so the main process
-    only ever does the serial graph merge over precomputed hashes.
+    Returns every non-identity neighbour within the length cap, keyed by universal
+    move ID -- the complete local adjacency. All the expensive per-neighbour work
+    (applying the move, freely reducing, hashing) happens here in the worker, so
+    the main process only records precomputed edges and adds new nodes.
     """
     assert _WORKER_CATALOG is not None
     base = presentation.content_hash
-    records: list[ChildRecord] = []
-    for move in _WORKER_CATALOG.moves:
+    records: list[NeighbourRecord] = []
+    for move_id, move in enumerate(_WORKER_CATALOG.moves):
         child = move.apply(presentation)
         child_hash = child.content_hash
         if child_hash == base or child.total_length > _WORKER_CAP:
             continue
         letters = tuple(relator.letters for relator in child.relators)
-        reverse_delta = len(inverse_primitive_sequence(move))
-        records.append(ChildRecord(move.to_json(), child_hash, letters, reverse_delta))
+        records.append(NeighbourRecord(move_id, child_hash, letters, child.total_length))
     return records
 
 
@@ -68,7 +66,7 @@ def expand_group(presentation: BalancedPresentation) -> list[ChildRecord]:
 _SPAWN_AFTER_GROUPS = 512
 
 
-def _expand_chunk(presentations: list[BalancedPresentation]) -> list[list[ChildRecord]]:
+def _expand_chunk(presentations: list[BalancedPresentation]) -> list[list[NeighbourRecord]]:
     """Expand a contiguous slice of a batch in one worker task, preserving order."""
     return [expand_group(presentation) for presentation in presentations]
 
@@ -85,27 +83,27 @@ def _contiguous_chunks(
 class BatchHandle(Protocol):
     """A submitted batch whose per-group neighbour records can be awaited in order."""
 
-    def result(self) -> list[list[ChildRecord]]: ...
+    def result(self) -> list[list[NeighbourRecord]]: ...
 
 
 class _DoneBatch:
     """Inline (single-process) result -- already computed at submit time."""
 
-    def __init__(self, records: list[list[ChildRecord]]) -> None:
+    def __init__(self, records: list[list[NeighbourRecord]]) -> None:
         self._records = records
 
-    def result(self) -> list[list[ChildRecord]]:
+    def result(self) -> list[list[NeighbourRecord]]:
         return self._records
 
 
 class _FuturesBatch:
     """A batch expanding across worker processes; `result` gathers slices in order."""
 
-    def __init__(self, futures: list[Future[list[list[ChildRecord]]]]) -> None:
+    def __init__(self, futures: list[Future[list[list[NeighbourRecord]]]]) -> None:
         self._futures = futures
 
-    def result(self) -> list[list[ChildRecord]]:
-        records: list[list[ChildRecord]] = []
+    def result(self) -> list[list[NeighbourRecord]]:
+        records: list[list[NeighbourRecord]] = []
         for future in self._futures:
             records.extend(future.result())
         return records
@@ -160,7 +158,3 @@ class ExpansionPool:
         # of IPC round trips; with several batches in flight the pool stays full.
         chunks = _contiguous_chunks(list(presentations), self._resolved)
         return _FuturesBatch([self._executor.submit(_expand_chunk, chunk) for chunk in chunks])
-
-    def expand(self, presentations: Sequence[BalancedPresentation]) -> Iterator[list[ChildRecord]]:
-        """Expand one batch and iterate its per-group records (convenience wrapper)."""
-        return iter(self.submit_batch(presentations).result())

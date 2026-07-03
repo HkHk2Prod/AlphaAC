@@ -71,15 +71,23 @@ uv run --frozen aczero solve --presentation data/examples/standard_rank_3.json
 ```
 
 Grow a training dataset outward from the trivial group. Each run expands known
-groups by every AC move and records each newly reached group together with *all*
-of its co-optimal construction moves (multiple back-pointers, for later
-supervised learning), deduplicated by content hash. The database only ever grows:
-the first run bootstraps from the trivial presentation, and every later run
-resumes from the accumulated frontier and appends more groups.
+groups by every **universal** move and records each newly reached group together
+with its full local adjacency — a `move_id -> target hash` transition map, keyed
+by the universal move that produces each neighbour — deduplicated by content
+hash. The universal moves are *invertible* (every move has an inverse move in the
+set), so generation is pure graph construction with no reverse-path bookkeeping:
+distances are recovered later by the annotation pass. The database only ever
+grows: the first run bootstraps from the trivial presentation, and every later
+run resumes from the accumulated frontier and appends more groups.
+
+The group file (`<name>.groups.json`) stores each group in minimal form: content
+hash, rank, known AC-triviality, source, the relators (lists of signed integers),
+total length, and the transition map. Every group reachable from the trivial root
+by AC moves is AC-trivial.
 
 ```bash
 uv run --frozen aczero dataset grow \
-  --output data/generated/train_rank2.json \
+  --output data/generated/train.groups.json \
   --rank 2 --target 1000 --select smallest
 ```
 
@@ -94,12 +102,15 @@ in git (`data/generated/` is gitignored) — it lives in a Hugging Face
 (`pip install ac-zero[hub]`; set `HF_TOKEN` or run `hf auth login`), then pull or
 push the current dataset:
 
-```bash
-# Download the current training set into data/generated/train_rank2.json
-uv run --frozen --extra hub aczero dataset download --output data/generated/train_rank2.json
+Both the group file and its annotation files (below) sync by basename, so the
+same commands move either kind:
 
-# Push a locally grown dataset back to the bucket
-uv run --frozen --extra hub aczero dataset upload --input data/generated/train_rank2.json
+```bash
+# Download the current training set into data/generated/train.groups.json
+uv run --frozen --extra hub aczero dataset download --output data/generated/train.groups.json
+
+# Push a locally grown dataset (or an annotation file) back to the bucket
+uv run --frozen --extra hub aczero dataset upload --input data/generated/train.groups.json
 ```
 
 `uv run` re-syncs the environment per invocation, so pass `--extra hub` on the
@@ -184,37 +195,33 @@ uv run --frozen aczero solve --agent puct
 uv run --frozen aczero solve --agent ppo --checkpoint runs/train/ppo_rank2/checkpoints/latest.json
 ```
 
-Validate a dataset against the schema (structure, label fields, and recomputed
-content hashes):
+Validate a group or annotation dataset against its schema (structure, recomputed
+content hashes for groups, distance/move-list fields for annotations):
 
 ```bash
-uv run --frozen aczero dataset validate --input data/generated/train_rank2.json
+uv run --frozen aczero dataset validate --input data/generated/train.groups.json
 ```
 
-Improve a dataset's labels by searching each entry for a better trivialization.
-Updates are merge-only: a shorter known solution is never replaced by a longer
-one and known triviality is never demoted, duplicates are merged by content
-hash, and proven-optimal entries are skipped so repeated passes are cheap. The
-file is rewritten atomically.
+**Annotate** a group dataset with distances under a chosen move set, writing a
+separate `<name>.<moveset>.annotations.json` file. Generation and annotation are
+independent processes: generation builds the graph once, and each annotation pass
+reads that stored adjacency. Available move sets are `universal` (the full
+invertible set) and `strict-ac` (the classic `3n^2` catalog); `strict-ac` is a
+subset of `universal`.
 
 ```bash
-uv run --frozen aczero dataset improve \
-  --input data/generated/train_rank2.json --search all --max-difficulty 8
+uv run --frozen aczero dataset annotate \
+  --input data/generated/train.groups.json --moveset strict-ac
 ```
 
-Annotate each entry with its **descent distance** — the fewest AC moves that
-strictly reduce the presentation's total length. This is the intended
-example-difficulty label for training: the hard instances are exactly those stuck
-on a long plateau that must grow before they can shrink. Each entry gets
-`descent_distance` (the move count, or `null` when none is found within budget)
-and `descent_proven` (whether that value is exact). Entries are searched
-easiest-first, proven answers are skipped on re-runs, and the file is rewritten
-atomically:
-
-```bash
-uv run --frozen aczero dataset descent \
-  --input data/generated/train_rank2.json --total-length-cap 48 --max-depth 32
-```
+Each annotation entry carries, under that move set: the **distance to the origin**
+(the trivial group) with the co-optimal first moves toward it, and the **distance
+to a strictly shorter group** (the descent-distance difficulty label) with its
+co-optimal first moves. Because the moves are invertible, distance-to-origin is a
+single breadth-first sweep from the trivial root over the *inverse* move set —
+which also makes annotating a non-invertible subset well-defined. Groups are
+processed shortest-first, settled answers are skipped on re-runs, and the file is
+rewritten atomically.
 
 Verify a certificate:
 
@@ -231,22 +238,20 @@ and checks the configured goal predicate.
 
 Everything is CPU-only and deterministic, so a bigger run is just bigger numbers.
 
-Harder dataset refinement — raise the per-entry search budget and the difficulty
-gate (a negative gate searches every entry). Improvement is monotonic, so a
-longer run can only add shorter/optimal labels:
+Bigger annotation runs — raise the descent search depth so more plateaus resolve
+within budget. Annotation is exact where it terminates, so a longer run can only
+settle more groups:
 
 ```bash
-make dataset-refine ARGS="--max-difficulty -1 --max-expansions 200000 --max-generated 2000000"
-# or directly:
-uv run --frozen aczero dataset improve \
-  --input data/generated/train_rank2.json \
-  --search all --max-difficulty 15 --max-expansions 200000 --max-generated 2000000 --workers 0
+uv run --frozen aczero dataset annotate \
+  --input data/generated/train.groups.json \
+  --moveset strict-ac --max-depth 64 --workers 0
 ```
 
-Generation, refinement, and training are all CPU-bound, so they fan independent
+Generation, annotation, and training are all CPU-bound, so they fan independent
 work across worker *processes* (threads cannot help under the GIL). This is on by
 default: every CPU core is used unless you say otherwise. Pass `--workers N` to
-`dataset grow` (database expansion) or `dataset improve` (per-entry
+`dataset grow` (database expansion) or `dataset annotate` (per-group descent
 searches), or set `training.workers` in a train config (self-play episodes), where
 `0` (the default) autodetects and uses every physical core (hyperthreads excluded,
 since they add little for CPU-bound work), a negative count leaves that many free,

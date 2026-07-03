@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ac_zero.algebra.presentation import BalancedPresentation
-from ac_zero.datasets.labels import UNKNOWN, TrivializationLabel, known_trivial
+from ac_zero.datasets.groups import MOVE_CATALOG, SCHEMA_VERSION, group_entry
 
 # Generators are x = 1, y = 2 throughout this module.
 _X, _Y = 1, 2
@@ -74,20 +74,18 @@ def miller_schupp(n: int, w: Sequence[int]) -> BalancedPresentation:
     )
 
 
-def candidate_entries() -> list[tuple[BalancedPresentation, TrivializationLabel]]:
-    """Return curated candidates paired with their known trivialization labels.
+def candidate_entries() -> list[tuple[BalancedPresentation, bool | None]]:
+    """Return curated candidates paired with their known AC-triviality status.
 
-    AK(2) is known to be AC-trivial; the larger Akbulut-Kirby members and the
-    Miller-Schupp instances here are open, so they carry the unknown label. No
-    minimal operation counts are asserted, since none are independently verified
-    in this repository.
+    AK(2) is known to be AC-trivial (``True``); the larger Akbulut-Kirby members
+    and the Miller-Schupp instances here are open, so their triviality is unknown
+    (``None``). No minimal operation counts are asserted, since none are
+    independently verified in this repository.
     """
-    entries: list[tuple[BalancedPresentation, TrivializationLabel]] = [
-        (akbulut_kirby(2), known_trivial())
-    ]
-    entries.extend((akbulut_kirby(n), UNKNOWN) for n in (3, 4, 5))
+    entries: list[tuple[BalancedPresentation, bool | None]] = [(akbulut_kirby(2), True)]
+    entries.extend((akbulut_kirby(n), None) for n in (3, 4, 5))
     entries.extend(
-        (miller_schupp(n, w), UNKNOWN)
+        (miller_schupp(n, w), None)
         for n, w in (
             (1, [_Y]),
             (1, [_Y, _Y]),
@@ -100,15 +98,29 @@ def candidate_entries() -> list[tuple[BalancedPresentation, TrivializationLabel]
 
 
 def write_candidates(path: str | Path) -> int:
-    """Write the curated candidate catalog as a separate, non-training dataset."""
+    """Write the curated candidate catalog as a separate group dataset (no training).
+
+    Candidates are unexpanded group entries: their AC construction from the trivial
+    group is unknown, so they carry no transitions. The ``source`` names the family
+    (Akbulut-Kirby / Miller-Schupp) so they stay traceable and separate from
+    generated training data.
+    """
     entries = candidate_entries()
+    groups = [
+        group_entry(
+            presentation,
+            ac_trivial=ac_trivial,
+            source=str(presentation.provenance.get("family", "candidate")),
+        )
+        for presentation, ac_trivial in entries
+    ]
     data = {
-        "schema_version": "aczero-candidates-v1",
+        "schema_version": SCHEMA_VERSION,
         "rank": 2,
+        "move_catalog": MOVE_CATALOG,
         "leakage_warning": _LEAKAGE,
-        "instances": [
-            {**presentation.to_json(), **label.to_json()} for presentation, label in entries
-        ],
+        "groups": groups,
+        "provenance": {"generator": "curated_candidates", "count": len(groups)},
     }
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")

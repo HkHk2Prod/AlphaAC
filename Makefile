@@ -1,4 +1,4 @@
-.PHONY: setup install verify test smoke greedy-rl lint typecheck train dataset-refine \
+.PHONY: setup install verify test smoke greedy-rl lint typecheck train dataset-annotate \
 	dataset-pull dataset-push
 
 # One-command environment setup on a fresh machine (requires `uv`).
@@ -33,15 +33,15 @@ SEED ?= 0
 train:
 	uv run --frozen aczero train --config $(CONFIG) --seed $(SEED)
 
-# Deep dataset refinement. Override INPUT and any search budget, e.g.
-#   make dataset-refine ARGS="--max-difficulty -1 --max-expansions 200000"
-INPUT ?= data/generated/train_rank2.json
-ARGS ?= --max-difficulty 12 --max-expansions 100000 --max-generated 1000000
-dataset-refine:
-	uv run --frozen aczero dataset improve --input $(INPUT) $(ARGS)
+# Annotate a group dataset with distances under a move set. Override INPUT/ARGS, e.g.
+#   make dataset-annotate ARGS="--moveset strict-ac --max-depth 64"
+INPUT ?= data/generated/train.groups.json
+ARGS ?= --moveset universal
+dataset-annotate:
+	uv run --frozen aczero dataset annotate --input $(INPUT) $(ARGS)
 
 # Sync the training dataset with the Hugging Face bucket (needs ac-zero[hub] and
-# an HF_TOKEN). `data/generated/` is gitignored, so pull before refining/using it.
+# an HF_TOKEN). `data/generated/` is gitignored, so pull before annotating/using it.
 dataset-pull:
 	uv run --frozen --extra hub aczero dataset download --output $(INPUT)
 

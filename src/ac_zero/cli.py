@@ -19,22 +19,17 @@ from ac_zero.agents.ppo import PPOAgent
 from ac_zero.agents.random_agent import RandomLegalActionAgent
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.verifier import CertificateVerifier
+from ac_zero.datasets.annotate import AnnotateConfig, annotate, annotation_path
 from ac_zero.datasets.candidates import write_candidates
-from ac_zero.datasets.descent import DescentAnnotateConfig, annotate_descent
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
 from ac_zero.datasets.hub import DEFAULT_BUCKET, download_dataset, upload_dataset
 from ac_zero.datasets.summary import write_dataset_summary
-from ac_zero.datasets.update import (
-    BreadthFirstStrategy,
-    GreedyBestFirstStrategy,
-    SearchStrategy,
-    improve_dataset,
-)
 from ac_zero.datasets.validation import validate_dataset
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.models.registry import create_trainable_model, model_from_json
+from ac_zero.moves.universal import MOVE_SET_NAMES
 from ac_zero.search.bidirectional import BidirectionalSearch
 from ac_zero.search.breadth_first import BreadthFirstSearch
 from ac_zero.search.iterative_deepening import IterativeDeepeningConfig, IterativeDeepeningSearch
@@ -44,6 +39,22 @@ from ac_zero.system.reporting import CliReporter
 from ac_zero.training.pipeline import run_training_pipeline
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
 from ac_zero.training.smoke import run_smoke_training
+
+# Bare dataset filenames (no directory component) resolve under here, so
+# `--input train_rank2.json` lands in `data/generated/train_rank2.json`
+# rather than the current working directory.
+DATASET_DIR = "data/generated"
+
+
+def _resolve_dataset_path(value: str) -> str:
+    """Anchor a bare dataset filename under ``DATASET_DIR``.
+
+    A value that already carries a directory component (or is empty) is left
+    untouched, so explicit paths and the unset ``--output`` default still work.
+    """
+    if value and Path(value).parent == Path("."):
+        return str(Path(DATASET_DIR) / value)
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -62,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     ds = sub.add_parser("dataset")
     ds.add_argument(
         "subcmd",
-        choices=["grow", "validate", "candidates", "improve", "descent", "upload", "download"],
+        choices=["grow", "validate", "candidates", "annotate", "upload", "download"],
     )
     ds.add_argument("--config", default="configs/experiments/smoke.yaml")
     ds.add_argument("--output", default="")
@@ -75,13 +86,14 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="`upload`/`download`: bucket file name (default: the local basename)",
     )
-    ds.add_argument("--search", choices=["bfs", "greedy-best-first", "all"], default="all")
-    ds.add_argument("--max-moves", type=int, default=12)
-    ds.add_argument("--total-length-cap", type=int, default=48)
-    ds.add_argument("--max-difficulty", type=int, default=8, help="negative searches all entries")
-    ds.add_argument("--max-expansions", type=int, default=3000, help="per-entry search node budget")
-    ds.add_argument("--max-generated", type=int, default=30000, help="per-entry generated node cap")
-    ds.add_argument("--max-depth", type=int, default=32, help="`descent`: max moves per search")
+    ds.add_argument("--total-length-cap", type=int, default=48, help="`grow`: relator length cap")
+    ds.add_argument("--max-depth", type=int, default=32, help="`annotate`: max moves per search")
+    ds.add_argument(
+        "--moveset",
+        choices=list(MOVE_SET_NAMES),
+        default="universal",
+        help="`annotate`: move set to compute distances under",
+    )
     ds.add_argument("--rank", type=int, default=2, help="group rank for `grow`")
     ds.add_argument("--target", type=int, default=100, help="`grow`: new groups to add this run")
     ds.add_argument(
@@ -181,17 +193,15 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             written = write_candidates(output)
             reporter.result_json({"candidates": output, "count": written}, sort_keys=True)
             return 0
-        if args.subcmd == "improve":
-            return _dataset_improve(args, reporter)
-        if args.subcmd == "descent":
-            return _dataset_descent(args, reporter)
+        if args.subcmd == "annotate":
+            return _dataset_annotate(args, reporter)
         if args.subcmd == "upload":
             return _dataset_upload(args, reporter)
         if args.subcmd == "download":
             return _dataset_download(args, reporter)
-        report = validate_dataset(args.input)
+        report = validate_dataset(_resolve_dataset_path(args.input))
         reporter.result_json(
-            {"ok": report.ok, "instances": report.instances, "errors": report.errors[:20]},
+            {"ok": report.ok, "entries": report.entries, "errors": report.errors[:20]},
             sort_keys=True,
         )
         if not report.ok:
@@ -342,12 +352,12 @@ def _solve(path: Path, agent_name: str, checkpoint: str, reporter: CliReporter) 
     max_moves = 8
     if path.exists() and path.suffix == ".json":
         data = json.loads(path.read_text())
-        if "instances" in data:
-            instances = data["instances"]
+        if "groups" in data:
+            groups = data["groups"]
             # Grown datasets carry the trivial root as their first entry; solve the
             # first genuinely non-trivial group instead.
-            entry = next((e for e in instances if e.get("difficulty", 0) > 0), instances[0])
-            pres = BalancedPresentation.from_json(entry)
+            entry = next((e for e in groups if e.get("source") != "trivial"), groups[0])
+            pres = BalancedPresentation.from_letters(int(data["rank"]), entry["relators"])
             max_moves = _max_moves_for_dataset(data, pres)
         else:
             pres = BalancedPresentation.from_json(data)
@@ -593,7 +603,7 @@ def _random_rollout(pres: BalancedPresentation, env: ACEnvironment, cert: Path) 
 
 def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
     """Expand the persistent dataset outward from the trivial group by AC moves."""
-    path = Path(args.output or args.input)
+    path = Path(_resolve_dataset_path(args.output) or _resolve_dataset_path(args.input))
     config = GrowConfig(
         rank=args.rank,
         target=args.target,
@@ -616,7 +626,7 @@ def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
         "added": report.added,
         "expanded": report.expanded,
         "frontier": report.frontier,
-        "max_difficulty": report.max_difficulty,
+        "max_length": report.max_length,
     }
     if not args.no_summary:
         summary_path = write_dataset_summary(path, args.summary_dir)
@@ -628,91 +638,46 @@ def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
 
 def _dataset_upload(args: argparse.Namespace, reporter: CliReporter) -> int:
     """Push a local dataset file to the Hugging Face bucket."""
+    local = _resolve_dataset_path(args.input)
     bucket = args.bucket or DEFAULT_BUCKET
-    uri = upload_dataset(args.input, remote_name=args.remote_name or None, bucket=bucket)
-    reporter.result_json({"uploaded": args.input, "uri": uri, "bucket": bucket}, sort_keys=True)
+    uri = upload_dataset(local, remote_name=args.remote_name or None, bucket=bucket)
+    reporter.result_json({"uploaded": local, "uri": uri, "bucket": bucket}, sort_keys=True)
     return 0
 
 
 def _dataset_download(args: argparse.Namespace, reporter: CliReporter) -> int:
     """Pull a dataset file from the Hugging Face bucket to a local path."""
-    local = args.output or args.input
+    local = _resolve_dataset_path(args.output or args.input)
     bucket = args.bucket or DEFAULT_BUCKET
     path = download_dataset(local, remote_name=args.remote_name or None, bucket=bucket)
     reporter.result_json({"downloaded": str(path), "bucket": bucket}, sort_keys=True)
     return 0
 
 
-def _dataset_improve(args: argparse.Namespace, reporter: CliReporter) -> int:
-    """Search dataset entries and merge in any shorter or newly found solutions."""
-    strategies: list[SearchStrategy] = []
-    if args.search in ("bfs", "all"):
-        strategies.append(
-            BreadthFirstStrategy(
-                max_moves=args.max_moves,
-                total_length_cap=args.total_length_cap,
-                max_expansions=args.max_expansions,
-                max_generated=args.max_generated,
-            )
-        )
-    if args.search in ("greedy-best-first", "all"):
-        strategies.append(
-            GreedyBestFirstStrategy(
-                total_length_cap=args.total_length_cap,
-                max_expansions=args.max_expansions,
-                max_generated=args.max_generated,
-            )
-        )
-    # A negative gate means "search every entry regardless of difficulty".
-    max_difficulty = None if args.max_difficulty < 0 else args.max_difficulty
-    output = args.output or args.input
-    report = improve_dataset(
-        args.input,
-        strategies=strategies,
-        output=output,
-        max_difficulty=max_difficulty,
-        workers=args.workers,
-        progress=lambda message, metrics: reporter.progress("improve", message, metrics),
-    )
-    reporter.result_json(
-        {
-            "output": output,
-            "total": report.total,
-            "duplicates_merged": report.duplicates_merged,
-            "searched": report.searched,
-            "solved": report.solved,
-            "improved": report.improved,
-            "proved_optimal": report.proved_optimal,
-        },
-        sort_keys=True,
-    )
-    return 0
-
-
-def _dataset_descent(args: argparse.Namespace, reporter: CliReporter) -> int:
-    """Annotate each entry with the fewest moves that shorten the presentation."""
-    output = args.output or args.input
-    config = DescentAnnotateConfig(
-        total_length_cap=args.total_length_cap,
+def _dataset_annotate(args: argparse.Namespace, reporter: CliReporter) -> int:
+    """Annotate a group dataset with distances under one move set."""
+    input_path = _resolve_dataset_path(args.input)
+    config = AnnotateConfig(
+        moveset=args.moveset,
         max_depth=args.max_depth,
-        max_expansions=args.max_expansions,
         workers=args.workers,
         checkpoint_every=args.checkpoint_every,
     )
-    report = annotate_descent(
-        args.input,
+    report = annotate(
+        input_path,
         config,
-        output=output,
-        progress=lambda message, metrics: reporter.progress("descent", message, metrics),
+        progress=lambda message, metrics: reporter.progress("annotate", message, metrics),
     )
     reporter.result_json(
         {
-            "output": output,
+            "input": input_path,
+            "output": str(annotation_path(input_path, args.moveset)),
+            "moveset": report.moveset,
             "total": report.total,
+            "reached_origin": report.reached_origin,
+            "with_shorter": report.with_shorter,
             "computed": report.computed,
-            "with_descent": report.with_descent,
-            "proven": report.proven,
-            "max_distance": report.max_distance,
+            "max_distance_to_origin": report.max_distance_to_origin,
         },
         sort_keys=True,
     )

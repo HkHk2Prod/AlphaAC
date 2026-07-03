@@ -42,25 +42,26 @@ def test_candidate_presentations_are_distinct_and_round_trip() -> None:
 
 
 def test_candidate_labels_mark_ak2_trivial_and_others_unknown() -> None:
-    by_id = {p.presentation_id: label for p, label in candidate_entries()}
-    assert by_id["akbulut-kirby-2"].ac_trivial is True
-    assert by_id["akbulut-kirby-3"].ac_trivial is None
-    assert by_id["akbulut-kirby-3"].minimal_known_operations is None
-    assert by_id["akbulut-kirby-3"].optimal is None
+    by_id = {p.presentation_id: ac_trivial for p, ac_trivial in candidate_entries()}
+    assert by_id["akbulut-kirby-2"] is True
+    assert by_id["akbulut-kirby-3"] is None
 
 
-def test_write_candidates_emits_labeled_catalog(tmp_path) -> None:
-    path = tmp_path / "candidates.json"
+def test_write_candidates_emits_group_catalog(tmp_path) -> None:
+    from ac_zero.datasets.groups import SCHEMA_VERSION
+
+    path = tmp_path / "candidates.groups.json"
     count = write_candidates(path)
     data = json.loads(path.read_text())
-    assert data["schema_version"] == "aczero-candidates-v1"
-    assert len(data["instances"]) == count
+    assert data["schema_version"] == SCHEMA_VERSION
+    assert len(data["groups"]) == count
     assert "leakage_warning" in data
-    families = {instance["provenance"]["family"] for instance in data["instances"]}
-    assert {"akbulut_kirby", "miller_schupp"} <= families
-    for instance in data["instances"]:
-        assert set(instance) >= {"ac_trivial", "minimal_known_operations", "optimal"}
-    ak2 = next(i for i in data["instances"] if i["presentation_id"] == "akbulut-kirby-2")
+    sources = {group["source"] for group in data["groups"]}
+    assert {"akbulut_kirby", "miller_schupp"} <= sources
+    # Candidates are unexpanded, so they carry no transitions.
+    assert all("transitions" not in group for group in data["groups"])
+    ak2_hash = akbulut_kirby(2).content_hash
+    ak2 = next(g for g in data["groups"] if g["hash"] == ak2_hash)
     assert ak2["ac_trivial"] is True
 
 
