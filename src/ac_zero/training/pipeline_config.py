@@ -12,11 +12,15 @@ class TrainingPipelineConfig:
 
     rank: int = 2
     scramble_depth: int = 3
-    # Optional grown dataset to seed self-play from instead of random scrambles.
-    # `dataset_path` points at a downloaded dataset JSON; `dataset_max_difficulty`
-    # caps which instances are used (a coarse curriculum knob, None = all);
-    # `dataset_bucket` names the Hugging Face bucket the CLI/notebook pulls it from.
+    # Optional grown group dataset to seed self-play from instead of random
+    # scrambles. `dataset_path` points at a downloaded ``.groups.json`` file;
+    # `dataset_annotations_path` is its companion ``.<moveset>.annotations.json``,
+    # which carries the per-group distances the curriculum and descent reward read
+    # (distance to origin, and the descent distance N). `dataset_max_difficulty`
+    # caps which groups are used by their distance to origin (None = all);
+    # `dataset_bucket` names the Hugging Face bucket the CLI/notebook pulls from.
     dataset_path: str | None = None
+    dataset_annotations_path: str | None = None
     dataset_max_difficulty: int | None = None
     dataset_bucket: str | None = None
     max_moves: int = 8
@@ -66,6 +70,7 @@ class TrainingPipelineConfig:
                 dataset.get("depth", data.get("scramble_depth", defaults.scramble_depth))
             ),
             dataset_path=_optional_str(dataset.get("path", data.get("dataset_path"))),
+            dataset_annotations_path=_optional_str(dataset.get("annotations")),
             dataset_max_difficulty=_optional_int(dataset.get("max_difficulty")),
             dataset_bucket=_optional_str(dataset.get("bucket")),
             max_moves=int(data.get("max_moves", data.get("horizon", defaults.max_moves))),
@@ -159,9 +164,17 @@ class TrainingPipelineConfig:
             raise ValueError("max_word_length must be positive")
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
-        if self.reward_mode == "descent" and not self.dataset_path:
+        if self.reward_mode == "descent" and not (
+            self.dataset_path and self.dataset_annotations_path
+        ):
             raise ValueError(
-                "reward_mode 'descent' requires a descent-annotated dataset (dataset.path)"
+                "reward_mode 'descent' requires a group dataset (dataset.path) and its "
+                "annotations (dataset.annotations) carrying the descent distance N"
+            )
+        if self.dataset_max_difficulty is not None and not self.dataset_annotations_path:
+            raise ValueError(
+                "dataset.max_difficulty filters by distance to origin, which needs "
+                "dataset.annotations"
             )
         if self.goal_reward < 0.0:
             raise ValueError("goal_reward must be non-negative")

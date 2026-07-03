@@ -37,9 +37,10 @@ margin:
 ## Install source / branch
 
 Both notebooks default to `REPO_BRANCH = "main"`. `main` provides
-`dataset grow` and `train`. The `dataset descent` difficulty pass (and the grow
-Markdown summary) live on a feature branch — set `REPO_BRANCH` to that branch and
-`RUN_DESCENT = True` in the generation notebook once it is pushed.
+`dataset grow`, the `dataset annotate` distance pass (distance-to-origin and the
+descent difficulty label under a chosen move set), and `train`. Generation and
+annotation are independent steps: grow the `.groups.json`, then run `dataset
+annotate --moveset <name>` to produce its `.<moveset>.annotations.json`.
 
 ## Resuming generation beyond one session
 

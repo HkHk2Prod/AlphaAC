@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# Markdown reports live beside their dataset by stem: ``train_rank2.summary.md``.
+# Markdown reports live beside their dataset by stem: ``train.groups.summary.md``.
 SUMMARY_SUFFIX = ".summary.md"
 
 
@@ -15,8 +15,9 @@ SUMMARY_SUFFIX = ".summary.md"
 class Distribution:
     """An integer-keyed histogram over the groups, with summary statistics.
 
-    `counts` maps each observed value (a difficulty, a size, ...) to the number
-    of groups having it, sorted by value so the rendered table reads in order.
+    `counts` maps each observed value (a size, a transition degree, ...) to the
+    number of groups having it, sorted by value so the rendered table reads in
+    order.
     """
 
     counts: dict[int, int]
@@ -42,19 +43,18 @@ class Distribution:
 
 @dataclass(frozen=True, slots=True)
 class DatasetSummary:
-    """Aggregate statistics over one generated dataset."""
+    """Aggregate statistics over one generated group dataset."""
 
     rank: int | None
     generator: str
     total_groups: int
-    roots: int
     frontier: int
     exhausted: int
-    optimal: int
-    difficulty: Distribution
+    ac_trivial: int
+    ac_unknown: int
+    by_source: dict[str, int]
     total_length: Distribution
-    predecessors: Distribution
-    known_operations: Distribution
+    transition_degree: Distribution
 
 
 def _distribution(values: Iterable[int]) -> Distribution:
@@ -62,43 +62,42 @@ def _distribution(values: Iterable[int]) -> Distribution:
 
 
 def summarize(data: dict[str, Any]) -> DatasetSummary:
-    """Compute distribution statistics from a loaded dataset document.
+    """Compute distribution statistics from a loaded group dataset document.
 
-    Reads the flat per-instance fields written by ``dataset grow`` -- difficulty,
-    relator sizes, co-optimal ``predecessors``, known trivialization length, and
-    the ``exhausted`` frontier flag -- and buckets them into histograms.
+    Reads the minimal per-group fields written by ``dataset grow`` -- total relator
+    length, the ``transitions`` adjacency (present only on expanded groups), the
+    ``source`` provenance, and known AC-triviality -- and buckets them.
     """
-    instances = data.get("instances", [])
+    groups = data.get("groups", [])
     provenance = data.get("provenance", {})
-    difficulties: list[int] = []
     lengths: list[int] = []
-    predecessors: list[int] = []
-    operations: list[int] = []
-    roots = frontier = exhausted = optimal = 0
-    for entry in instances:
-        difficulty = int(entry.get("difficulty", 0))
-        difficulties.append(difficulty)
-        lengths.append(sum(len(relator) for relator in entry.get("relators", [])))
-        predecessors.append(len(entry.get("predecessors", [])))
-        ops = entry.get("minimal_known_operations")
-        if ops is not None:
-            operations.append(int(ops))
-        roots += difficulty == 0
-        exhausted += bool(entry.get("exhausted"))
-        frontier += not entry.get("exhausted")
-        optimal += entry.get("optimal") is True
+    degrees: list[int] = []
+    sources: Counter[str] = Counter()
+    frontier = exhausted = ac_trivial = ac_unknown = 0
+    for entry in groups:
+        lengths.append(int(entry.get("total_length", 0)))
+        transitions = entry.get("transitions")
+        if transitions is None:
+            frontier += 1
+        else:
+            exhausted += 1
+            degrees.append(len(transitions))
+        sources[str(entry.get("source", "unknown"))] += 1
+        if entry.get("ac_trivial") is True:
+            ac_trivial += 1
+        elif entry.get("ac_trivial") is None:
+            ac_unknown += 1
     return DatasetSummary(
         rank=data.get("rank"),
         generator=str(provenance.get("generator", "unknown")),
-        total_groups=len(instances),
-        roots=roots,
+        total_groups=len(groups),
         frontier=frontier,
         exhausted=exhausted,
-        optimal=optimal,
-        difficulty=_distribution(difficulties),
+        ac_trivial=ac_trivial,
+        ac_unknown=ac_unknown,
+        by_source=dict(sources.most_common()),
         total_length=_distribution(lengths),
-        predecessors=_distribution(predecessors),
-        known_operations=_distribution(operations),
+        transition_degree=_distribution(degrees),
     )
 
 
@@ -121,24 +120,26 @@ def _section(title: str, unit: str, dist: Distribution) -> list[str]:
 
 def render_markdown(summary: DatasetSummary, *, name: str) -> str:
     """Render a human-readable Markdown report for one dataset summary."""
-    known = summary.known_operations.population
     header = [
         f"# Dataset summary: {name}",
         "",
         f"- Generator: `{summary.generator}`",
         f"- Rank: {summary.rank}",
         f"- Total groups: {summary.total_groups}",
-        f"- Roots (difficulty 0): {summary.roots}",
-        f"- Frontier (open): {summary.frontier} | Exhausted: {summary.exhausted}",
-        f"- Proven optimal: {summary.optimal}",
-        f"- With known trivialization: {known} | unknown: {summary.total_groups - known}",
+        f"- Frontier (unexpanded): {summary.frontier} | Expanded: {summary.exhausted}",
+        f"- AC-trivial: {summary.ac_trivial} | unknown: {summary.ac_unknown}",
+        "",
+        "## By source",
+        "",
+        "| source | groups |",
+        "| --- | --- |",
+        *[f"| {source} | {count} |" for source, count in summary.by_source.items()],
         "",
     ]
-    body = (
-        _section("By construction difficulty (depth from trivial)", "depth", summary.difficulty)
-        + _section("By size (total relator length)", "length", summary.total_length)
-        + _section("By co-optimal construction moves", "moves", summary.predecessors)
-        + _section("By known trivialization length", "operations", summary.known_operations)
+    body = _section("By size (total relator length)", "length", summary.total_length) + _section(
+        "By transition degree (universal neighbours within the cap)",
+        "degree",
+        summary.transition_degree,
     )
     return "\n".join(header + body) + "\n"
 
@@ -149,7 +150,7 @@ def summary_path_for(dataset_path: Path, summary_dir: Path) -> Path:
 
 
 def write_dataset_summary(dataset_path: str | Path, summary_dir: str | Path) -> Path:
-    """Summarize the dataset at `dataset_path`, writing its Markdown report under `summary_dir`.
+    """Summarize the group dataset at `dataset_path`, writing Markdown under `summary_dir`.
 
     Returns the path of the report written.
     """

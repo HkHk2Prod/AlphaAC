@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ac_zero.datasets.expand import BatchHandle, ExpansionPool
-from ac_zero.datasets.graph import SCHEMA_VERSION, ConstructionGraph, GraphNode, SelectStrategy
+from ac_zero.datasets.groups import SCHEMA_VERSION, GroupNode, GroupStore, SelectStrategy
 from ac_zero.system.parallel import describe_worker_pool
 
 __all__ = ["SCHEMA_VERSION", "GrowConfig", "GrowReport", "grow_dataset"]
@@ -62,7 +62,7 @@ class GrowReport:
     added: int
     expanded: int
     frontier: int
-    max_difficulty: int
+    max_length: int
 
 
 def grow_dataset(
@@ -86,7 +86,7 @@ def grow_dataset(
     """
     path = Path(path)
     rng = random.Random(config.seed)
-    graph = ConstructionGraph.load_or_seed(path, config.rank)
+    graph = GroupStore.load_or_seed(path, config.rank)
     if progress is not None:
         progress("growing dataset", _start_metrics(path, config, len(graph.nodes)))
         _, message, metrics = describe_worker_pool(config.workers)
@@ -97,7 +97,7 @@ def grow_dataset(
     checkpointed = 0
     logged = 0
     claimed: set[str] = set()
-    inflight: deque[tuple[list[GraphNode], BatchHandle]] = deque()
+    inflight: deque[tuple[list[GroupNode], BatchHandle]] = deque()
     with ExpansionPool(config.rank, config.total_length_cap, config.workers) as pool:
 
         def submit_next() -> bool:
@@ -121,7 +121,6 @@ def grow_dataset(
             records_list = handle.result()
             refill()  # top up before merging, so the next batch expands during this merge
             for parent, records in zip(batch, records_list, strict=True):
-                parent.exhausted = True
                 claimed.discard(parent.content_hash)
                 expanded += 1
                 added += graph.merge(parent, records)
@@ -140,13 +139,13 @@ def grow_dataset(
             # Snapshot to disk between merges (a consistent point) so an interrupted
             # run resumes from the last checkpoint rather than losing everything.
             if config.checkpoint_every > 0 and added - checkpointed >= config.checkpoint_every:
-                graph.write(path, config.rank)
+                graph.write(path)
                 checkpointed = added
                 if progress is not None:
                     progress("checkpoint", {"groups": len(graph.nodes), "added": added})
 
-    graph.write(path, config.rank)
-    report = GrowReport(len(graph.nodes), added, expanded, graph.frontier(), graph.max_difficulty())
+    graph.write(path)
+    report = GrowReport(len(graph.nodes), added, expanded, graph.frontier(), graph.max_length())
     if progress is not None:
         progress(
             "grow complete",
