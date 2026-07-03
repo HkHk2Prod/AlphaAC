@@ -53,3 +53,11 @@ def test_respects_a_time_budget(name: str) -> None:
 def test_writes_to_kaggle_working(name: str) -> None:
     source = _code_source(_load(name))
     assert "/kaggle/working" in source
+
+
+def test_training_notebook_seeds_self_play_from_hf_dataset() -> None:
+    source = _code_source(_load("02_train.ipynb"))
+    # Pulls the grown dataset from the bucket and hands its path to the config.
+    assert "download_dataset" in source and "HF_BUCKET" in source
+    assert "HF_DOWNLOAD_ON_START" in source
+    assert '"path": DATASET_PATH' in source

@@ -7,7 +7,6 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ac_zero.datasets.generator import generate_solvable
 from ac_zero.encoding.padded import PaddedEncoding, StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.models.base import PolicyValueModel
@@ -15,6 +14,7 @@ from ac_zero.models.registry import model_from_json
 from ac_zero.models.trainable import TrainablePolicyValueModel
 from ac_zero.search.puct import PUCTMCTS, PUCTConfig
 from ac_zero.system.parallel import parallel_map, resolve_worker_count
+from ac_zero.training.instance_source import InstanceSource, build_instance_source
 from ac_zero.training.losses import return_to_go, visit_count_policy
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
 
@@ -68,8 +68,10 @@ def collect_episodes(
         seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)
     ]
     if resolve_worker_count(config.workers) <= 1:
+        source = build_instance_source(config)
         return [
-            _collect_episode(config, encoder, episode_seed, model) for episode_seed in episode_seeds
+            _collect_episode(config, encoder, episode_seed, model, source)
+            for episode_seed in episode_seeds
         ]
     return parallel_map(
         _episode_worker,
@@ -86,18 +88,23 @@ def collect_episodes(
 _WORKER_CONFIG: TrainingPipelineConfig | None = None
 _WORKER_ENCODER: StateEncoder | None = None
 _WORKER_MODEL: PolicyValueModel | None = None
+_WORKER_SOURCE: InstanceSource | None = None
 
 
 def _init_episode_worker(config: TrainingPipelineConfig, model_state: dict[str, Any]) -> None:
-    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL
+    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL, _WORKER_SOURCE
     _WORKER_CONFIG = config
     _WORKER_ENCODER = StateEncoder(config.max_word_length)
     _WORKER_MODEL = model_from_json(model_state)
+    _WORKER_SOURCE = build_instance_source(config)
 
 
 def _episode_worker(episode_seed: int) -> tuple[list[ReplayExample], EpisodeMetrics]:
     assert _WORKER_CONFIG is not None and _WORKER_ENCODER is not None and _WORKER_MODEL is not None
-    return _collect_episode(_WORKER_CONFIG, _WORKER_ENCODER, episode_seed, _WORKER_MODEL)
+    assert _WORKER_SOURCE is not None
+    return _collect_episode(
+        _WORKER_CONFIG, _WORKER_ENCODER, episode_seed, _WORKER_MODEL, _WORKER_SOURCE
+    )
 
 
 def _collect_episode(
@@ -105,13 +112,14 @@ def _collect_episode(
     encoder: StateEncoder,
     episode_seed: int,
     model: PolicyValueModel,
+    source: InstanceSource,
 ) -> tuple[list[ReplayExample], EpisodeMetrics]:
     # A per-episode RNG seeded from the episode seed keeps action sampling
     # independent of execution order, so episodes can run in parallel and still
     # reproduce exactly.
     rng = random.Random(episode_seed)
-    instance = generate_solvable(config.rank, config.scramble_depth, episode_seed)
-    env = ACEnvironment(instance.presentation, build_env_config(config))
+    presentation = source.sample(episode_seed)
+    env = ACEnvironment(presentation, build_env_config(config))
     mcts = PUCTMCTS(
         model, encoder, PUCTConfig(simulations=config.mcts_simulations, c_puct=config.c_puct)
     )

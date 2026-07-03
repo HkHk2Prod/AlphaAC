@@ -12,6 +12,13 @@ class TrainingPipelineConfig:
 
     rank: int = 2
     scramble_depth: int = 3
+    # Optional grown dataset to seed self-play from instead of random scrambles.
+    # `dataset_path` points at a downloaded dataset JSON; `dataset_max_difficulty`
+    # caps which instances are used (a coarse curriculum knob, None = all);
+    # `dataset_bucket` names the Hugging Face bucket the CLI/notebook pulls it from.
+    dataset_path: str | None = None
+    dataset_max_difficulty: int | None = None
+    dataset_bucket: str | None = None
     max_moves: int = 8
     total_length_cap: int = 128
     max_word_length: int = 32
@@ -58,6 +65,9 @@ class TrainingPipelineConfig:
             scramble_depth=int(
                 dataset.get("depth", data.get("scramble_depth", defaults.scramble_depth))
             ),
+            dataset_path=_optional_str(dataset.get("path", data.get("dataset_path"))),
+            dataset_max_difficulty=_optional_int(dataset.get("max_difficulty")),
+            dataset_bucket=_optional_str(dataset.get("bucket")),
             max_moves=int(data.get("max_moves", data.get("horizon", defaults.max_moves))),
             total_length_cap=int(data.get("total_length_cap", defaults.total_length_cap)),
             max_word_length=int(data.get("max_word_length", defaults.max_word_length)),
@@ -139,6 +149,8 @@ class TrainingPipelineConfig:
             raise ValueError("rank must be positive")
         if self.scramble_depth < 0:
             raise ValueError("scramble_depth must be non-negative")
+        if self.dataset_max_difficulty is not None and self.dataset_max_difficulty < 0:
+            raise ValueError("dataset_max_difficulty must be non-negative")
         if self.max_moves <= 0:
             raise ValueError("max_moves must be positive")
         if self.total_length_cap <= 0:
@@ -188,3 +200,11 @@ def _dict_value(data: dict[str, Any], key: str) -> dict[str, Any]:
     if isinstance(value, dict):
         return cast(dict[str, Any], value)
     return {}
+
+
+def _optional_str(value: Any) -> str | None:
+    return str(value) if value else None
+
+
+def _optional_int(value: Any) -> int | None:
+    return int(value) if value is not None else None

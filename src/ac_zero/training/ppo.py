@@ -7,13 +7,13 @@ from typing import Any
 
 import numpy as np
 
-from ac_zero.datasets.generator import generate_solvable
 from ac_zero.encoding.padded import PaddedEncoding, StateEncoder
 from ac_zero.environment.env import ACEnvironment
 from ac_zero.models.base import PolicyValueModel
 from ac_zero.models.registry import model_from_json
 from ac_zero.models.trainable import TrainablePolicyValueModel
 from ac_zero.system.parallel import parallel_map, resolve_worker_count
+from ac_zero.training.instance_source import InstanceSource, build_instance_source
 from ac_zero.training.losses import PPOBatchStats, masked_softmax, sample_from_policy
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
 from ac_zero.training.pipeline_episodes import EpisodeMetrics, build_env_config
@@ -70,11 +70,12 @@ def _collect_rollout(
     encoder: StateEncoder,
     seed: int,
     model: PolicyValueModel,
+    source: InstanceSource,
 ) -> _Rollout:
     """Play one episode by sampling the current policy and record every step."""
     rng = random.Random(seed)
-    instance = generate_solvable(config.rank, config.scramble_depth, seed)
-    env = ACEnvironment(instance.presentation, build_env_config(config))
+    presentation = source.sample(seed)
+    env = ACEnvironment(presentation, build_env_config(config))
     scale = 1.0 / max(1.0, float(env.initial.total_length))
     action_count = len(env.catalog)
     transitions: list[_Transition] = []
@@ -137,18 +138,21 @@ def _generalized_advantages(
 _WORKER_CONFIG: TrainingPipelineConfig | None = None
 _WORKER_ENCODER: StateEncoder | None = None
 _WORKER_MODEL: PolicyValueModel | None = None
+_WORKER_SOURCE: InstanceSource | None = None
 
 
 def _init_rollout_worker(config: TrainingPipelineConfig, model_state: dict[str, Any]) -> None:
-    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL
+    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL, _WORKER_SOURCE
     _WORKER_CONFIG = config
     _WORKER_ENCODER = StateEncoder(config.max_word_length)
     _WORKER_MODEL = model_from_json(model_state)
+    _WORKER_SOURCE = build_instance_source(config)
 
 
 def _rollout_worker(seed: int) -> _Rollout:
     assert _WORKER_CONFIG is not None and _WORKER_ENCODER is not None and _WORKER_MODEL is not None
-    return _collect_rollout(_WORKER_CONFIG, _WORKER_ENCODER, seed, _WORKER_MODEL)
+    assert _WORKER_SOURCE is not None
+    return _collect_rollout(_WORKER_CONFIG, _WORKER_ENCODER, seed, _WORKER_MODEL, _WORKER_SOURCE)
 
 
 def collect_rollouts(
@@ -161,7 +165,8 @@ def collect_rollouts(
     """Collect one iteration's rollouts and build advantage-normalized examples."""
     seeds = [seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)]
     if resolve_worker_count(config.workers) <= 1:
-        rollouts = [_collect_rollout(config, encoder, s, model) for s in seeds]
+        source = build_instance_source(config)
+        rollouts = [_collect_rollout(config, encoder, s, model, source) for s in seeds]
     else:
         rollouts = parallel_map(
             _rollout_worker,

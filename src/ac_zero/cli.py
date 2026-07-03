@@ -263,6 +263,7 @@ def _train(config_path: Path, seed: int, workers: int | None, reporter: CliRepor
     config = TrainingPipelineConfig.from_mapping(_load_config(config_path))
     if workers is not None:
         config = replace(config, workers=workers)
+    _ensure_training_dataset(config, reporter)
     summary = run_training_pipeline(config, seed)
     _present_plots(summary.plot_paths, reporter)
     reporter.result_json(
@@ -276,6 +277,23 @@ def _train(config_path: Path, seed: int, workers: int | None, reporter: CliRepor
         sort_keys=True,
     )
     return 0
+
+
+def _ensure_training_dataset(config: TrainingPipelineConfig, reporter: CliReporter) -> None:
+    """Pull the configured self-play dataset from the HF bucket if it is not local.
+
+    A run seeds self-play from `dataset_path` when set; if that file is missing we
+    fetch it from the dataset bucket (default AlphaAC's) so `aczero train` works on
+    a fresh machine the same way the Kaggle notebook does.
+    """
+    if not config.dataset_path:
+        return
+    local = Path(config.dataset_path)
+    if local.exists():
+        return
+    bucket = config.dataset_bucket or DEFAULT_BUCKET
+    reporter.progress("dataset", "pulling training dataset from bucket", {"bucket": bucket})
+    download_dataset(local, bucket=bucket)
 
 
 def _present_plots(plot_paths: Sequence[str], reporter: CliReporter) -> None:
