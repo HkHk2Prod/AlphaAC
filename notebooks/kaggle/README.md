@@ -8,7 +8,7 @@ its output to `/kaggle/working` (saved when you *Save Version*).
 | Notebook | What it does | Output in `/kaggle/working` |
 | --- | --- | --- |
 | [`01_generate_dataset.ipynb`](01_generate_dataset.ipynb) | Grows a persistent, guaranteed-solvable AC dataset (`aczero dataset grow`) until the time budget is nearly spent. | `train_rank<N>.json` (the dataset), `dataset_summary.md`, `dataset_stats.json`, `hist_*.png` |
-| [`02_train.ipynb`](02_train.ipynb) | Runs the policy/value training pipeline (`aczero train`, AlphaZero by default) under a wall-clock deadline. | `training_report.md`, `training_report.json`, `loss_*.png`, `selfplay.png`, and the full `run_<backend>_rank2/` (checkpoints, logs, metrics) |
+| [`02_train.ipynb`](02_train.ipynb) | Pulls the grown dataset from the Hugging Face bucket and runs the policy/value training pipeline (`aczero train`, AlphaZero by default), **seeding self-play from the dataset's instances**, under a wall-clock deadline. | `training_report.md`, `training_report.json`, `loss_*.png`, `selfplay.png`, and the full `run_<backend>_rank2/` (checkpoints, logs, metrics) |
 
 ## Running on Kaggle
 
@@ -53,5 +53,8 @@ write access to the bucket namespace) under *Add-ons → Secrets*, and keep
 Training does not resume across sessions — one run is a single session up to the
 time budget.
 
-> Generation and training are **independent**: training self-plays its own
-> instances and does not read the generated dataset.
+> Training **seeds its self-play from the grown dataset**: it pulls
+> `train_rank<N>.json` from the same Hugging Face bucket at start (add the
+> `HF_TOKEN` secret for a private bucket) and starts each episode from one of the
+> dataset's guaranteed-solvable presentations. Set `HF_DOWNLOAD_ON_START = False`
+> to fall back to random scrambles.

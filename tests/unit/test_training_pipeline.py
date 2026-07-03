@@ -156,6 +156,53 @@ def test_config_reads_worker_count_from_mapping() -> None:
     assert TrainingPipelineConfig.from_mapping({"training": {"workers": 1}}).workers == 1
 
 
+def test_config_reads_dataset_seeding_from_mapping() -> None:
+    config = TrainingPipelineConfig.from_mapping(
+        {"dataset": {"path": "data/train_rank2.json", "max_difficulty": 5, "bucket": "ns/bucket"}}
+    )
+    assert config.dataset_path == "data/train_rank2.json"
+    assert config.dataset_max_difficulty == 5
+    assert config.dataset_bucket == "ns/bucket"
+    # Absent by default: self-play falls back to random scrambles.
+    assert TrainingPipelineConfig().dataset_path is None
+    assert TrainingPipelineConfig().dataset_max_difficulty is None
+
+
+def test_config_rejects_negative_max_difficulty() -> None:
+    with pytest.raises(ValueError):
+        TrainingPipelineConfig(dataset_max_difficulty=-1).validate()
+
+
+def test_ensure_training_dataset_pulls_only_when_missing(monkeypatch, tmp_path: Path) -> None:
+    from ac_zero.cli import _ensure_training_dataset
+    from ac_zero.system.reporting import CliReporter
+
+    calls: list[tuple[str, str]] = []
+
+    def _fake_download(local, *, remote_name=None, bucket, missing_ok=False):  # type: ignore[no-untyped-def]
+        calls.append((str(local), bucket))
+        Path(local).write_text("{}", encoding="utf-8")
+        return Path(local)
+
+    monkeypatch.setattr("ac_zero.cli.download_dataset", _fake_download)
+    reporter = CliReporter("train", run_directory=str(tmp_path / "logs"))
+    dataset = tmp_path / "train_rank2.json"
+
+    # No dataset_path configured: nothing is pulled.
+    _ensure_training_dataset(TrainingPipelineConfig(), reporter)
+    assert calls == []
+
+    # Configured but missing: pulled from the configured bucket.
+    config = TrainingPipelineConfig(dataset_path=str(dataset), dataset_bucket="ns/bucket")
+    _ensure_training_dataset(config, reporter)
+    assert calls == [(str(dataset), "ns/bucket")]
+
+    # Already on disk: not pulled again.
+    _ensure_training_dataset(config, reporter)
+    assert len(calls) == 1
+    reporter.close()
+
+
 def test_cli_train_uses_configured_pipeline(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     config_path = tmp_path / "train.yaml"
