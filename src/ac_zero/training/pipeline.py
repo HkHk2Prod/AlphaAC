@@ -318,6 +318,10 @@ class _TrainingRun:
     def _write_certificate(self) -> tuple[Path, bool]:
         """Solve a small fixture with the greedy solver and check its certificate verifies."""
         certificate_path = self.dirs.certificates / "example.json"
+        # The "descent" objective (shorten by >=1) is not an AC trivialization, so a
+        # solve-to-standard certificate does not apply; skip it for those runs.
+        if self.config.reward_mode == "descent":
+            return certificate_path, False
         fixture = generate_solvable(self.config.rank, min(self.config.scramble_depth, 2), self.seed)
         solve_env = ACEnvironment(fixture.presentation, build_env_config(self.config))
         result = GreedySolver().solve(

@@ -159,6 +159,10 @@ class TrainingPipelineConfig:
             raise ValueError("max_word_length must be positive")
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
+        if self.reward_mode == "descent" and not self.dataset_path:
+            raise ValueError(
+                "reward_mode 'descent' requires a descent-annotated dataset (dataset.path)"
+            )
         if self.goal_reward < 0.0:
             raise ValueError("goal_reward must be non-negative")
         if self.agent not in ("alphazero", "ppo"):

@@ -54,24 +54,44 @@ class DatasetSource:
         self._presentations = presentations
 
     @classmethod
-    def from_file(cls, path: str | Path, max_difficulty: int | None = None) -> DatasetSource:
+    def from_file(
+        cls,
+        path: str | Path,
+        max_difficulty: int | None = None,
+        *,
+        require_descent: bool = False,
+    ) -> DatasetSource:
         """Load a grown dataset, optionally keeping only instances within a difficulty.
 
         ``max_difficulty`` caps the construction depth of the instances used, so a
         run can train on the easier part of the dataset (a coarse curriculum knob);
-        ``None`` uses every instance.
+        ``None`` uses every instance. ``require_descent`` (used by the ``descent``
+        reward) keeps only instances carrying a *proven* ``descent_distance`` -- the
+        known minimal moves N that the reward needs -- and stamps that N onto each
+        kept presentation's provenance so the environment can read it.
         """
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        presentations = [
-            BalancedPresentation.from_json(entry)
-            for entry in data.get("instances", [])
-            if max_difficulty is None or int(entry.get("difficulty", 0)) <= max_difficulty
-        ]
+        presentations: list[BalancedPresentation] = []
+        for entry in data.get("instances", []):
+            if max_difficulty is not None and int(entry.get("difficulty", 0)) > max_difficulty:
+                continue
+            if require_descent:
+                distance = entry.get("descent_distance")
+                if entry.get("descent_proven") is not True or not isinstance(distance, int):
+                    continue
+                presentation = BalancedPresentation.from_json(entry)
+                presentation.provenance["descent_distance"] = distance
+                presentations.append(presentation)
+            else:
+                presentations.append(BalancedPresentation.from_json(entry))
         if not presentations:
-            raise ValueError(
-                f"dataset at {path} has no instances"
-                + ("" if max_difficulty is None else f" with difficulty <= {max_difficulty}")
-            )
+            constraints = []
+            if max_difficulty is not None:
+                constraints.append(f"difficulty <= {max_difficulty}")
+            if require_descent:
+                constraints.append("a proven descent_distance")
+            suffix = f" with {' and '.join(constraints)}" if constraints else ""
+            raise ValueError(f"dataset at {path} has no instances{suffix}")
         return cls(presentations)
 
     def sample(self, seed: int) -> BalancedPresentation:
@@ -82,8 +102,19 @@ def build_instance_source(config: TrainingPipelineConfig) -> InstanceSource:
     """Pick the episode instance source the run's config asks for.
 
     A configured ``dataset_path`` seeds episodes from that grown dataset; otherwise
-    episodes fall back to seeded scrambles of the standard presentation.
+    episodes fall back to seeded scrambles of the standard presentation. The
+    ``descent`` reward needs each start state's known minimal descent distance N,
+    which only a descent-annotated dataset carries, so it rejects the scramble
+    fallback.
     """
+    descent = config.reward_mode == "descent"
     if config.dataset_path:
-        return DatasetSource.from_file(config.dataset_path, config.dataset_max_difficulty)
+        return DatasetSource.from_file(
+            config.dataset_path, config.dataset_max_difficulty, require_descent=descent
+        )
+    if descent:
+        raise ValueError(
+            "reward_mode 'descent' needs a descent-annotated dataset (set dataset.path); "
+            "random scrambles have no known descent distance N"
+        )
     return ScrambleSource(config.rank, config.scramble_depth)

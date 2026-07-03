@@ -86,3 +86,50 @@ def test_build_instance_source_switches_on_config(tmp_path: Path) -> None:
         TrainingPipelineConfig(rank=2, dataset_path=str(dataset), dataset_max_difficulty=2)
     )
     assert isinstance(seeded, DatasetSource)
+
+
+def _write_descent_dataset(path: Path) -> None:
+    """Write a dataset where only some instances carry a proven descent distance."""
+    from ac_zero.datasets.generator import generate_solvable
+
+    instances = []
+    for index, (distance, proven) in enumerate([(3, True), (None, False), (1, True)]):
+        entry = generate_solvable(rank=2, depth=index + 1, seed=index).presentation.to_json()
+        entry["difficulty"] = index + 1
+        entry["descent_distance"] = distance
+        entry["descent_proven"] = proven
+        instances.append(entry)
+    path.write_text(json.dumps({"instances": instances}), encoding="utf-8")
+
+
+def test_descent_source_keeps_only_proven_and_stamps_distance(tmp_path: Path) -> None:
+    dataset = tmp_path / "train_rank2.json"
+    _write_descent_dataset(dataset)
+
+    source = DatasetSource.from_file(dataset, require_descent=True)
+    distances = {source.sample(seed).provenance["descent_distance"] for seed in range(50)}
+    # Only the two proven-integer entries survive; the unproven one is dropped.
+    assert distances == {3, 1}
+
+
+def test_descent_source_rejects_dataset_without_proven_descent(tmp_path: Path) -> None:
+    dataset = tmp_path / "train_rank2.json"
+    _write_dataset(dataset, difficulties=[1, 2])  # no descent annotation at all
+    with pytest.raises(ValueError, match="proven descent_distance"):
+        DatasetSource.from_file(dataset, require_descent=True)
+
+
+def test_build_instance_source_rejects_descent_without_dataset() -> None:
+    with pytest.raises(ValueError, match="descent"):
+        build_instance_source(TrainingPipelineConfig(rank=2, reward_mode="descent"))
+
+
+def test_build_instance_source_wires_descent_distance_from_dataset(tmp_path: Path) -> None:
+    dataset = tmp_path / "train_rank2.json"
+    _write_descent_dataset(dataset)
+
+    source = build_instance_source(
+        TrainingPipelineConfig(rank=2, dataset_path=str(dataset), reward_mode="descent")
+    )
+    assert isinstance(source, DatasetSource)
+    assert source.sample(0).provenance["descent_distance"] in {1, 3}
