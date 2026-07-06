@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 NOTEBOOK_DIR = Path(__file__).resolve().parents[2] / "notebooks" / "kaggle"
-NOTEBOOKS = ("01_generate_dataset.ipynb", "02_train.ipynb")
+NOTEBOOKS = ("01_generate_dataset.ipynb", "02_annotate_dataset.ipynb", "03_train.ipynb")
 
 
 def _load(name: str) -> dict:
@@ -56,8 +56,29 @@ def test_writes_to_kaggle_working(name: str) -> None:
 
 
 def test_training_notebook_seeds_self_play_from_hf_dataset() -> None:
-    source = _code_source(_load("02_train.ipynb"))
+    source = _code_source(_load("03_train.ipynb"))
     # Pulls the grown dataset from the bucket and hands its path to the config.
     assert "download_dataset" in source and "HF_BUCKET" in source
     assert "HF_DOWNLOAD_ON_START" in source
     assert '"path": DATASET_PATH' in source
+
+
+def test_annotate_notebook_defaults_to_universal_and_strict_ac() -> None:
+    source = _code_source(_load("02_annotate_dataset.ipynb"))
+    assert 'ANNOTATE_MOVESETS = ["universal", "strict-ac"]' in source
+
+
+def test_annotate_notebook_warm_starts_from_existing_annotations() -> None:
+    source = _code_source(_load("02_annotate_dataset.ipynb"))
+    # Pulls any existing annotation file per move set before annotate() runs, so
+    # a resumed pass only recomputes groups still unresolved.
+    assert "annotation_path" in source
+    assert "download_dataset" in source and "missing_ok=True" in source
+
+
+def test_annotate_notebook_never_uploads_the_group_dataset() -> None:
+    source = _code_source(_load("02_annotate_dataset.ipynb"))
+    # This notebook runs alongside 01_generate_dataset and must only ever read
+    # the group dataset -- it publishes annotation files, never the dataset.
+    assert "upload_dataset(dataset_path" not in source
+    assert "upload_dataset(path" in source
