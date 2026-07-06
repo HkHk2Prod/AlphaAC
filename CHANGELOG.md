@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Split annotation out of the Kaggle generation notebook into its own
+  `notebooks/kaggle/02_annotate_dataset.ipynb` (generation is now
+  `01_generate_dataset.ipynb`, training renumbered to `03_train.ipynb`) — a 12 h
+  Kaggle session left no time for both grow and annotate together. The new
+  notebook only ever reads the group dataset from the Hugging Face bucket and
+  writes/publishes its own `<name>.<moveset>.annotations.json` files, so it can
+  run concurrently with generation without altering the dataset it reads.
+  Existing annotation files are pulled first for a warm start (`annotate()`
+  skips groups already settled). `ANNOTATE_MOVESETS` picks which move sets to
+  run, defaulting to `["universal", "strict-ac"]`.
 - The grown dataset now lives in a Hugging Face storage bucket
   (`HkHk2Prod/alphaac-data`) instead of git — it outgrew GitHub's 100 MB per-file
   limit. `aczero dataset upload` / `download` push and pull it (optional
