@@ -82,3 +82,12 @@ def test_annotate_notebook_never_uploads_the_group_dataset() -> None:
     # the group dataset -- it publishes annotation files, never the dataset.
     assert "upload_dataset(dataset_path" not in source
     assert "upload_dataset(path" in source
+
+
+@pytest.mark.parametrize("name", ("01_generate_dataset.ipynb", "02_annotate_dataset.ipynb"))
+def test_fails_fast_when_upload_is_required_but_no_hf_token(name: str) -> None:
+    source = _code_source(_load(name))
+    # A missing HF_TOKEN would only surface as a failed upload after the whole
+    # time budget was spent; raise immediately instead so nothing is wasted.
+    assert 'if HF_UPLOAD_ON_FINISH and not os.environ.get("HF_TOKEN"):' in source
+    assert "raise RuntimeError(" in source

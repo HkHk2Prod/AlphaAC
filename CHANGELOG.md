@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `01_generate_dataset.ipynb` and `02_annotate_dataset.ipynb` now fail fast if
+  `HF_UPLOAD_ON_FINISH` is on but no `HF_TOKEN` is available (env var or Kaggle
+  secret), instead of running for the whole time budget and only then failing
+  to publish. Also quieted the missing-secret lookup itself: it no longer
+  prints a scary-looking error when the notebook's kernel simply never had the
+  `HF_TOKEN` secret attached (Kaggle secrets are per-notebook, not per-account).
 - Split annotation out of the Kaggle generation notebook into its own
   `notebooks/kaggle/02_annotate_dataset.ipynb` (generation is now
   `01_generate_dataset.ipynb`, training renumbered to `03_train.ipynb`) — a 12 h
