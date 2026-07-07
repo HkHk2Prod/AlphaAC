@@ -16,7 +16,7 @@ from ac_zero.system.parallel import parallel_map, resolve_worker_count
 from ac_zero.training.instance_source import InstanceSource, build_instance_source
 from ac_zero.training.losses import PPOBatchStats, masked_softmax, sample_from_policy
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
-from ac_zero.training.pipeline_episodes import EpisodeMetrics, build_env_config
+from ac_zero.training.pipeline_episodes import EpisodeMetrics, build_env
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +75,7 @@ def _collect_rollout(
     """Play one episode by sampling the current policy and record every step."""
     rng = random.Random(seed)
     presentation = source.sample(seed)
-    env = ACEnvironment(presentation, build_env_config(config))
+    env = build_env(config, presentation, source)
     scale = 1.0 / max(1.0, float(env.initial.total_length))
     action_count = len(env.catalog)
     transitions: list[_Transition] = []

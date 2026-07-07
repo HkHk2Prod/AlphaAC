@@ -112,6 +112,63 @@ def test_dataset_source_rejects_empty_selection(tmp_path: Path) -> None:
         DatasetSource.from_file(dataset, annotations, max_difficulty=2)
 
 
+def test_dataset_source_exposes_known_distances_as_potentials(tmp_path: Path) -> None:
+    present, absent = _presentations([2])[0], _presentations([3])[0]
+    dataset = tmp_path / "train.groups.json"
+    annotations = tmp_path / "train.universal.annotations.json"
+    _write_groups(dataset, [present, absent])
+    # Only one group has a known distance to origin; the other is left unresolved.
+    _write_annotations(
+        annotations,
+        {present.content_hash: {"origin": 4}, absent.content_hash: {"origin": None}},
+        moveset="universal",
+    )
+    source = DatasetSource.from_file(dataset, annotations)
+    assert source.potentials == {present.content_hash: 4}
+
+
+def test_dataset_source_require_potential_drops_unannotated_groups(tmp_path: Path) -> None:
+    present, absent = _presentations([2])[0], _presentations([3])[0]
+    dataset = tmp_path / "train.groups.json"
+    annotations = tmp_path / "train.universal.annotations.json"
+    _write_groups(dataset, [present, absent])
+    _write_annotations(
+        annotations,
+        {present.content_hash: {"origin": 4}, absent.content_hash: {"origin": None}},
+        moveset="universal",
+    )
+    source = DatasetSource.from_file(dataset, annotations, require_potential=True)
+    seen = {source.sample(seed).content_hash for seed in range(50)}
+    assert seen == {present.content_hash}
+
+
+def test_potential_reward_mode_seeds_only_from_known_distance_groups(tmp_path: Path) -> None:
+    present, absent = _presentations([2])[0], _presentations([3])[0]
+    dataset = tmp_path / "train.groups.json"
+    annotations = tmp_path / "train.universal.annotations.json"
+    _write_groups(dataset, [present, absent])
+    _write_annotations(
+        annotations,
+        {present.content_hash: {"origin": 4}, absent.content_hash: {"origin": None}},
+        moveset="universal",
+    )
+    source = build_instance_source(
+        TrainingPipelineConfig(
+            rank=2,
+            reward_mode="potential",
+            dataset_path=str(dataset),
+            dataset_annotations_path=str(annotations),
+        )
+    )
+    assert isinstance(source, DatasetSource)
+    assert source.potentials == {present.content_hash: 4}
+    assert {source.sample(seed).content_hash for seed in range(50)} == {present.content_hash}
+
+
+def test_scramble_source_has_no_potentials() -> None:
+    assert ScrambleSource(rank=2, depth=3).potentials == {}
+
+
 def test_build_instance_source_switches_on_config(tmp_path: Path) -> None:
     presentations = _presentations([1, 2])
     dataset = tmp_path / "train.groups.json"

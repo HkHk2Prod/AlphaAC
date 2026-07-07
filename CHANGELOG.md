@@ -2,11 +2,23 @@
 
 ## Unreleased
 
-- Removed the `descent` reward mode (unstable in training). The three remaining
-  reward modes are `length_reduction`, `sparse_goal`, and
-  `length_reduction_and_goal` (default). The dataset's `distance_to_shorter` /
-  `shorter_proven` annotations are still produced by `dataset annotate`; they are
-  simply no longer consumed by any reward path.
+- Added the `potential` reward mode: potential-based shaping toward the trivial
+  group, where the potential is a presentation's `distance_to_origin` annotation.
+  Steps between annotated states score `Phi(prev) - Phi(next)` plus the
+  `goal_reward` bonus on the goal. Steps into the unannotated region score zero;
+  the environment holds the exit potential and, on re-entering the known region
+  (the goal counts as a known `Phi = 0`), credits the whole `Phi(exit) - Phi(entry)`
+  change at once. Because the undiscounted return of a potential is path-length
+  invariant, a new `training.potential_gamma` (default `0.99`) discounts the return
+  to mildly prefer shorter paths -- and deferring off-graph credit to the later
+  re-entry step lets that discount account for the excursion. Requires
+  `dataset.annotations`, and seeds self-play only from groups whose distance to the
+  trivial group is known.
+- Removed the `descent` reward mode (unstable in training). The reward modes are
+  `length_reduction`, `sparse_goal`, `length_reduction_and_goal` (default), and
+  `potential`. The dataset's `distance_to_shorter` / `shorter_proven` annotations
+  are still produced by `dataset annotate`; they are simply no longer consumed by
+  any reward path.
 - `01_generate_dataset.ipynb` and `02_annotate_dataset.ipynb` now fail fast if
   `HF_UPLOAD_ON_FINISH` is on but no `HF_TOKEN` is available (env var or Kaggle
   secret), instead of running for the whole time budget and only then failing

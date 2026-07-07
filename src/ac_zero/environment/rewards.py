@@ -13,7 +13,19 @@ from dataclasses import dataclass
 # - "sparse_goal": `goal_reward` on the terminal goal step and nothing else.
 # - "length_reduction_and_goal": dense reduction plus a `goal_reward` bonus on
 #   the goal step, so reaching the goal is strictly the unique optimum.
-REWARD_MODES = ("length_reduction", "sparse_goal", "length_reduction_and_goal")
+# - "potential": potential-based shaping toward the trivial group. The potential
+#   Phi(s) is the presentation's distance to origin (its `distance_to_origin`
+#   annotation). While both endpoints of a step are in the annotated region the
+#   step scores `Phi(prev) - Phi(next)` -- positive when it steps closer to the
+#   trivial group. Steps that land in the unannotated region score zero; the
+#   environment remembers the potential at the exit point and, on re-entry, credits
+#   the whole `Phi(exit) - Phi(entry)` change at once (the goal counts as a known
+#   `Phi = 0` entry). Deferring that credit to the later re-entry step is what makes
+#   the discounted return account for the time spent off-graph. A `goal_reward`
+#   bonus is added on the goal step. Undiscounted the potential telescopes to the
+#   start potential regardless of path length, so shorter paths are preferred only
+#   once the return is discounted (see `TrainingPipelineConfig.potential_gamma`).
+REWARD_MODES = ("length_reduction", "sparse_goal", "length_reduction_and_goal", "potential")
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +36,10 @@ class RewardSignal:
     new_best_length: int
     goal_reached: bool
     goal_reward: float
+    # Change in potential credited by this step (see the "potential" mode above);
+    # the environment computes it, tracking the off-graph excursion. Zero for
+    # other modes.
+    potential_delta: float = 0.0
 
 
 def step_reward(mode: str, signal: RewardSignal) -> float:
@@ -36,4 +52,6 @@ def step_reward(mode: str, signal: RewardSignal) -> float:
         return bonus
     if mode == "length_reduction_and_goal":
         return reduction + bonus
+    if mode == "potential":
+        return signal.potential_delta + bonus
     raise ValueError(f"unknown reward mode {mode!r}")

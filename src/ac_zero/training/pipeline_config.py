@@ -33,6 +33,10 @@ class TrainingPipelineConfig:
     # steps with.
     moveset: str = "strict-ac"
     goal_reward: float = 1.0
+    # Discount applied to the return under the "potential" reward mode. Potential
+    # shaping is path-length invariant undiscounted, so `gamma < 1` is what makes
+    # it mildly prefer shorter paths to the trivial group. Unused by other modes.
+    potential_gamma: float = 0.99
     model: str = "linear_policy_value"
     # Training backend: "alphazero" (PUCT self-play) or "ppo" (on-policy PPO).
     agent: str = "alphazero"
@@ -87,6 +91,11 @@ class TrainingPipelineConfig:
             moveset=str(data.get("moveset", defaults.moveset)),
             goal_reward=float(
                 training.get("goal_reward", data.get("goal_reward", defaults.goal_reward))
+            ),
+            potential_gamma=float(
+                training.get(
+                    "potential_gamma", data.get("potential_gamma", defaults.potential_gamma)
+                )
             ),
             model=str(data.get("model", defaults.model)),
             agent=str(data.get("agent", defaults.agent)),
@@ -169,6 +178,13 @@ class TrainingPipelineConfig:
             raise ValueError("max_word_length must be positive")
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
+        if self.reward_mode == "potential" and not self.dataset_annotations_path:
+            raise ValueError(
+                "reward_mode 'potential' needs dataset.annotations for the distance to "
+                "the trivial group; without it the potential falls back to length everywhere"
+            )
+        if not 0.0 < self.potential_gamma <= 1.0:
+            raise ValueError("potential_gamma must be in (0, 1]")
         if self.moveset not in MOVE_SET_NAMES:
             raise ValueError(f"moveset must be one of {MOVE_SET_NAMES}")
         if self.dataset_max_difficulty is not None and not self.dataset_annotations_path:
