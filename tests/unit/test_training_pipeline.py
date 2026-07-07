@@ -183,21 +183,6 @@ def test_config_rejects_unknown_moveset() -> None:
         TrainingPipelineConfig(moveset="nope").validate()
 
 
-def test_config_requires_dataset_for_descent_reward() -> None:
-    with pytest.raises(ValueError, match="descent"):
-        TrainingPipelineConfig(reward_mode="descent").validate()
-    # A descent run needs both the group dataset and its annotations.
-    with pytest.raises(ValueError, match="descent"):
-        TrainingPipelineConfig(
-            reward_mode="descent", dataset_path="data/train.groups.json"
-        ).validate()
-    TrainingPipelineConfig(
-        reward_mode="descent",
-        dataset_path="data/train.groups.json",
-        dataset_annotations_path="data/train.strict-ac.annotations.json",
-    ).validate()
-
-
 def test_ensure_training_dataset_pulls_only_when_missing(monkeypatch, tmp_path: Path) -> None:
     from ac_zero.cli import _ensure_training_dataset
     from ac_zero.system.reporting import CliReporter

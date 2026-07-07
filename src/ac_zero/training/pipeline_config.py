@@ -16,8 +16,8 @@ class TrainingPipelineConfig:
     # Optional grown group dataset to seed self-play from instead of random
     # scrambles. `dataset_path` points at a downloaded ``.groups.json`` file;
     # `dataset_annotations_path` is its companion ``.<moveset>.annotations.json``,
-    # which carries the per-group distances the curriculum and descent reward read
-    # (distance to origin, and the descent distance N). `dataset_max_difficulty`
+    # which carries the per-group distance to origin the curriculum reads.
+    # `dataset_max_difficulty`
     # caps which groups are used by their distance to origin (None = all);
     # `dataset_bucket` names the Hugging Face bucket the CLI/notebook pulls from.
     dataset_path: str | None = None
@@ -30,9 +30,7 @@ class TrainingPipelineConfig:
     goal_mode: str = "exact_standard"
     reward_mode: str = "length_reduction_and_goal"
     # Named move set (`ac_zero.moves.universal.MOVE_SET_NAMES`) self-play actually
-    # steps with. This is D in the "descent" reward's `(D - 1) ** N` payoff, so
-    # `dataset_annotations_path` must be annotated under this same move set --
-    # `build_instance_source` checks the annotation file's own "moveset" field.
+    # steps with.
     moveset: str = "strict-ac"
     goal_reward: float = 1.0
     model: str = "linear_policy_value"
@@ -173,13 +171,6 @@ class TrainingPipelineConfig:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
         if self.moveset not in MOVE_SET_NAMES:
             raise ValueError(f"moveset must be one of {MOVE_SET_NAMES}")
-        if self.reward_mode == "descent" and not (
-            self.dataset_path and self.dataset_annotations_path
-        ):
-            raise ValueError(
-                "reward_mode 'descent' requires a group dataset (dataset.path) and its "
-                "annotations (dataset.annotations) carrying the descent distance N"
-            )
         if self.dataset_max_difficulty is not None and not self.dataset_annotations_path:
             raise ValueError(
                 "dataset.max_difficulty filters by distance to origin, which needs "

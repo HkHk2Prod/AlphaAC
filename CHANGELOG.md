@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Removed the `descent` reward mode (unstable in training). The three remaining
+  reward modes are `length_reduction`, `sparse_goal`, and
+  `length_reduction_and_goal` (default). The dataset's `distance_to_shorter` /
+  `shorter_proven` annotations are still produced by `dataset annotate`; they are
+  simply no longer consumed by any reward path.
 - `01_generate_dataset.ipynb` and `02_annotate_dataset.ipynb` now fail fast if
   `HF_UPLOAD_ON_FINISH` is on but no `HF_TOKEN` is available (env var or Kaggle
   secret), instead of running for the whole time budget and only then failing
