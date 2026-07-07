@@ -132,3 +132,42 @@ def move_set(code_name: str, catalog: UniversalCatalog) -> MoveSet:
         raise ValueError(f"unknown move set {code_name!r}; choose from {MOVE_SET_NAMES}") from None
     ids = frozenset(i for i, move in enumerate(catalog.moves) if predicate(move))
     return MoveSet(code_name, ids)
+
+
+@dataclass(frozen=True, slots=True)
+class MoveSetCatalog:
+    """A named move set's moves, reindexed to a dense local action-ID space.
+
+    Mirrors `ActionCatalog`'s interface (`moves`, `move`, `__len__`, `version`) so
+    it can stand in as an environment's action catalog: local ids `0..len-1` index
+    into `moves` and are independent of `UniversalCatalog`'s own move IDs, which
+    only have meaning against `UniversalCatalog` itself.
+    """
+
+    code_name: str
+    moves: tuple[PrimitiveMove, ...]
+
+    @property
+    def version(self) -> str:
+        return f"{self.code_name}-v1"
+
+    def __len__(self) -> int:
+        return len(self.moves)
+
+    def move(self, action_id: int) -> PrimitiveMove:
+        """Look up a move by its local action ID."""
+        return self.moves[action_id]
+
+
+def moveset_catalog(code_name: str, rank: int) -> MoveSetCatalog:
+    """Resolve a named move set to a dense action catalog ready for self-play.
+
+    `code_name = "strict-ac"` reproduces `ActionCatalog(rank)`'s moves in the same
+    order (both enumerate the same underlying moves); `"universal"` reproduces the
+    full `UniversalCatalog(rank)`. Other move sets fall in between, always ordered
+    by their underlying universal move ID.
+    """
+    universal = UniversalCatalog(rank)
+    selected = move_set(code_name, universal)
+    moves = tuple(universal.moves[i] for i in sorted(selected.ids))
+    return MoveSetCatalog(code_name, moves)

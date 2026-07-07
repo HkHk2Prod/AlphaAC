@@ -173,6 +173,16 @@ def test_config_rejects_negative_max_difficulty() -> None:
         TrainingPipelineConfig(dataset_max_difficulty=-1).validate()
 
 
+def test_config_reads_moveset_from_mapping() -> None:
+    assert TrainingPipelineConfig().moveset == "strict-ac"
+    assert TrainingPipelineConfig.from_mapping({"moveset": "universal"}).moveset == "universal"
+
+
+def test_config_rejects_unknown_moveset() -> None:
+    with pytest.raises(ValueError, match="moveset"):
+        TrainingPipelineConfig(moveset="nope").validate()
+
+
 def test_config_requires_dataset_for_descent_reward() -> None:
     with pytest.raises(ValueError, match="descent"):
         TrainingPipelineConfig(reward_mode="descent").validate()

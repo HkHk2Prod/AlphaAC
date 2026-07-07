@@ -31,7 +31,7 @@ def _write_groups(path: Path, presentations: list[BalancedPresentation]) -> None
     path.write_text(json.dumps(document), encoding="utf-8")
 
 
-def _write_annotations(path: Path, rows: dict[str, dict]) -> None:
+def _write_annotations(path: Path, rows: dict[str, dict], moveset: str = "strict-ac") -> None:
     annotations = [
         {
             "hash": h,
@@ -45,7 +45,14 @@ def _write_annotations(path: Path, rows: dict[str, dict]) -> None:
         for h, row in rows.items()
     ]
     path.write_text(
-        json.dumps({"schema_version": _ANNOTATIONS_SCHEMA, "rank": 2, "annotations": annotations}),
+        json.dumps(
+            {
+                "schema_version": _ANNOTATIONS_SCHEMA,
+                "rank": 2,
+                "moveset": moveset,
+                "annotations": annotations,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -84,6 +91,7 @@ def test_dataset_source_respects_max_difficulty(tmp_path: Path) -> None:
     _write_annotations(
         annotations,
         {p.content_hash: {"origin": d} for p, d in zip(presentations, [1, 2, 5, 8], strict=True)},
+        moveset="universal",
     )
     easy = {p.content_hash for p, d in zip(presentations, [1, 2, 5, 8], strict=True) if d <= 2}
     source = DatasetSource.from_file(dataset, annotations, max_difficulty=2)
@@ -97,7 +105,9 @@ def test_dataset_source_rejects_empty_selection(tmp_path: Path) -> None:
     dataset = tmp_path / "train.groups.json"
     annotations = tmp_path / "train.universal.annotations.json"
     _write_groups(dataset, presentations)
-    _write_annotations(annotations, {p.content_hash: {"origin": 5} for p in presentations})
+    _write_annotations(
+        annotations, {p.content_hash: {"origin": 5} for p in presentations}, moveset="universal"
+    )
     with pytest.raises(ValueError):
         DatasetSource.from_file(dataset, annotations, max_difficulty=2)
 
@@ -135,7 +145,9 @@ def test_build_instance_source_switches_on_config(tmp_path: Path) -> None:
     dataset = tmp_path / "train.groups.json"
     annotations = tmp_path / "train.universal.annotations.json"
     _write_groups(dataset, presentations)
-    _write_annotations(annotations, {p.content_hash: {"origin": 1} for p in presentations})
+    _write_annotations(
+        annotations, {p.content_hash: {"origin": 1} for p in presentations}, moveset="universal"
+    )
 
     scramble = build_instance_source(TrainingPipelineConfig(rank=2, scramble_depth=3))
     assert isinstance(scramble, ScrambleSource)
@@ -178,3 +190,55 @@ def test_build_instance_source_wires_descent_distance_from_annotations(tmp_path:
     )
     assert isinstance(source, DatasetSource)
     assert source.sample(0).provenance["descent_distance"] in {1, 3}
+
+
+def test_build_instance_source_accepts_matching_universal_moveset_for_descent(
+    tmp_path: Path,
+) -> None:
+    presentations = _presentations([1, 2])
+    dataset = tmp_path / "train.groups.json"
+    annotations = tmp_path / "train.universal.annotations.json"
+    _write_groups(dataset, presentations)
+    _write_annotations(
+        annotations,
+        {
+            presentations[0].content_hash: {"shorter": 2, "proven": True},
+            presentations[1].content_hash: {"shorter": 4, "proven": True},
+        },
+        moveset="universal",
+    )
+    source = build_instance_source(
+        TrainingPipelineConfig(
+            rank=2,
+            dataset_path=str(dataset),
+            dataset_annotations_path=str(annotations),
+            reward_mode="descent",
+            moveset="universal",
+        )
+    )
+    assert isinstance(source, DatasetSource)
+    assert source.sample(0).provenance["descent_distance"] in {2, 4}
+
+
+def test_build_instance_source_rejects_moveset_mismatched_annotations(tmp_path: Path) -> None:
+    presentations = _presentations([1, 2])
+    dataset = tmp_path / "train.groups.json"
+    # Annotated under "universal", but the run below plays "strict-ac" -- N would
+    # not be a valid descent distance for the environment's actual move set.
+    annotations = tmp_path / "train.universal.annotations.json"
+    _write_groups(dataset, presentations)
+    _write_annotations(
+        annotations,
+        {p.content_hash: {"shorter": 1, "proven": True} for p in presentations},
+        moveset="universal",
+    )
+    with pytest.raises(ValueError, match="move set"):
+        build_instance_source(
+            TrainingPipelineConfig(
+                rank=2,
+                dataset_path=str(dataset),
+                dataset_annotations_path=str(annotations),
+                reward_mode="descent",
+                moveset="strict-ac",
+            )
+        )
