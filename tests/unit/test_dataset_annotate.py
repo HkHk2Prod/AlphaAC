@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.annotate import AnnotateConfig, annotate, annotation_path
@@ -17,7 +18,7 @@ def _dataset(tmp_path: Path, target: int = 60) -> Path:
     return path
 
 
-def _annotate(path: Path, moveset: str) -> dict[str, dict]:
+def _annotate(path: Path, moveset: str) -> dict[str, dict[str, Any]]:
     annotate(path, AnnotateConfig(moveset=moveset, workers=1))
     data = json.loads(annotation_path(path, moveset).read_text())
     return {a["hash"]: a for a in data["annotations"]}
@@ -90,11 +91,13 @@ def test_distance_to_shorter_reaches_a_smaller_group(tmp_path: Path) -> None:
 
 def test_checkpoint_progress_reports_percent_complete(tmp_path: Path) -> None:
     path = _dataset(tmp_path, target=30)
-    events: list[dict] = []
+    events: list[dict[str, Any]] = []
     annotate(
         path,
         AnnotateConfig(moveset="universal", workers=1, checkpoint_every=1),
-        progress=lambda message, metrics: events.append(metrics) if message == "checkpoint" else None,
+        progress=lambda message, metrics: (
+            events.append(metrics) if message == "checkpoint" else None
+        ),
     )
     assert events, "expected at least one checkpoint progress event"
     for metrics in events:
