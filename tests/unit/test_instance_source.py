@@ -112,32 +112,61 @@ def test_dataset_source_rejects_empty_selection(tmp_path: Path) -> None:
         DatasetSource.from_file(dataset, annotations, max_difficulty=2)
 
 
-def test_descent_source_keeps_only_proven_and_stamps_distance(tmp_path: Path) -> None:
-    presentations = _presentations([1, 2, 3])
+def test_dataset_source_exposes_known_distances_as_potentials(tmp_path: Path) -> None:
+    present, absent = _presentations([2])[0], _presentations([3])[0]
     dataset = tmp_path / "train.groups.json"
-    annotations = tmp_path / "train.strict-ac.annotations.json"
-    _write_groups(dataset, presentations)
+    annotations = tmp_path / "train.universal.annotations.json"
+    _write_groups(dataset, [present, absent])
+    # Only one group has a known distance to origin; the other is left unresolved.
     _write_annotations(
         annotations,
-        {
-            presentations[0].content_hash: {"shorter": 3, "proven": True},
-            presentations[1].content_hash: {"shorter": None, "proven": False},
-            presentations[2].content_hash: {"shorter": 1, "proven": True},
-        },
+        {present.content_hash: {"origin": 4}, absent.content_hash: {"origin": None}},
+        moveset="universal",
     )
-    source = DatasetSource.from_file(dataset, annotations, require_descent=True)
-    distances = {source.sample(seed).provenance["descent_distance"] for seed in range(50)}
-    assert distances == {3, 1}
+    source = DatasetSource.from_file(dataset, annotations)
+    assert source.potentials == {present.content_hash: 4}
 
 
-def test_descent_source_rejects_dataset_without_proven_descent(tmp_path: Path) -> None:
-    presentations = _presentations([1, 2])
+def test_dataset_source_require_potential_drops_unannotated_groups(tmp_path: Path) -> None:
+    present, absent = _presentations([2])[0], _presentations([3])[0]
     dataset = tmp_path / "train.groups.json"
-    annotations = tmp_path / "train.strict-ac.annotations.json"
-    _write_groups(dataset, presentations)
-    _write_annotations(annotations, {p.content_hash: {"shorter": None} for p in presentations})
-    with pytest.raises(ValueError, match="proven distance_to_shorter"):
-        DatasetSource.from_file(dataset, annotations, require_descent=True)
+    annotations = tmp_path / "train.universal.annotations.json"
+    _write_groups(dataset, [present, absent])
+    _write_annotations(
+        annotations,
+        {present.content_hash: {"origin": 4}, absent.content_hash: {"origin": None}},
+        moveset="universal",
+    )
+    source = DatasetSource.from_file(dataset, annotations, require_potential=True)
+    seen = {source.sample(seed).content_hash for seed in range(50)}
+    assert seen == {present.content_hash}
+
+
+def test_potential_reward_mode_seeds_only_from_known_distance_groups(tmp_path: Path) -> None:
+    present, absent = _presentations([2])[0], _presentations([3])[0]
+    dataset = tmp_path / "train.groups.json"
+    annotations = tmp_path / "train.universal.annotations.json"
+    _write_groups(dataset, [present, absent])
+    _write_annotations(
+        annotations,
+        {present.content_hash: {"origin": 4}, absent.content_hash: {"origin": None}},
+        moveset="universal",
+    )
+    source = build_instance_source(
+        TrainingPipelineConfig(
+            rank=2,
+            reward_mode="potential",
+            dataset_path=str(dataset),
+            dataset_annotations_path=str(annotations),
+        )
+    )
+    assert isinstance(source, DatasetSource)
+    assert source.potentials == {present.content_hash: 4}
+    assert {source.sample(seed).content_hash for seed in range(50)} == {present.content_hash}
+
+
+def test_scramble_source_has_no_potentials() -> None:
+    assert ScrambleSource(rank=2, depth=3).potentials == {}
 
 
 def test_build_instance_source_switches_on_config(tmp_path: Path) -> None:
@@ -161,84 +190,3 @@ def test_build_instance_source_switches_on_config(tmp_path: Path) -> None:
         )
     )
     assert isinstance(seeded, DatasetSource)
-
-
-def test_build_instance_source_rejects_descent_without_dataset() -> None:
-    with pytest.raises(ValueError, match="descent"):
-        build_instance_source(TrainingPipelineConfig(rank=2, reward_mode="descent"))
-
-
-def test_build_instance_source_wires_descent_distance_from_annotations(tmp_path: Path) -> None:
-    presentations = _presentations([1, 2])
-    dataset = tmp_path / "train.groups.json"
-    annotations = tmp_path / "train.strict-ac.annotations.json"
-    _write_groups(dataset, presentations)
-    _write_annotations(
-        annotations,
-        {
-            presentations[0].content_hash: {"shorter": 3, "proven": True},
-            presentations[1].content_hash: {"shorter": 1, "proven": True},
-        },
-    )
-    source = build_instance_source(
-        TrainingPipelineConfig(
-            rank=2,
-            dataset_path=str(dataset),
-            dataset_annotations_path=str(annotations),
-            reward_mode="descent",
-        )
-    )
-    assert isinstance(source, DatasetSource)
-    assert source.sample(0).provenance["descent_distance"] in {1, 3}
-
-
-def test_build_instance_source_accepts_matching_universal_moveset_for_descent(
-    tmp_path: Path,
-) -> None:
-    presentations = _presentations([1, 2])
-    dataset = tmp_path / "train.groups.json"
-    annotations = tmp_path / "train.universal.annotations.json"
-    _write_groups(dataset, presentations)
-    _write_annotations(
-        annotations,
-        {
-            presentations[0].content_hash: {"shorter": 2, "proven": True},
-            presentations[1].content_hash: {"shorter": 4, "proven": True},
-        },
-        moveset="universal",
-    )
-    source = build_instance_source(
-        TrainingPipelineConfig(
-            rank=2,
-            dataset_path=str(dataset),
-            dataset_annotations_path=str(annotations),
-            reward_mode="descent",
-            moveset="universal",
-        )
-    )
-    assert isinstance(source, DatasetSource)
-    assert source.sample(0).provenance["descent_distance"] in {2, 4}
-
-
-def test_build_instance_source_rejects_moveset_mismatched_annotations(tmp_path: Path) -> None:
-    presentations = _presentations([1, 2])
-    dataset = tmp_path / "train.groups.json"
-    # Annotated under "universal", but the run below plays "strict-ac" -- N would
-    # not be a valid descent distance for the environment's actual move set.
-    annotations = tmp_path / "train.universal.annotations.json"
-    _write_groups(dataset, presentations)
-    _write_annotations(
-        annotations,
-        {p.content_hash: {"shorter": 1, "proven": True} for p in presentations},
-        moveset="universal",
-    )
-    with pytest.raises(ValueError, match="move set"):
-        build_instance_source(
-            TrainingPipelineConfig(
-                rank=2,
-                dataset_path=str(dataset),
-                dataset_annotations_path=str(annotations),
-                reward_mode="descent",
-                moveset="strict-ac",
-            )
-        )

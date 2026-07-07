@@ -16,8 +16,8 @@ class TrainingPipelineConfig:
     # Optional grown group dataset to seed self-play from instead of random
     # scrambles. `dataset_path` points at a downloaded ``.groups.json`` file;
     # `dataset_annotations_path` is its companion ``.<moveset>.annotations.json``,
-    # which carries the per-group distances the curriculum and descent reward read
-    # (distance to origin, and the descent distance N). `dataset_max_difficulty`
+    # which carries the per-group distance to origin the curriculum reads.
+    # `dataset_max_difficulty`
     # caps which groups are used by their distance to origin (None = all);
     # `dataset_bucket` names the Hugging Face bucket the CLI/notebook pulls from.
     dataset_path: str | None = None
@@ -30,11 +30,13 @@ class TrainingPipelineConfig:
     goal_mode: str = "exact_standard"
     reward_mode: str = "length_reduction_and_goal"
     # Named move set (`ac_zero.moves.universal.MOVE_SET_NAMES`) self-play actually
-    # steps with. This is D in the "descent" reward's `(D - 1) ** N` payoff, so
-    # `dataset_annotations_path` must be annotated under this same move set --
-    # `build_instance_source` checks the annotation file's own "moveset" field.
+    # steps with.
     moveset: str = "strict-ac"
     goal_reward: float = 1.0
+    # Discount applied to the return under the "potential" reward mode. Potential
+    # shaping is path-length invariant undiscounted, so `gamma < 1` is what makes
+    # it mildly prefer shorter paths to the trivial group. Unused by other modes.
+    potential_gamma: float = 0.99
     model: str = "linear_policy_value"
     # Training backend: "alphazero" (PUCT self-play) or "ppo" (on-policy PPO).
     agent: str = "alphazero"
@@ -89,6 +91,11 @@ class TrainingPipelineConfig:
             moveset=str(data.get("moveset", defaults.moveset)),
             goal_reward=float(
                 training.get("goal_reward", data.get("goal_reward", defaults.goal_reward))
+            ),
+            potential_gamma=float(
+                training.get(
+                    "potential_gamma", data.get("potential_gamma", defaults.potential_gamma)
+                )
             ),
             model=str(data.get("model", defaults.model)),
             agent=str(data.get("agent", defaults.agent)),
@@ -171,15 +178,15 @@ class TrainingPipelineConfig:
             raise ValueError("max_word_length must be positive")
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
+        if self.reward_mode == "potential" and not self.dataset_annotations_path:
+            raise ValueError(
+                "reward_mode 'potential' needs dataset.annotations for the distance to "
+                "the trivial group; without it the potential falls back to length everywhere"
+            )
+        if not 0.0 < self.potential_gamma <= 1.0:
+            raise ValueError("potential_gamma must be in (0, 1]")
         if self.moveset not in MOVE_SET_NAMES:
             raise ValueError(f"moveset must be one of {MOVE_SET_NAMES}")
-        if self.reward_mode == "descent" and not (
-            self.dataset_path and self.dataset_annotations_path
-        ):
-            raise ValueError(
-                "reward_mode 'descent' requires a group dataset (dataset.path) and its "
-                "annotations (dataset.annotations) carrying the descent distance N"
-            )
         if self.dataset_max_difficulty is not None and not self.dataset_annotations_path:
             raise ValueError(
                 "dataset.max_difficulty filters by distance to origin, which needs "

@@ -8,7 +8,12 @@ from ac_zero.cli import main
 from ac_zero.training.callbacks import CallbackManager
 from ac_zero.training.checkpointing import CheckpointManager
 from ac_zero.training.events import TrainingEvent
-from ac_zero.training.losses import masked_softmax, policy_value_loss, visit_count_policy
+from ac_zero.training.losses import (
+    masked_softmax,
+    policy_value_loss,
+    return_to_go,
+    visit_count_policy,
+)
 from ac_zero.training.pipeline import TrainingPipelineConfig, run_training_pipeline
 
 
@@ -183,19 +188,34 @@ def test_config_rejects_unknown_moveset() -> None:
         TrainingPipelineConfig(moveset="nope").validate()
 
 
-def test_config_requires_dataset_for_descent_reward() -> None:
-    with pytest.raises(ValueError, match="descent"):
-        TrainingPipelineConfig(reward_mode="descent").validate()
-    # A descent run needs both the group dataset and its annotations.
-    with pytest.raises(ValueError, match="descent"):
-        TrainingPipelineConfig(
-            reward_mode="descent", dataset_path="data/train.groups.json"
-        ).validate()
+def test_config_reads_potential_gamma_from_mapping() -> None:
+    assert TrainingPipelineConfig().potential_gamma == 0.99
+    config = TrainingPipelineConfig.from_mapping({"training": {"potential_gamma": 0.95}})
+    assert config.potential_gamma == 0.95
+
+
+def test_potential_reward_requires_annotations() -> None:
+    with pytest.raises(ValueError, match="potential"):
+        TrainingPipelineConfig(reward_mode="potential").validate()
+    # With annotations the mode validates.
     TrainingPipelineConfig(
-        reward_mode="descent",
+        reward_mode="potential",
         dataset_path="data/train.groups.json",
-        dataset_annotations_path="data/train.strict-ac.annotations.json",
+        dataset_annotations_path="data/train.universal.annotations.json",
     ).validate()
+
+
+def test_config_rejects_out_of_range_potential_gamma() -> None:
+    with pytest.raises(ValueError, match="potential_gamma"):
+        TrainingPipelineConfig(potential_gamma=0.0).validate()
+    with pytest.raises(ValueError, match="potential_gamma"):
+        TrainingPipelineConfig(potential_gamma=1.5).validate()
+
+
+def test_return_to_go_discounts_future_rewards() -> None:
+    assert return_to_go([1.0, 1.0, 1.0]) == [3.0, 2.0, 1.0]
+    # gamma < 1 weights nearer rewards more; the tail collapses geometrically.
+    assert return_to_go([1.0, 1.0, 1.0], 0.5) == pytest.approx([1.75, 1.5, 1.0])
 
 
 def test_ensure_training_dataset_pulls_only_when_missing(monkeypatch, tmp_path: Path) -> None:

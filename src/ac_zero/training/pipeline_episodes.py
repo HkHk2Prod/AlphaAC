@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.encoding.padded import PaddedEncoding, StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.models.base import PolicyValueModel
@@ -50,6 +51,16 @@ def build_env_config(config: TrainingPipelineConfig) -> ACEnvironmentConfig:
         goal_reward=config.goal_reward,
         moveset=config.moveset,
     )
+
+
+def build_env(
+    config: TrainingPipelineConfig,
+    presentation: BalancedPresentation,
+    source: InstanceSource,
+) -> ACEnvironment:
+    """Construct the episode env, wiring the potential map for the potential reward."""
+    potentials = source.potentials if config.reward_mode == "potential" else None
+    return ACEnvironment(presentation, build_env_config(config), potentials=potentials)
 
 
 def collect_episodes(
@@ -120,7 +131,7 @@ def _collect_episode(
     # reproduce exactly.
     rng = random.Random(episode_seed)
     presentation = source.sample(episode_seed)
-    env = ACEnvironment(presentation, build_env_config(config))
+    env = build_env(config, presentation, source)
     mcts = PUCTMCTS(
         model, encoder, PUCTConfig(simulations=config.mcts_simulations, c_puct=config.c_puct)
     )
@@ -140,7 +151,8 @@ def _collect_episode(
         normalized_reward = reward / max(1.0, float(env.initial.total_length))
         pending.append((encoding, legal_mask, policy_target, action, normalized_reward))
         rewards.append(normalized_reward)
-    returns = return_to_go(rewards)
+    gamma = config.potential_gamma if config.reward_mode == "potential" else 1.0
+    returns = return_to_go(rewards, gamma)
     examples = [
         ReplayExample(
             encoding=encoding,

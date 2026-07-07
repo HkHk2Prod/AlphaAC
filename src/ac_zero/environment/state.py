@@ -22,6 +22,13 @@ class ACSearchState:
     catalog_version: str
     last_action: int | None = None
     safety_truncated: bool = False
+    # Potential (distance to the trivial group) of the last state whose potential
+    # was known, carried so the "potential" reward can defer crediting a descent
+    # across an unannotated excursion until the episode re-enters the known region.
+    # Deliberately excluded from `key`: it never affects the model's value/priors
+    # (the encoder ignores it) and keeping floats out of the key avoids fragmenting
+    # transposition. `None` until a known-potential state is seen.
+    last_known_potential: float | None = None
 
     @property
     def key(self) -> tuple[object, ...]:
