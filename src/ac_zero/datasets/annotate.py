@@ -123,7 +123,14 @@ def annotate(
             _write(destination, rank, config.moveset, lengths, dist_origin, moves_origin, shorter)
             checkpointed = computed
             if progress is not None:
-                progress("checkpoint", {"computed": computed, "total": len(todo)})
+                progress(
+                    "checkpoint",
+                    {
+                        "computed": computed,
+                        "total": len(todo),
+                        "pct_complete": round(100 * computed / len(todo), 1) if todo else 100.0,
+                    },
+                )
 
     _write(destination, rank, config.moveset, lengths, dist_origin, moves_origin, shorter)
     report = AnnotateReport(
