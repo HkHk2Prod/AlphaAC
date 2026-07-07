@@ -61,6 +61,7 @@ class DatasetSource:
         max_difficulty: int | None = None,
         *,
         require_descent: bool = False,
+        moveset: str | None = None,
     ) -> DatasetSource:
         """Load a grown group dataset, filtered/annotated from its companion file.
 
@@ -70,10 +71,15 @@ class DatasetSource:
         ``require_descent`` (the ``descent`` reward) keeps only groups with a
         *proven* ``distance_to_shorter`` -- the known minimal moves N -- stamping
         that N onto each kept presentation's provenance for the environment to read.
+        When ``require_descent``, ``moveset`` must match the annotation file's own
+        ``moveset`` field: N is only a valid descent distance for the move set the
+        environment actually plays.
         """
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         rank = int(data["rank"])
-        annotations = _load_annotations(annotations_path)
+        annotations = _load_annotations(
+            annotations_path, expected_moveset=moveset if require_descent else None
+        )
         presentations: list[BalancedPresentation] = []
         for entry in data.get("groups", []):
             annotation = annotations.get(entry["hash"], {})
@@ -104,11 +110,25 @@ class DatasetSource:
         return random.Random(seed).choice(self._presentations)
 
 
-def _load_annotations(path: str | Path | None) -> dict[str, dict[str, object]]:
-    """Load a `.annotations.json` file as a `hash -> annotation entry` map."""
+def _load_annotations(
+    path: str | Path | None, *, expected_moveset: str | None = None
+) -> dict[str, dict[str, object]]:
+    """Load a `.annotations.json` file as a `hash -> annotation entry` map.
+
+    When ``expected_moveset`` is given, rejects a file annotated under a different
+    move set -- its distances (e.g. the descent distance N) aren't valid for an
+    environment that plays a different move set.
+    """
     if path is None:
         return {}
     data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if expected_moveset is not None and data.get("moveset") != expected_moveset:
+        raise ValueError(
+            f"annotations at {path} were computed under move set "
+            f"{data.get('moveset')!r}, but the environment is configured for "
+            f"{expected_moveset!r} -- the descent distance N would not match "
+            "what the environment can actually play"
+        )
     return {entry["hash"]: entry for entry in data.get("annotations", [])}
 
 
@@ -127,6 +147,7 @@ def build_instance_source(config: TrainingPipelineConfig) -> InstanceSource:
             config.dataset_annotations_path,
             config.dataset_max_difficulty,
             require_descent=descent,
+            moveset=config.moveset,
         )
     if descent:
         raise ValueError(

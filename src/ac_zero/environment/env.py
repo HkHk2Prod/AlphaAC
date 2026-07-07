@@ -12,7 +12,7 @@ from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.goals import exact_standard_goal, signed_permuted_basis_goal
 from ac_zero.environment.rewards import RewardSignal, step_reward
 from ac_zero.environment.state import ACSearchState
-from ac_zero.moves.catalog import ActionCatalog
+from ac_zero.moves.universal import moveset_catalog
 
 ENV_ID = "ACZero-v0"
 
@@ -29,6 +29,11 @@ class ACEnvironmentConfig:
     # is the unique optimum; pure length reduction saturates at non-goal states.
     reward_mode: str = "length_reduction_and_goal"
     goal_reward: float = 1.0
+    # Which named move set (`ac_zero.moves.universal.MOVE_SET_NAMES`) the episode
+    # steps with -- this is D in the "descent" reward's `(D - 1) ** N` payoff, so
+    # N (each instance's `descent_distance` provenance) must come from annotations
+    # computed under this same move set.
+    moveset: str = "strict-ac"
 
 
 class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
@@ -53,7 +58,7 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         self.initial = presentation
         self.config = config or ACEnvironmentConfig()
         self.encoder = encoder or StateEncoder()
-        self.catalog = ActionCatalog(presentation.rank)
+        self.catalog = moveset_catalog(self.config.moveset, presentation.rank)
         # N for the "descent" reward: the known fewest moves that shorten this
         # start presentation, carried on the instance's provenance by the dataset
         # source. `None` for instances without the annotation (the descent instance

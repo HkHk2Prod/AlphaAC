@@ -48,6 +48,7 @@ def build_env_config(config: TrainingPipelineConfig) -> ACEnvironmentConfig:
         goal_mode=config.goal_mode,
         reward_mode=config.reward_mode,
         goal_reward=config.goal_reward,
+        moveset=config.moveset,
     )
 
 

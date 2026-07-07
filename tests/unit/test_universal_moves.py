@@ -14,7 +14,7 @@ from ac_zero.moves.primitive import (
     inverse_move,
     move_from_json,
 )
-from ac_zero.moves.universal import MOVE_SET_NAMES, UniversalCatalog, move_set
+from ac_zero.moves.universal import MOVE_SET_NAMES, UniversalCatalog, move_set, moveset_catalog
 
 
 @pytest.mark.parametrize("rank", [1, 2, 3])
@@ -71,3 +71,26 @@ def test_move_set_names_include_universal_and_strict() -> None:
 def test_unknown_move_set_is_rejected() -> None:
     with pytest.raises(ValueError, match="unknown move set"):
         move_set("nope", UniversalCatalog(2))
+
+
+def test_moveset_catalog_strict_ac_matches_action_catalog_order() -> None:
+    catalog = moveset_catalog("strict-ac", 2)
+    assert catalog.version == "strict-ac-v1"
+    assert catalog.moves == ActionCatalog(2).moves
+
+
+def test_moveset_catalog_universal_matches_universal_catalog() -> None:
+    catalog = moveset_catalog("universal", 2)
+    assert catalog.version == "universal-v1"
+    assert catalog.moves == UniversalCatalog(2).moves
+
+
+def test_moveset_catalog_move_and_len_agree_with_moves() -> None:
+    catalog = moveset_catalog("strict-ac", 2)
+    assert len(catalog) == len(catalog.moves)
+    assert all(catalog.move(i) == catalog.moves[i] for i in range(len(catalog)))
+
+
+def test_moveset_catalog_rejects_unknown_move_set() -> None:
+    with pytest.raises(ValueError, match="unknown move set"):
+        moveset_catalog("nope", 2)

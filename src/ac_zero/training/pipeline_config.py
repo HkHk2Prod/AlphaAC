@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from ac_zero.environment.rewards import REWARD_MODES
+from ac_zero.moves.universal import MOVE_SET_NAMES
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,11 @@ class TrainingPipelineConfig:
     max_word_length: int = 32
     goal_mode: str = "exact_standard"
     reward_mode: str = "length_reduction_and_goal"
+    # Named move set (`ac_zero.moves.universal.MOVE_SET_NAMES`) self-play actually
+    # steps with. This is D in the "descent" reward's `(D - 1) ** N` payoff, so
+    # `dataset_annotations_path` must be annotated under this same move set --
+    # `build_instance_source` checks the annotation file's own "moveset" field.
+    moveset: str = "strict-ac"
     goal_reward: float = 1.0
     model: str = "linear_policy_value"
     # Training backend: "alphazero" (PUCT self-play) or "ppo" (on-policy PPO).
@@ -80,6 +86,7 @@ class TrainingPipelineConfig:
             reward_mode=str(
                 training.get("reward_mode", data.get("reward_mode", defaults.reward_mode))
             ),
+            moveset=str(data.get("moveset", defaults.moveset)),
             goal_reward=float(
                 training.get("goal_reward", data.get("goal_reward", defaults.goal_reward))
             ),
@@ -164,6 +171,8 @@ class TrainingPipelineConfig:
             raise ValueError("max_word_length must be positive")
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
+        if self.moveset not in MOVE_SET_NAMES:
+            raise ValueError(f"moveset must be one of {MOVE_SET_NAMES}")
         if self.reward_mode == "descent" and not (
             self.dataset_path and self.dataset_annotations_path
         ):
