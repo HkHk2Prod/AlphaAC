@@ -166,7 +166,7 @@ uv run --frozen aczero train --config configs/experiments/ppo_rank2.yaml --seed 
 ```
 
 Instead of MCTS self-play it samples rollouts from the current policy, estimates
-advantages with GAE(`ppo_gamma`, `ppo_lambda`), and runs `ppo_epochs` of
+advantages with GAE(`gamma`, `ppo_lambda`), and runs `ppo_epochs` of
 minibatch clipped-surrogate updates (`ppo_clip`, `entropy_coef`, reusing
 `value_loss_weight` for the value term) over that on-policy data — writing the
 same checkpoints, metrics, plots, and verified certificate. Rollout collection

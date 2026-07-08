@@ -24,7 +24,7 @@ from dataclasses import dataclass
 #   the discounted return account for the time spent off-graph. A `goal_reward`
 #   bonus is added on the goal step. Undiscounted the potential telescopes to the
 #   start potential regardless of path length, so shorter paths are preferred only
-#   once the return is discounted (see `TrainingPipelineConfig.potential_gamma`).
+#   once the return is discounted (see `TrainingPipelineConfig.gamma`).
 REWARD_MODES = ("length_reduction", "sparse_goal", "length_reduction_and_goal", "potential")
 
 

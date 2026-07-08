@@ -151,8 +151,7 @@ def _collect_episode(
         normalized_reward = reward / max(1.0, float(env.initial.total_length))
         pending.append((encoding, legal_mask, policy_target, action, normalized_reward))
         rewards.append(normalized_reward)
-    gamma = config.potential_gamma if config.reward_mode == "potential" else 1.0
-    returns = return_to_go(rewards, gamma)
+    returns = return_to_go(rewards, config.gamma)
     examples = [
         ReplayExample(
             encoding=encoding,
