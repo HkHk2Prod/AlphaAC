@@ -127,6 +127,60 @@ def test_remote_exists(monkeypatch: pytest.MonkeyPatch) -> None:
     assert hub.remote_exists("sub") is False  # directory entries are not files
 
 
+def test_upload_files_batches_pairs_with_nested_remote_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = _install_fake(monkeypatch, [])
+    a = tmp_path / "best.json"
+    b = tmp_path / "runs" / "1.jsonl"
+    b.parent.mkdir()
+    a.write_text("{}", encoding="utf-8")
+    b.write_text("{}", encoding="utf-8")
+
+    hub.upload_files(
+        [(a, "model_checkpoints/n/best.json"), (b, "model_checkpoints/n/runs/1.jsonl")],
+        bucket="ns/b",
+    )
+
+    assert record["add"]["bucket"] == "ns/b"
+    assert record["add"]["add"] == [
+        (str(a), "model_checkpoints/n/best.json"),
+        (str(b), "model_checkpoints/n/runs/1.jsonl"),
+    ]
+
+
+def test_upload_files_rejects_missing_local(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_fake(monkeypatch, [])
+    with pytest.raises(FileNotFoundError):
+        hub.upload_files([(tmp_path / "nope.json", "remote/x.json")])
+
+
+def test_list_remote_filters_by_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake(
+        monkeypatch,
+        [
+            _Item("model_checkpoints/n/runs/1.jsonl"),
+            _Item("model_checkpoints/n/best.json"),
+            _Item("other/thing.json"),
+            _Item("model_checkpoints/n/runs", type="directory"),
+        ],
+    )
+    paths = hub.list_remote("model_checkpoints/n/runs/", bucket="ns/b")
+    assert paths == ["model_checkpoints/n/runs/1.jsonl"]  # directory + other prefixes excluded
+
+
+def test_download_file_missing_ok_returns_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_fake(monkeypatch, [])  # empty bucket
+    result = hub.download_file(
+        "model_checkpoints/n/index.json", tmp_path / "i.json", missing_ok=True
+    )
+    assert result is None
+
+
 def test_missing_dependency_raises_install_hint(monkeypatch: pytest.MonkeyPatch) -> None:
     # A None entry in sys.modules makes `import huggingface_hub` raise ImportError.
     monkeypatch.setitem(sys.modules, "huggingface_hub", None)

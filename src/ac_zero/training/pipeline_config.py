@@ -60,6 +60,12 @@ class TrainingPipelineConfig:
     value_loss_weight: float = 1.0
     checkpoint_every: int = 1
     run_directory: str = "runs/train"
+    # Optional local checkpoint (``best.json``/``latest.json`` payload) whose model
+    # weights initialize this run -- a warm start from a previous run's best model.
+    warm_start: str | None = None
+    # Override for the Hugging Face checkpoint name; ``None`` derives it from the
+    # task/model identity (see ``training.checkpoint_name.derive_checkpoint_name``).
+    checkpoint_name: str | None = None
     # Self-play episodes are independent, so they fan out across this many worker
     # processes. The default 0 autodetects and uses every CPU core; set 1 to keep
     # the run in-process, or a negative count to leave that many cores free.
@@ -154,6 +160,10 @@ class TrainingPipelineConfig:
             ),
             run_directory=str(
                 training.get("run_directory", data.get("run_directory", defaults.run_directory))
+            ),
+            warm_start=_optional_str(training.get("warm_start", data.get("warm_start"))),
+            checkpoint_name=_optional_str(
+                training.get("checkpoint_name", data.get("checkpoint_name"))
             ),
             workers=int(training.get("workers", data.get("workers", defaults.workers))),
         )

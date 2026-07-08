@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added Hugging Face model checkpoints with warm start. Each run keeps a bundle
+  (`<run>/model_checkpoint/`: `best.json`, `latest.json`, `metrics.jsonl`,
+  `meta.json`) current, tracking the best model by an EMA of self-play mean
+  return. `training.checkpoint_name` (or an auto name derived from the
+  model/moveset/reward/rank identity) selects the destination
+  `model_checkpoints/<name>/` in the HF bucket; `training.warm_start` initializes
+  a run's weights from a saved checkpoint. `PeriodicCheckpointUploader` pushes the
+  best model, per-run and all-runs progress plots, and an `index.json` rollup
+  every few hours (and once at the end); `download_best_checkpoint` pulls the best
+  model back for the next run. Wired into `03_train.ipynb` via `CHECKPOINT_NAME`,
+  `WARM_START`, `HF_CHECKPOINT_UPLOAD`, and `HF_UPLOAD_EVERY_HOURS`; the summary
+  cell shows both this run's plots and the all-runs aggregate.
 - Added the `potential` reward mode: potential-based shaping toward the trivial
   group, where the potential is a presentation's `distance_to_origin` annotation.
   Steps between annotated states score `Phi(prev) - Phi(next)` plus the

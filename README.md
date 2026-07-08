@@ -279,6 +279,17 @@ config, seed), JSON checkpoints (every `checkpoint_every` iterations),
 `metrics.jsonl`, and progress logs/graphs under `training.run_directory`, so a
 long run on another machine is fully auditable and resumable from its checkpoint.
 
+Warm starts across runs — a run also keeps a Hugging Face-shaped bundle under
+`<run_directory>/model_checkpoint/` (`best.json`, `latest.json`, `metrics.jsonl`,
+`meta.json`), tracking the best model by an EMA of self-play mean return. Set
+`training.checkpoint_name` (or let it auto-derive from the model/moveset/reward/
+rank identity, so the same setup resumes one lineage) and `training.warm_start`
+(a local checkpoint whose weights initialize the run). The Kaggle training
+notebook pushes the best model, this-run and all-runs progress plots, and an
+`index.json` rollup to `model_checkpoints/<name>/` in the HF bucket every few
+hours, and pulls the best model back for the next run — a warm start toward
+longer training split across sessions.
+
 ## Repository Layout
 
 - `src/ac_zero/algebra`: immutable free-group words and balanced presentations.

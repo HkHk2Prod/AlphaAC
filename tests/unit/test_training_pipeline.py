@@ -121,6 +121,49 @@ def test_training_pipeline_writes_checkpoint_and_summary(tmp_path: Path) -> None
         assert Path(plot).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
+def test_training_pipeline_writes_bundle_and_warm_starts(tmp_path: Path) -> None:
+    base = dict(
+        scramble_depth=1,
+        max_moves=4,
+        model="residual_mlp",
+        mcts_simulations=4,
+        iterations=2,
+        episodes_per_iteration=2,
+        optimizer_updates=2,
+        batch_size=2,
+    )
+    config = TrainingPipelineConfig(run_directory=str(tmp_path / "run"), **base)
+    summary = run_training_pipeline(config, seed=7)
+
+    # The HF-shaped bundle is kept current: name, best model, metrics, provenance.
+    assert summary.checkpoint_name.startswith("rank2-alphazero-residual_mlp-")
+    bundle = Path(summary.checkpoint_bundle_dir)
+    for name in ("best.json", "latest.json", "metrics.jsonl", "meta.json"):
+        assert (bundle / name).exists()
+    best = json.loads((bundle / "best.json").read_text())
+    assert best["checkpoint_metric"] == summary.best_return
+    meta = json.loads((bundle / "meta.json").read_text())
+    assert meta["warm_started_from"] is None
+
+    # A second run warm-started from that best model loads its weights.
+    warm = TrainingPipelineConfig(
+        run_directory=str(tmp_path / "run2"), warm_start=str(bundle / "best.json"), **base
+    )
+    warm_summary = run_training_pipeline(warm, seed=9)
+    warm_meta = json.loads((Path(warm_summary.checkpoint_bundle_dir) / "meta.json").read_text())
+    assert warm_meta["warm_started_from"] == str(bundle / "best.json")
+
+
+def test_config_reads_warm_start_and_checkpoint_name_from_mapping() -> None:
+    config = TrainingPipelineConfig.from_mapping(
+        {"training": {"warm_start": "best.json", "checkpoint_name": "my-run"}}
+    )
+    assert config.warm_start == "best.json"
+    assert config.checkpoint_name == "my-run"
+    assert TrainingPipelineConfig().warm_start is None
+    assert TrainingPipelineConfig().checkpoint_name is None
+
+
 def test_training_pipeline_model_is_invariant_to_worker_count(tmp_path: Path) -> None:
     def _run(workers: int, name: str) -> dict:
         config = TrainingPipelineConfig(

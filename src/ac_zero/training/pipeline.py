@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -12,11 +13,12 @@ from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment
-from ac_zero.models.registry import create_trainable_model
+from ac_zero.models.registry import create_trainable_model, model_from_json
 from ac_zero.system.manifests import ReproducibilityManifest
 from ac_zero.system.parallel import describe_worker_pool
 from ac_zero.training.callbacks import CallbackManager, default_training_callbacks
-from ac_zero.training.checkpointing import CheckpointManager
+from ac_zero.training.checkpoint_name import derive_checkpoint_name
+from ac_zero.training.checkpoint_writer import RunCheckpointer
 from ac_zero.training.events import LogLevel
 from ac_zero.training.losses import PolicyValueLoss
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
@@ -41,6 +43,10 @@ class TrainingPipelineSummary:
     checkpoint_path: str
     certificate_path: str
     model_name: str
+    checkpoint_name: str
+    checkpoint_bundle_dir: str
+    run_id: str
+    best_return: float | None
     iterations: int
     episodes: int
     replay_size: int
@@ -109,12 +115,46 @@ class _TrainingRun:
         self.encoder = StateEncoder(config.max_word_length)
         self.rng = random.Random(seed)
         self.model = create_trainable_model(config.model, seed=seed)
-        self.checkpoints = CheckpointManager(self.dirs.checkpoints)
+        self.warm_started_from = self._warm_start()
+        self.checkpointer = RunCheckpointer(
+            self.dirs.run,
+            config=config,
+            checkpoint_name=config.checkpoint_name or derive_checkpoint_name(config),
+            run_id=f"{int(time.time())}-{seed}",
+            warm_started_from=self.warm_started_from,
+            seed=seed,
+        )
         self.metrics_rows: list[MetricsRow] = []
         self.optimizer_step = 0
         self.final_loss = PolicyValueLoss(0.0, 0.0, 0.0)
         self.total_episodes = 0
+        # Best model is picked by an EMA of self-play mean return, smoothing the
+        # per-iteration noise a raw pick would lock onto (see save-checkpoint).
+        self.return_ema: float | None = None
+        self.last_mean_return = 0.0
+        self.last_success_rate = 0.0
         self.ppo = PPOTrainer(config, self.encoder) if config.agent == "ppo" else None
+
+    def _warm_start(self) -> str | None:
+        """Initialize the model from a prior checkpoint when configured.
+
+        Returns a short provenance string (the source path) or ``None`` when the
+        run trains from scratch. The checkpoint's saved architecture must match
+        the configured model so its weights load into the fresh network.
+        """
+        if not self.config.warm_start:
+            return None
+        data = json.loads(Path(self.config.warm_start).read_text(encoding="utf-8"))
+        self.model = model_from_json(data.get("model_state", data))
+        return self.config.warm_start
+
+    def _record_iteration_stats(self, mean_return: float, success_rate: float) -> None:
+        """Track the latest self-play stats and the return EMA used to pick best."""
+        self.last_mean_return = mean_return
+        self.last_success_rate = success_rate
+        self.return_ema = (
+            mean_return if self.return_ema is None else 0.7 * self.return_ema + 0.3 * mean_return
+        )
 
     def execute(self) -> TrainingPipelineSummary:
         try:
@@ -126,7 +166,7 @@ class _TrainingRun:
                 self._train_iteration(iteration)
 
             checkpoint_path = self._save_checkpoint(self.config.iterations)
-            restored = self.checkpoints.load_json("latest")
+            restored = self.checkpointer.load_latest()
             checkpoint_restored = restored["optimizer_state"]["step"] == self.optimizer_step
             self._write_metrics()
             plot_paths = self._render_plots()
@@ -181,6 +221,7 @@ class _TrainingRun:
         episodes = self._collect_iteration(iteration)
         self.total_episodes += len(episodes)
         mean_return, success_rate = _episode_stats(episodes)
+        self._record_iteration_stats(mean_return, success_rate)
         self.manager.emit(
             iteration * 100,
             "self_play",
@@ -209,6 +250,7 @@ class _TrainingRun:
         result = self.ppo.run_iteration(self.model, self.seed, iteration, self.rng)
         self.total_episodes += len(result.episodes)
         mean_return, success_rate = _episode_stats(result.episodes)
+        self._record_iteration_stats(mean_return, success_rate)
         self.manager.emit(
             iteration * 100,
             "self_play",
@@ -292,21 +334,18 @@ class _TrainingRun:
             )
 
     def _save_checkpoint(self, iteration: int) -> Path:
-        return self.checkpoints.save_json(
-            "latest",
-            {
-                "schema_version": "aczero-training-checkpoint-v1",
-                "seed": self.seed,
-                "iteration": iteration,
-                "config": asdict(self.config),
-                "model_state": self.model.to_json(),
-                "optimizer_state": {
-                    "step": self.optimizer_step,
-                    "learning_rate": self.config.learning_rate,
-                },
-                "replay_size": len(self.replay),
-                "loss": asdict(self.final_loss),
-            },
+        # Keep both sinks current: legacy latest.json plus the HF-shaped bundle
+        # (latest always, best when the return EMA improves, metrics + provenance).
+        return self.checkpointer.save(
+            model=self.model,
+            iteration=iteration,
+            optimizer_step=self.optimizer_step,
+            loss=self.final_loss,
+            replay_size=len(self.replay),
+            metric=self.return_ema,
+            mean_return=self.last_mean_return,
+            success_rate=self.last_success_rate,
+            metrics_rows=self.metrics_rows,
         )
 
     def _write_metrics(self) -> None:
@@ -369,6 +408,10 @@ class _TrainingRun:
             checkpoint_path=checkpoint_path,
             certificate_path=certificate_path,
             model_name=self.model.architecture,
+            checkpoint_name=self.checkpointer.checkpoint_name,
+            checkpoint_bundle_dir=str(self.checkpointer.bundle.directory),
+            run_id=self.checkpointer.run_id,
+            best_return=self.checkpointer.best_metric,
             iterations=self.config.iterations,
             episodes=self.total_episodes,
             replay_size=len(self.replay),

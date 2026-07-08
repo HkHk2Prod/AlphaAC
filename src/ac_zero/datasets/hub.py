@@ -83,11 +83,51 @@ def download_dataset(
     is absent from the bucket -- used by the notebook's "resume the run if a
     dataset already exists" first pass.
     """
-    hub = _hub()
     local = Path(local_path)
-    name = remote_name or local.name
-    if missing_ok and not remote_exists(name, bucket=bucket):
+    return download_file(remote_name or local.name, local, bucket=bucket, missing_ok=missing_ok)
+
+
+def upload_files(pairs: list[tuple[str | Path, str]], *, bucket: str = DEFAULT_BUCKET) -> None:
+    """Upload ``(local_path, remote_path)`` pairs to the bucket in one batch.
+
+    ``remote_path`` may contain slashes, so a whole ``model_checkpoints/<name>/``
+    tree uploads in a single call. Missing local files raise before any upload.
+    """
+    resolved: list[tuple[str, str]] = []
+    for local, remote in pairs:
+        path = Path(local)
+        if not path.is_file():
+            raise FileNotFoundError(f"file not found: {path}")
+        resolved.append((str(path), remote))
+    if resolved:
+        _hub().batch_bucket_files(bucket, add=resolved)
+
+
+def download_file(
+    remote_name: str,
+    local_path: str | Path,
+    *,
+    bucket: str = DEFAULT_BUCKET,
+    missing_ok: bool = False,
+) -> Path | None:
+    """Download a single ``remote_name`` object from the bucket to ``local_path``.
+
+    With ``missing_ok=True`` returns ``None`` instead of raising when the object
+    is absent from the bucket.
+    """
+    local = Path(local_path)
+    if missing_ok and not remote_exists(remote_name, bucket=bucket):
         return None
     local.parent.mkdir(parents=True, exist_ok=True)
-    hub.download_bucket_files(bucket, files=[(name, str(local))])
+    _hub().download_bucket_files(bucket, files=[(remote_name, str(local))])
     return local
+
+
+def list_remote(prefix: str = "", *, bucket: str = DEFAULT_BUCKET) -> list[str]:
+    """Return the paths of every file in the bucket under ``prefix``."""
+    hub = _hub()
+    return [
+        item.path
+        for item in hub.list_bucket_tree(bucket, recursive=True)
+        if getattr(item, "type", "file") == "file" and item.path.startswith(prefix)
+    ]
