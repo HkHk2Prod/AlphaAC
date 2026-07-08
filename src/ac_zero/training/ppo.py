@@ -177,7 +177,7 @@ def collect_rollouts(
         )
     scored: list[tuple[_Transition, float, float]] = []
     for rollout in rollouts:
-        estimates = _generalized_advantages(rollout, config.ppo_gamma, config.ppo_lambda)
+        estimates = _generalized_advantages(rollout, config.gamma, config.ppo_lambda)
         for transition, (advantage, return_target) in zip(
             rollout.transitions, estimates, strict=True
         ):

@@ -33,19 +33,20 @@ class TrainingPipelineConfig:
     # steps with.
     moveset: str = "strict-ac"
     goal_reward: float = 1.0
-    # Discount applied to the return under the "potential" reward mode. Potential
-    # shaping is path-length invariant undiscounted, so `gamma < 1` is what makes
-    # it mildly prefer shorter paths to the trivial group. Unused by other modes.
-    potential_gamma: float = 0.99
+    # Reward discount applied to every training pipeline: the AlphaZero
+    # return-to-go targets and the PPO GAE returns/advantages alike. `gamma < 1`
+    # weights nearer rewards more, so shorter paths to the goal are preferred; it
+    # is also what makes potential-based shaping (path-length invariant
+    # undiscounted) mildly prefer shorter descents to the trivial group.
+    gamma: float = 0.99
     model: str = "linear_policy_value"
     # Training backend: "alphazero" (PUCT self-play) or "ppo" (on-policy PPO).
     agent: str = "alphazero"
     mcts_simulations: int = 16
     c_puct: float = 1.5
     # PPO backend hyperparameters (ignored by the AlphaZero backend). Rollout
-    # count reuses `episodes_per_iteration`, the minibatch size `batch_size`, and
-    # the value-loss coefficient `value_loss_weight`.
-    ppo_gamma: float = 0.99
+    # count reuses `episodes_per_iteration`, the minibatch size `batch_size`, the
+    # value-loss coefficient `value_loss_weight`, and the discount `gamma`.
     ppo_lambda: float = 0.95
     ppo_clip: float = 0.2
     ppo_epochs: int = 4
@@ -92,11 +93,7 @@ class TrainingPipelineConfig:
             goal_reward=float(
                 training.get("goal_reward", data.get("goal_reward", defaults.goal_reward))
             ),
-            potential_gamma=float(
-                training.get(
-                    "potential_gamma", data.get("potential_gamma", defaults.potential_gamma)
-                )
-            ),
+            gamma=float(training.get("gamma", data.get("gamma", defaults.gamma))),
             model=str(data.get("model", defaults.model)),
             agent=str(data.get("agent", defaults.agent)),
             mcts_simulations=int(
@@ -106,7 +103,6 @@ class TrainingPipelineConfig:
                 )
             ),
             c_puct=float(training.get("c_puct", data.get("c_puct", defaults.c_puct))),
-            ppo_gamma=float(training.get("ppo_gamma", data.get("ppo_gamma", defaults.ppo_gamma))),
             ppo_lambda=float(
                 training.get("ppo_lambda", data.get("ppo_lambda", defaults.ppo_lambda))
             ),
@@ -183,8 +179,8 @@ class TrainingPipelineConfig:
                 "reward_mode 'potential' needs dataset.annotations for the distance to "
                 "the trivial group; without it the potential falls back to length everywhere"
             )
-        if not 0.0 < self.potential_gamma <= 1.0:
-            raise ValueError("potential_gamma must be in (0, 1]")
+        if not 0.0 < self.gamma <= 1.0:
+            raise ValueError("gamma must be in (0, 1]")
         if self.moveset not in MOVE_SET_NAMES:
             raise ValueError(f"moveset must be one of {MOVE_SET_NAMES}")
         if self.dataset_max_difficulty is not None and not self.dataset_annotations_path:
@@ -200,8 +196,6 @@ class TrainingPipelineConfig:
             raise ValueError("mcts_simulations must be positive")
         if self.c_puct <= 0.0:
             raise ValueError("c_puct must be positive")
-        if not 0.0 < self.ppo_gamma <= 1.0:
-            raise ValueError("ppo_gamma must be in (0, 1]")
         if not 0.0 <= self.ppo_lambda <= 1.0:
             raise ValueError("ppo_lambda must be in [0, 1]")
         if self.ppo_clip <= 0.0:

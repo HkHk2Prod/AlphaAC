@@ -230,16 +230,16 @@ def test_cli_train_selects_the_ppo_backend(monkeypatch, tmp_path: Path) -> None:
 
 def test_config_reads_and_validates_ppo_settings() -> None:
     config = TrainingPipelineConfig.from_mapping(
-        {"agent": "ppo", "training": {"ppo_clip": 0.3, "ppo_gamma": 0.95, "entropy_coef": 0.02}}
+        {"agent": "ppo", "training": {"ppo_clip": 0.3, "gamma": 0.95, "entropy_coef": 0.02}}
     )
     assert config.agent == "ppo"
     assert config.ppo_clip == 0.3
-    assert config.ppo_gamma == 0.95
+    assert config.gamma == 0.95
     assert config.entropy_coef == 0.02
 
     with pytest.raises(ValueError, match="agent must be"):
         TrainingPipelineConfig(agent="dqn").validate()
     with pytest.raises(ValueError, match="ppo_clip must be positive"):
         TrainingPipelineConfig(ppo_clip=0.0).validate()
-    with pytest.raises(ValueError, match="ppo_gamma must be in"):
-        TrainingPipelineConfig(ppo_gamma=1.5).validate()
+    with pytest.raises(ValueError, match="gamma must be in"):
+        TrainingPipelineConfig(gamma=1.5).validate()

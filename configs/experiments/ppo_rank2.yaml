@@ -11,7 +11,7 @@ training:
   episodes_per_iteration: 8
   batch_size: 16
   ppo_epochs: 4
-  ppo_gamma: 0.99
+  gamma: 0.99
   ppo_lambda: 0.95
   ppo_clip: 0.2
   entropy_coef: 0.01

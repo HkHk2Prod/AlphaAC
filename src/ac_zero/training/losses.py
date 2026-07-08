@@ -25,9 +25,8 @@ def sample_from_policy(policy: NDArray[np.float64], rng: random.Random) -> int:
 def return_to_go(rewards: list[float], gamma: float = 1.0) -> list[float]:
     """Compute return-to-go targets for one trajectory, discounted by `gamma`.
 
-    `gamma=1.0` (the default) is the plain undiscounted sum; a `gamma < 1.0`
-    weights nearer rewards more, which is what makes potential-based shaping
-    prefer shorter paths to the goal.
+    `gamma=1.0` is the plain undiscounted sum; a `gamma < 1.0` weights nearer
+    rewards more, so shorter paths to the goal are preferred.
     """
     total = 0.0
     out = [0.0 for _ in rewards]

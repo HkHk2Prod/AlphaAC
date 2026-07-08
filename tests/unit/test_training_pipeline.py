@@ -188,10 +188,10 @@ def test_config_rejects_unknown_moveset() -> None:
         TrainingPipelineConfig(moveset="nope").validate()
 
 
-def test_config_reads_potential_gamma_from_mapping() -> None:
-    assert TrainingPipelineConfig().potential_gamma == 0.99
-    config = TrainingPipelineConfig.from_mapping({"training": {"potential_gamma": 0.95}})
-    assert config.potential_gamma == 0.95
+def test_config_reads_gamma_from_mapping() -> None:
+    assert TrainingPipelineConfig().gamma == 0.99
+    config = TrainingPipelineConfig.from_mapping({"training": {"gamma": 0.95}})
+    assert config.gamma == 0.95
 
 
 def test_potential_reward_requires_annotations() -> None:
@@ -205,11 +205,11 @@ def test_potential_reward_requires_annotations() -> None:
     ).validate()
 
 
-def test_config_rejects_out_of_range_potential_gamma() -> None:
-    with pytest.raises(ValueError, match="potential_gamma"):
-        TrainingPipelineConfig(potential_gamma=0.0).validate()
-    with pytest.raises(ValueError, match="potential_gamma"):
-        TrainingPipelineConfig(potential_gamma=1.5).validate()
+def test_config_rejects_out_of_range_gamma() -> None:
+    with pytest.raises(ValueError, match="gamma"):
+        TrainingPipelineConfig(gamma=0.0).validate()
+    with pytest.raises(ValueError, match="gamma"):
+        TrainingPipelineConfig(gamma=1.5).validate()
 
 
 def test_return_to_go_discounts_future_rewards() -> None:

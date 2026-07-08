@@ -9,11 +9,16 @@
   the environment holds the exit potential and, on re-entering the known region
   (the goal counts as a known `Phi = 0`), credits the whole `Phi(exit) - Phi(entry)`
   change at once. Because the undiscounted return of a potential is path-length
-  invariant, a new `training.potential_gamma` (default `0.99`) discounts the return
-  to mildly prefer shorter paths -- and deferring off-graph credit to the later
-  re-entry step lets that discount account for the excursion. Requires
+  invariant, the reward discount `training.gamma` (default `0.99`) discounts the
+  return to mildly prefer shorter paths -- and deferring off-graph credit to the
+  later re-entry step lets that discount account for the excursion. Requires
   `dataset.annotations`, and seeds self-play only from groups whose distance to the
   trivial group is known.
+- Unified the reward discount into a single `training.gamma` (default `0.99`)
+  applied by every training pipeline: the AlphaZero return-to-go targets (for all
+  reward modes, not only `potential`) and the PPO GAE returns/advantages. Replaces
+  the former `potential_gamma` (AlphaZero, `potential` mode only) and `ppo_gamma`
+  (PPO only); `ppo_lambda` is unchanged.
 - Removed the `descent` reward mode (unstable in training). The reward modes are
   `length_reduction`, `sparse_goal`, `length_reduction_and_goal` (default), and
   `potential`. The dataset's `distance_to_shorter` / `shorter_proven` annotations
