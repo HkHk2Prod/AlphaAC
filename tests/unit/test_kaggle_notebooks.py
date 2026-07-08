@@ -63,6 +63,18 @@ def test_training_notebook_seeds_self_play_from_hf_dataset() -> None:
     assert '"path": DATASET_PATH' in source
 
 
+def test_training_notebook_warm_starts_and_uploads_checkpoints() -> None:
+    source = _code_source(_load("03_train.ipynb"))
+    # Resolves the checkpoint name, warm-starts from the best model on HF, and
+    # pushes best model + progress plots via the periodic uploader.
+    assert "derive_checkpoint_name" in source
+    assert "download_best_checkpoint" in source and "WARM_START" in source
+    assert "PeriodicCheckpointUploader" in source
+    assert "HF_UPLOAD_EVERY_HOURS" in source
+    # The summary shows both this run's plots and the all-runs aggregate.
+    assert "plots/all_runs/" in source
+
+
 def test_annotate_notebook_defaults_to_universal_and_strict_ac() -> None:
     source = _code_source(_load("02_annotate_dataset.ipynb"))
     assert 'ANNOTATE_MOVESETS = ["universal", "strict-ac"]' in source
