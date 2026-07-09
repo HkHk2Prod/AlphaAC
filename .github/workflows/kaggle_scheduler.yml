@@ -1,0 +1,91 @@
+name: Kaggle Scheduler
+
+on:
+  schedule:
+    # Every 2 hours, offset to :17 to dodge the top-of-hour cron congestion.
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: "Optional task id to prioritize (and force with 'force')"
+        required: false
+      force:
+        description: "Force launch even if the task already has an active run"
+        required: false
+        default: "false"
+      dry_run:
+        description: "Show decisions without launching or writing state"
+        required: false
+        default: "false"
+      max_launches:
+        description: "Maximum launches for this scheduler tick"
+        required: false
+        default: ""
+
+# First line of defence against overlapping ticks: never run two at once, and
+# do not cancel an in-flight tick (it may be mid-launch / mid-write).
+concurrency:
+  group: kaggle-scheduler
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  schedule:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install kaggle "huggingface_hub>=1.21" pyyaml
+
+      - name: Configure Kaggle credentials
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          set +x
+          mkdir -p ~/.kaggle
+          cat > ~/.kaggle/kaggle.json <<EOF
+          {"username":"$KAGGLE_USERNAME","key":"$KAGGLE_KEY"}
+          EOF
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: Update private Kaggle runtime-secrets dataset (HF model token)
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          # Prefer a dedicated model token; fall back to the shared HF_TOKEN.
+          HF_MODEL_TOKEN: ${{ secrets.HF_MODEL_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set +x
+          python scripts/update_kaggle_runtime_secrets.py
+
+      - name: Run Kaggle scheduler
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          # Prefer a dedicated state token; fall back to the shared HF_TOKEN.
+          # (Python also applies this fallback, so either wiring works.)
+          HF_STATE_TOKEN: ${{ secrets.HF_STATE_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          # Scheduler state lives in the SAME private HF bucket as the training
+          # dataset. Set HF_STATE_REPO_TYPE=dataset + a dataset repo id to use a
+          # separate dataset repo instead.
+          HF_STATE_REPO_ID: "HkHk2Prod/alphaac-data"
+          HF_STATE_REPO_TYPE: "bucket"
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          TASK_ID: ${{ github.event.inputs.task_id }}
+          FORCE: ${{ github.event.inputs.force }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          MAX_LAUNCHES: ${{ github.event.inputs.max_launches }}
+        run: |
+          set +x
+          python scripts/kaggle_scheduler.py

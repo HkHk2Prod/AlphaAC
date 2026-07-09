@@ -290,6 +290,168 @@ notebook pushes the best model, this-run and all-runs progress plots, and an
 hours, and pulls the best model back for the next run — a warm start toward
 longer training split across sessions.
 
+## Kaggle Run Scheduler
+
+A GitHub Actions cron launches Kaggle notebook runs automatically, so generation,
+annotation, and training keep making progress across the ~12 h Kaggle session cap
+without anyone clicking *Run*. The scheduler stores its task queue and run state
+**in the same private Hugging Face bucket as the training dataset**
+(`HkHk2Prod/alphaac-data`) and ferries the HF model token into Kaggle through a
+**private Kaggle dataset**.
+
+```
+GitHub Actions (every 2 h)  ->  scripts/kaggle_scheduler.py
+   -> reads/writes the private HF bucket (queue.yaml, scheduler_state.json, runs/)
+   -> updates the private Kaggle runtime-secrets dataset (hf_token.txt)
+   -> `kaggle kernels push` the one unified notebook with a per-run runtime_config.json
+        -> notebook reads config + HF token, runs the mode, heartbeats to the bucket
+```
+
+The state lives alongside the dataset in the bucket. To use a separate Hugging
+Face **dataset repo** instead (which adds an optimistic parent-commit guard), set
+`HF_STATE_REPO_TYPE: dataset` and an `HF_STATE_REPO_ID` in the workflow.
+
+The moving parts live in [`src/ac_zero/scheduler/`](src/ac_zero/scheduler/) (pure,
+tested logic), the entrypoints in [`scripts/`](scripts/), the workflow in
+[`.github/workflows/kaggle_scheduler.yml`](.github/workflows/kaggle_scheduler.yml),
+and the notebook + seed state files in
+[`notebooks/kaggle/`](notebooks/kaggle/) (`scheduler_runner.ipynb`,
+`kernel-metadata.json`, and `scheduler_state_repo/`).
+
+### Required GitHub secrets
+
+| Secret | Purpose |
+| --- | --- |
+| `KAGGLE_USERNAME`, `KAGGLE_KEY` | Kaggle API credentials (push kernels, update the secrets dataset). |
+| `HF_TOKEN` | Default Hugging Face token, used for both purposes below if scoped for both. |
+| `HF_MODEL_TOKEN` *(optional)* | Read access to private/gated HF **models**; falls back to `HF_TOKEN`. Copied into the Kaggle secrets dataset. |
+| `HF_STATE_TOKEN` *(optional)* | Read+write on the HF **bucket** holding scheduler state; falls back to `HF_TOKEN`. |
+
+**HF token permissions:** the model token needs *read* on the model repos you pull;
+the state token needs *read+write* on the `alphaac-data` bucket namespace. One
+`HF_TOKEN` with both permissions works for everything (including the notebook's
+heartbeat writes, which reuse the token from the Kaggle dataset).
+
+### One-time setup
+
+1. **Seed the scheduler state into the bucket** from
+   [`notebooks/kaggle/scheduler_state_repo/`](notebooks/kaggle/scheduler_state_repo/)
+   (the bucket already exists — it holds the dataset):
+   ```bash
+   export HF_TOKEN=...   # write access to the bucket namespace
+   cd notebooks/kaggle/scheduler_state_repo
+   python -c "from ac_zero.datasets.hub import upload_files; \
+     upload_files([('queue.yaml','queue.yaml'), \
+                   ('scheduler_state.json','scheduler_state.json')], \
+                  bucket='HkHk2Prod/alphaac-data')"
+   ```
+   The workflow already sets `HF_STATE_REPO_ID: HkHk2Prod/alphaac-data` with
+   `HF_STATE_REPO_TYPE: bucket`.
+2. **Publish the notebook once** so its slug exists, and set each task's
+   `notebook_slug` in `queue.yaml` to it:
+   ```bash
+   cd notebooks/kaggle && kaggle kernels push -p .
+   ```
+   (The scheduler patches `kernel-metadata.json` per launch — GPU flag, privacy,
+   the runtime-secrets input — so you only push manually to reserve the slug.)
+3. Add the GitHub secrets above under *Settings → Secrets and variables → Actions*.
+
+The first scheduled tick creates the private `<user>/runtime-secrets` Kaggle
+dataset automatically.
+
+### How `queue.yaml` works
+
+`queue.yaml` is the human-editable source of truth for **what should run**. Each
+task carries its definition (`mode`, `accelerator`, `notebook_slug`,
+`notebook_dir`, `max_runtime_minutes`, `config`) plus the mutable scheduling knobs
+`active`, `remaining_runs`, `priority`, and `stop_after_current_iteration`. Global
+`limits` cap concurrency:
+
+```yaml
+limits:
+  max_total_active: 5        # total live Kaggle runs
+  max_cpu_active: 5
+  max_gpu_active: 1
+  max_launches_per_tick: 1   # how many to start per scheduler run
+  stale_heartbeat_minutes: 180
+```
+
+The seed queue ships an active generation + annotation task and three
+**deactivated** training tasks (`active: false`) you flip on when a dataset
+exists — AlphaZero, PPO, and a greedy-RL baseline — all on the `strict-ac`
+(AC-primitive) move set. The two learners use the `potential` reward, so they
+seed self-play from the grown dataset and its `strict-ac` annotations (pulled
+from the bucket by the notebook at startup); the greedy task is a non-learning
+solve. A training task's `config` **is** the training config: the notebook writes
+it to a YAML and runs `aczero train --config …`, so no repo `configs/` files are
+needed on Kaggle.
+
+Task selection each tick: skip inactive / exhausted / already-running tasks, order
+by highest `priority`, break ties by oldest last-launch then id, and launch up to
+the free-slot and per-tick budget. The machine-owned
+`scheduler_state.json` (written only by the controller) tracks each task's active
+run id, timestamps, latest status, and last error.
+
+### How `remaining_runs` works (and why failed runs count)
+
+`remaining_runs` counts **launches, not successes**. It is decremented the moment
+a Kaggle run is *launched*, and never restored if that run later fails — a failed
+scheduled run is still a completed scheduled run. When it hits `0` the task is set
+`active: false`. Use `remaining_runs: null` for **infinite** (run forever). A
+launch that never happened (e.g. `kaggle kernels push` errored) does **not**
+decrement.
+
+### Manual control
+
+Edit `queue.yaml` in the HF state repo (or `scheduler_state.json` for the global
+flags), or use the workflow's manual trigger:
+
+- **Activate / deactivate a task** — set `active: true|false`.
+- **Set run budget** — set `remaining_runs` to an integer or `null` (infinite).
+- **Reprioritize** — bump `priority`, or pass `task_id` on the manual trigger.
+- **Force a launch** — manual trigger with `task_id` + `force: true` (launches even
+  if that task already has an active run; slot limits still apply).
+- **Pause everything** — set `scheduler_paused: true` in `scheduler_state.json`.
+- **Drain (stop new launches, keep active runs)** — set `stop_launching: true`.
+- **Stop a running task cleanly** — set the task's `stop_after_current_iteration:
+  true` (or `active: false`); the notebook polls the queue, checkpoints, uploads,
+  marks the run stopped, and exits.
+
+Trigger a run manually from **Actions → Kaggle Scheduler → Run workflow**
+(`task_id`, `force`, `dry_run`, `max_launches`), or locally:
+
+```bash
+HF_STATE_REPO_ID=HkHk2Prod/alphaac-data HF_STATE_REPO_TYPE=bucket HF_TOKEN=... \
+  KAGGLE_USERNAME=... python scripts/kaggle_scheduler.py --dry-run
+```
+
+`--dry-run` (or the `dry_run` input) logs every decision and writes nothing.
+
+### Rotating the HF token
+
+Update the `HF_TOKEN` / `HF_MODEL_TOKEN` GitHub secret, then run the workflow (or
+`scripts/update_kaggle_runtime_secrets.py`). It pushes a new version of the private
+Kaggle secrets dataset (deleting old versions where the Kaggle CLI supports it) so
+the next Kaggle run picks up the new token. Revoke the old token afterwards.
+
+### Concurrency, safety, and caveats
+
+Two lines of defence stop overlapping ticks: the GitHub Actions `concurrency`
+group (only one workflow run at a time) and a lease file
+(`locks/scheduler_lease.json`) re-checked before launching. The bucket backend is
+last-writer-wins, so it leans on those two; the optional dataset-repo backend adds
+an optimistic parent-commit guard (re-read on conflict). Secrets never touch the
+notebook source, `runtime_config.json`, logs, checkpoints, or uploaded outputs.
+
+> ⚠️ **Security:** the HF model token is stored as a plain file inside a *private*
+> Kaggle dataset. This is a workaround, not a real secret manager — keep the
+> dataset private, scope the token minimally, and rotate it if leaked.
+>
+> ⚠️ **Reliability:** the Hugging Face bucket is used as a lightweight file-backed
+> state store, not a transactional database. The lease + `concurrency` (plus the
+> dataset-repo backend's parent-SHA guard) prevent the common races, but this is
+> best-effort — inspect state from the Actions logs.
+
 ## Repository Layout
 
 - `src/ac_zero/algebra`: immutable free-group words and balanced presentations.
@@ -301,6 +463,9 @@ longer training split across sessions.
 - `src/ac_zero/models`, `encoding`, `training`: trainable policy/value
   architectures, a reverse-mode autodiff engine, replay, losses, smoke helpers,
   and the CPU policy/value training pipeline.
+- `src/ac_zero/scheduler`: the GitHub Actions-driven Kaggle run scheduler
+  (queue/state models, HF-backed state store with a lease, task selection, the
+  Kaggle CLI wrapper, the controller tick, and the notebook-side run reporter).
 - `configs`, `data`, `docs`, `scripts`, `tests`: reproducibility and validation.
 
 ## Adding New Components

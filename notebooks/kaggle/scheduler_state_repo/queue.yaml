@@ -1,0 +1,143 @@
+# Seed queue.yaml for the scheduler state, stored in the SAME private HF bucket
+# as the training dataset (HkHk2Prod/alphaac-data). Bootstrap it once with:
+#   python -c "from ac_zero.datasets.hub import upload_files; \
+#     upload_files([('queue.yaml','queue.yaml'), \
+#                   ('scheduler_state.json','scheduler_state.json')], \
+#                  bucket='HkHk2Prod/alphaac-data')"
+# (Set HF_TOKEN first.) Thereafter the scheduler and manual edits keep it current.
+version: 1
+
+limits:
+  max_total_active: 5
+  max_cpu_active: 5
+  max_gpu_active: 1
+  max_launches_per_tick: 1
+  stale_heartbeat_minutes: 180
+
+tasks:
+  - id: generation-main
+    active: true
+    remaining_runs: null        # null == infinite
+    mode: generation
+    accelerator: cpu
+    priority: 100
+    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_dir: notebooks/kaggle
+    max_runtime_minutes: 705
+    stop_after_current_iteration: false
+    config:
+      rank: 2
+      target: 2000
+      total_length_cap: 48
+      workers: 0
+      output: /kaggle/working/train_rank2.groups.json
+
+  - id: annotation-main
+    active: true
+    remaining_runs: 10
+    mode: annotation
+    accelerator: cpu
+    priority: 90
+    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_dir: notebooks/kaggle
+    max_runtime_minutes: 705
+    stop_after_current_iteration: false
+    config:
+      moveset: strict-ac
+      max_depth: 32
+      workers: 0
+
+  # --- Training methods (all DEACTIVATED; flip active: true to schedule) -------
+  # ac_primitive moves = the strict-ac move set; reward = potential (needs the
+  # per-group distance-to-origin, so these seed self-play from the grown dataset +
+  # its strict-ac annotations, pulled from the bucket by the notebook at startup).
+
+  - id: train-alphazero-strict-potential
+    active: false
+    remaining_runs: null
+    mode: training
+    accelerator: cpu
+    priority: 50
+    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_dir: notebooks/kaggle
+    max_runtime_minutes: 705
+    stop_after_current_iteration: false
+    config:
+      rank: 2
+      agent: alphazero
+      model: residual_mlp
+      moveset: strict-ac          # ac_primitive moves
+      max_moves: 8
+      total_length_cap: 128
+      seed: 0
+      dataset:
+        bucket: HkHk2Prod/alphaac-data
+        max_difficulty: null      # cap groups by distance-to-origin; null = all
+      training:
+        reward_mode: potential    # potential-based shaping from distance-to-origin
+        gamma: 0.99
+        iterations: 40
+        episodes_per_iteration: 24
+        optimizer_updates: 8
+        batch_size: 64
+        replay_capacity: 4096
+        learning_rate: 0.02
+        value_loss_weight: 1.0
+        mcts_simulations: 128
+        c_puct: 1.5
+        checkpoint_every: 1
+        workers: 0
+
+  - id: train-ppo-strict-potential
+    active: false
+    remaining_runs: null
+    mode: training
+    accelerator: cpu
+    priority: 50
+    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_dir: notebooks/kaggle
+    max_runtime_minutes: 705
+    stop_after_current_iteration: false
+    config:
+      rank: 2
+      agent: ppo
+      model: residual_mlp
+      moveset: strict-ac          # ac_primitive moves
+      max_moves: 16
+      total_length_cap: 128
+      seed: 0
+      dataset:
+        bucket: HkHk2Prod/alphaac-data
+        max_difficulty: null
+      training:
+        reward_mode: potential
+        gamma: 0.99
+        iterations: 40
+        episodes_per_iteration: 32
+        batch_size: 64
+        ppo_epochs: 4
+        ppo_lambda: 0.95
+        ppo_clip: 0.2
+        entropy_coef: 0.01
+        value_loss_weight: 0.5
+        learning_rate: 0.02
+        checkpoint_every: 1
+        workers: 0
+
+  # greedy-RL is a non-learning search baseline: no training, so reward/potential
+  # do not apply. It solves the grown strict-ac dataset with the greedy agent.
+  - id: solve-greedy-strict
+    active: false
+    remaining_runs: null
+    mode: solve
+    accelerator: cpu
+    priority: 40
+    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_dir: notebooks/kaggle
+    max_runtime_minutes: 705
+    stop_after_current_iteration: false
+    config:
+      rank: 2
+      agent: greedy
+      dataset:
+        bucket: HkHk2Prod/alphaac-data

@@ -1,0 +1,8 @@
+{
+  "scheduler_paused": false,
+  "stop_launching": false,
+  "last_scheduler_started_at": null,
+  "last_scheduler_finished_at": null,
+  "tasks": {},
+  "last_decisions": []
+}
