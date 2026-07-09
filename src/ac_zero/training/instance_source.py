@@ -11,19 +11,26 @@ instead seeded from that dataset's guaranteed-solvable presentations
 Sampling is keyed on the per-episode seed, so an episode's instance is identical
 whether it runs in-process or in a worker pool -- the same determinism guarantee
 the self-play loop already relies on.
+
+A grown dataset is far too large to parse into Python objects once per worker, so
+:class:`DatasetSource` reads it through the memory-mapped sidecar built by
+:mod:`ac_zero.datasets.instance_store` and rebuilds one presentation per episode.
 """
 
 from __future__ import annotations
 
-import json
 import random
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
+from numpy.typing import NDArray
+
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.generator import generate_solvable
+from ac_zero.datasets.instance_store import UNKNOWN, InstanceStore
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
 
 Summary = Mapping[str, float | int | bool | str]
@@ -70,16 +77,17 @@ class DatasetSource:
     """Draws episode start states from a grown group dataset, keyed by episode seed."""
 
     def __init__(
-        self,
-        presentations: list[BalancedPresentation],
-        potentials: Mapping[str, int] | None = None,
-        summary: Summary | None = None,
+        self, store: InstanceStore, selected: NDArray[np.int64] | None, summary: Summary
     ) -> None:
-        if not presentations:
-            raise ValueError("dataset instance source has no presentations")
-        self._presentations = presentations
-        self._potentials = dict(potentials or {})
-        self._summary: dict[str, float | int | bool | str] = dict(summary or {})
+        """Bind the source to a mapped dataset and the group indices it may sample.
+
+        ``selected`` is ``None`` when no curriculum filter applies, so an unfiltered
+        run does not hand every worker its own copy of the identity permutation.
+        """
+        self._store = store
+        self._selected = selected
+        self._count = store.count if selected is None else int(selected.size)
+        self._summary: dict[str, float | int | bool | str] = dict(summary)
 
     @classmethod
     def from_file(
@@ -89,7 +97,7 @@ class DatasetSource:
         max_difficulty: int | None = None,
         require_potential: bool = False,
     ) -> DatasetSource:
-        """Load a grown group dataset, filtered from its companion annotations file.
+        """Map a grown group dataset, filtered by its companion annotations file.
 
         Presentations come from the ``.groups.json`` at ``path``. The per-group
         distances live in the separate ``annotations_path`` file: ``max_difficulty``
@@ -98,88 +106,92 @@ class DatasetSource:
         (the potential reward's start states). The known distances are also exposed
         via :attr:`potentials` so the environment can score potential-based shaping.
         """
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-        rank = int(data["rank"])
-        annotations = _load_annotations(annotations_path)
-        groups = data.get("groups", [])
-        potentials: dict[str, int] = {}
-        presentations: list[BalancedPresentation] = []
-        annotated = 0
-        used_distances: list[int] = []
-        for entry in groups:
-            distance = annotations.get(entry["hash"], {}).get("distance_to_origin")
-            if isinstance(distance, int):
-                potentials[entry["hash"]] = distance
-                annotated += 1
-            if max_difficulty is not None and (
-                not isinstance(distance, int) or distance > max_difficulty
-            ):
-                continue
-            if require_potential and not isinstance(distance, int):
-                continue
-            presentations.append(BalancedPresentation.from_letters(rank, entry["relators"]))
-            if isinstance(distance, int):
-                used_distances.append(distance)
-        if not presentations:
-            constraints = []
-            if max_difficulty is not None:
-                constraints.append(f"distance_to_origin <= {max_difficulty}")
-            elif require_potential:
-                constraints.append("a known distance_to_origin")
-            suffix = f" with {' and '.join(constraints)}" if constraints else ""
-            raise ValueError(f"group dataset at {path} has no groups{suffix}")
-        summary = _dataset_summary(
-            path, rank, len(groups), len(presentations), annotated, used_distances, max_difficulty
-        )
-        return cls(presentations, potentials, summary)
+        groups = Path(path)
+        annotations = None if annotations_path is None else Path(annotations_path)
+        store = InstanceStore.open(groups, annotations)
+        selected = _select(store, max_difficulty, require_potential)
+        if selected is not None and not selected.size:
+            constraint = _constraint(max_difficulty, require_potential)
+            raise ValueError(f"group dataset at {groups} has no groups{constraint}")
+        return cls(store, selected, _summarize(groups, store, selected, max_difficulty))
 
     def sample(self, seed: int) -> BalancedPresentation:
-        return random.Random(seed).choice(self._presentations)
+        # `Random.choice` over a sequence draws exactly this index, so seeding is
+        # unchanged from when the selection was a materialized list of presentations.
+        index = random.Random(seed).randrange(self._count)
+        if self._selected is not None:
+            index = int(self._selected[index])
+        return self._store.presentation(index)
 
     @property
     def potentials(self) -> Mapping[str, int]:
-        return self._potentials
+        return self._store.potentials
 
     def describe(self) -> Summary:
         return dict(self._summary)
 
 
-def _load_annotations(path: str | Path | None) -> dict[str, dict[str, object]]:
-    """Load a `.annotations.json` file as a `hash -> annotation entry` map."""
-    if path is None:
-        return {}
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
-    return {entry["hash"]: entry for entry in data.get("annotations", [])}
+def _select(
+    store: InstanceStore, max_difficulty: int | None, require_potential: bool
+) -> NDArray[np.int64] | None:
+    """Return the indices of the groups an episode may start from, `None` for all.
+
+    Both filters are stated in terms of a group's distance to origin, so without
+    an annotations file neither can be satisfied by any group.
+    """
+    if max_difficulty is None and not require_potential:
+        return None
+    distances = store.distances
+    if distances is None:
+        return np.empty(0, dtype=np.int64)
+    keep = distances != UNKNOWN
+    if max_difficulty is not None:
+        keep &= distances <= max_difficulty
+    return np.flatnonzero(keep)
 
 
-def _dataset_summary(
-    path: str | Path,
-    rank: int,
-    total: int,
-    used: int,
-    annotated: int,
-    used_distances: list[int],
+def _constraint(max_difficulty: int | None, require_potential: bool) -> str:
+    """Describe the filter that emptied a dataset, for the error that reports it."""
+    if max_difficulty is not None:
+        return f" with distance_to_origin <= {max_difficulty}"
+    if require_potential:
+        return " with a known distance_to_origin"
+    return ""
+
+
+def _summarize(
+    path: Path,
+    store: InstanceStore,
+    selected: NDArray[np.int64] | None,
     max_difficulty: int | None,
 ) -> dict[str, float | int | bool | str]:
-    """Build the log summary for a loaded group dataset.
+    """Build the log summary for a mapped group dataset.
 
-    `total` groups live in the file, `annotated` of them carry a known distance
-    to origin, and `used` remain after the `max_difficulty` curriculum filter.
+    ``store.count`` groups live in the file and ``annotated`` of them carry a known
+    distance to origin; ``selected`` are the ones left after the curriculum filter,
+    or ``None`` when it kept them all.
     """
+    distances = store.distances
+    total = store.count
+    annotated = 0 if distances is None else int(np.count_nonzero(distances != UNKNOWN))
     summary: dict[str, float | int | bool | str] = {
         "source": "dataset",
         "path": str(path),
-        "rank": rank,
+        "rank": store.rank,
         "groups_total": total,
-        "groups_used": used,
+        "groups_used": total if selected is None else int(selected.size),
         "annotated": annotated,
         "annotated_pct": round(100.0 * annotated / total, 1) if total else 0.0,
+        "instances": str(store.path),
     }
     if max_difficulty is not None:
         summary["max_difficulty"] = max_difficulty
-    if used_distances:
-        summary["distance_min"] = min(used_distances)
-        summary["distance_max"] = max(used_distances)
+    if distances is not None:
+        used = distances if selected is None else distances[selected]
+        used = used[used != UNKNOWN]
+        if used.size:
+            summary["distance_min"] = int(used.min())
+            summary["distance_max"] = int(used.max())
     return summary
 
 
