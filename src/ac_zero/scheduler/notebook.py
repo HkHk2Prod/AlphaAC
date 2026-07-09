@@ -22,7 +22,12 @@ from typing import Any
 
 from ac_zero.scheduler.models import utc_now
 
-DEFAULT_TOKEN_PATH = "/kaggle/input/runtime-secrets/hf_token.txt"
+# Kaggle's dataset mount path has moved across CLI generations: classic
+# `/kaggle/input/<slug>/` vs the 2.x `/kaggle/input/datasets/<owner>/<slug>/`.
+# Rather than hard-code one, search this root for the token file.
+KAGGLE_INPUT_ROOT = "/kaggle/input"
+SECRET_FILE_NAME = "hf_token.txt"
+DEFAULT_TOKEN_PATH = f"{KAGGLE_INPUT_ROOT}/runtime-secrets/{SECRET_FILE_NAME}"
 
 
 def load_runtime_config(path: str = "runtime_config.json") -> dict[str, Any]:
@@ -38,16 +43,35 @@ def load_runtime_config(path: str = "runtime_config.json") -> dict[str, Any]:
     return data
 
 
+def _locate_token(token_path: str) -> Path | None:
+    """Return the token file, honoring ``token_path`` then searching the mount.
+
+    Kaggle mounts the runtime-secrets dataset at a path that varies by CLI
+    generation, so if the given path is absent we recursively search
+    ``/kaggle/input`` for ``hf_token.txt``.
+    """
+    explicit = Path(token_path)
+    if explicit.is_file():
+        return explicit
+    root = Path(KAGGLE_INPUT_ROOT)
+    if root.is_dir():
+        return next(iter(sorted(root.rglob(SECRET_FILE_NAME))), None)
+    return None
+
+
 def login_from_secret_dataset(token_path: str = DEFAULT_TOKEN_PATH) -> str:
     """Read the HF token from the private Kaggle dataset and log in.
 
     Returns the token so the caller can set env vars; it is never logged. The
     token is validated shape-only (``hf_`` prefix) to fail fast on a bad mount.
     """
-    p = Path(token_path)
-    if not p.exists():
-        raise RuntimeError(f"missing Hugging Face token dataset input at {token_path}.")
-    token = p.read_text().strip()
+    located = _locate_token(token_path)
+    if located is None:
+        raise RuntimeError(
+            f"missing Hugging Face token dataset input (looked at {token_path} and searched "
+            f"{KAGGLE_INPUT_ROOT}/**/{SECRET_FILE_NAME}); is the runtime-secrets dataset attached?"
+        )
+    token = located.read_text().strip()
     if not token.startswith("hf_"):
         raise RuntimeError("HF token file exists but does not look like a Hugging Face token.")
     from huggingface_hub import login

@@ -48,6 +48,31 @@ def test_login_from_secret_dataset_missing_raises(tmp_path: Path) -> None:
         nb.login_from_secret_dataset(str(tmp_path / "absent.txt"))
 
 
+def test_locate_token_prefers_explicit_path(tmp_path: Path) -> None:
+    explicit = tmp_path / "hf_token.txt"
+    explicit.write_text("hf_explicit\n", encoding="utf-8")
+    assert nb._locate_token(str(explicit)) == explicit
+
+
+def test_locate_token_searches_mount_when_path_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Emulate the kaggle 2.x mount: /kaggle/input/datasets/<owner>/<slug>/hf_token.txt
+    nested = tmp_path / "datasets" / "hkhk2prod" / "runtime-secrets"
+    nested.mkdir(parents=True)
+    (nested / "hf_token.txt").write_text("hf_found\n", encoding="utf-8")
+    monkeypatch.setattr(nb, "KAGGLE_INPUT_ROOT", str(tmp_path))
+    found = nb._locate_token(str(tmp_path / "runtime-secrets" / "hf_token.txt"))
+    assert found is not None and found.read_text().strip() == "hf_found"
+
+
+def test_locate_token_returns_none_when_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(nb, "KAGGLE_INPUT_ROOT", str(tmp_path))
+    assert nb._locate_token(str(tmp_path / "nope.txt")) is None
+
+
 def _reporter(
     monkeypatch: pytest.MonkeyPatch, files: dict[str, str] | None = None
 ) -> tuple[nb.RunReporter, MemoryStateBackend]:
