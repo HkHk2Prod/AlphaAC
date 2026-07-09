@@ -36,6 +36,9 @@ from ac_zero.search.iterative_deepening import IterativeDeepeningConfig, Iterati
 from ac_zero.search.mcts import UniformMCTS
 from ac_zero.search.puct import PUCTMCTS
 from ac_zero.system.reporting import CliReporter
+from ac_zero.training.callbacks import CallbackManager, default_training_callbacks
+from ac_zero.training.checkpoint_name import derive_checkpoint_name
+from ac_zero.training.hub_checkpoints import PeriodicCheckpointUploader, download_best_checkpoint
 from ac_zero.training.pipeline import run_training_pipeline
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
 from ac_zero.training.smoke import run_smoke_training
@@ -97,6 +100,12 @@ def main(argv: list[str] | None = None) -> int:
     ds.add_argument("--rank", type=int, default=2, help="group rank for `grow`")
     ds.add_argument("--target", type=int, default=100, help="`grow`: new groups to add this run")
     ds.add_argument(
+        "--minutes",
+        type=float,
+        default=0.0,
+        help="`grow`: soft wall-clock budget in minutes (0 = run until target/frontier)",
+    )
+    ds.add_argument(
         "--select",
         choices=["smallest", "weighted-random"],
         default="smallest",
@@ -145,6 +154,32 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=None,
         help="self-play worker processes; 0 uses all cores, overrides the config",
+    )
+    train.add_argument(
+        "--upload-checkpoints",
+        action="store_true",
+        help="push the checkpoint bundle to the HF bucket while training and once at the end",
+    )
+    train.add_argument(
+        "--download-checkpoint",
+        action="store_true",
+        help="warm-start from the best model already on the HF bucket for this checkpoint name",
+    )
+    train.add_argument(
+        "--checkpoint-name",
+        default=None,
+        help="HF checkpoint lineage name for up/download (default: derived from the run identity)",
+    )
+    train.add_argument(
+        "--checkpoint-bucket",
+        default=None,
+        help=f"HF dataset repo to up/download checkpoints from (default {DEFAULT_BUCKET})",
+    )
+    train.add_argument(
+        "--upload-every-hours",
+        type=float,
+        default=3.0,
+        help="hours between checkpoint uploads; the final best model is always pushed",
     )
     bench = sub.add_parser("benchmark")
     bench.add_argument("--config", default="configs/experiments/benchmark_rank2.yaml")
@@ -208,7 +243,17 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             reporter.warning("dataset", "dataset failed validation", {"errors": len(report.errors)})
         return 0 if report.ok else 1
     if args.cmd == "train":
-        return _train(Path(args.config), args.seed, args.workers, reporter)
+        return _train(
+            Path(args.config),
+            args.seed,
+            args.workers,
+            reporter,
+            upload_checkpoints=args.upload_checkpoints,
+            download_checkpoint=args.download_checkpoint,
+            checkpoint_name=args.checkpoint_name,
+            checkpoint_bucket=args.checkpoint_bucket,
+            upload_every_hours=args.upload_every_hours,
+        )
     if args.cmd == "benchmark":
         return _benchmark(reporter)
     if args.cmd == "solve":
@@ -268,13 +313,32 @@ def _smoke_train(seed: int, reporter: CliReporter) -> int:
     return 0
 
 
-def _train(config_path: Path, seed: int, workers: int | None, reporter: CliReporter) -> int:
+def _train(
+    config_path: Path,
+    seed: int,
+    workers: int | None,
+    reporter: CliReporter,
+    *,
+    upload_checkpoints: bool = False,
+    download_checkpoint: bool = False,
+    checkpoint_name: str | None = None,
+    checkpoint_bucket: str | None = None,
+    upload_every_hours: float = 3.0,
+) -> int:
     """Run the config-driven replay and policy/value training pipeline."""
     config = TrainingPipelineConfig.from_mapping(_load_config(config_path))
     if workers is not None:
         config = replace(config, workers=workers)
+    if checkpoint_name:
+        config = replace(config, checkpoint_name=checkpoint_name)
+    bucket = checkpoint_bucket or DEFAULT_BUCKET
     _ensure_training_dataset(config, reporter)
-    summary = run_training_pipeline(config, seed)
+    if download_checkpoint:
+        config = _warm_start_from_hf(config, bucket, reporter)
+    callbacks = _training_callbacks(config, upload_checkpoints, bucket, upload_every_hours)
+    if callbacks is not None:
+        reporter.progress("checkpoint", "uploading checkpoints to bucket", {"bucket": bucket})
+    summary = run_training_pipeline(config, seed, callbacks)
     _present_plots(summary.plot_paths, reporter)
     reporter.result_json(
         {
@@ -304,6 +368,51 @@ def _ensure_training_dataset(config: TrainingPipelineConfig, reporter: CliReport
     bucket = config.dataset_bucket or DEFAULT_BUCKET
     reporter.progress("dataset", "pulling training dataset from bucket", {"bucket": bucket})
     download_dataset(local, bucket=bucket)
+
+
+def _warm_start_from_hf(
+    config: TrainingPipelineConfig, bucket: str, reporter: CliReporter
+) -> TrainingPipelineConfig:
+    """Pull this run's best model from the HF bucket and warm-start from it.
+
+    The lineage name is `config.checkpoint_name` when set, else the identity name
+    the run would upload under, so download and upload address the same bucket
+    prefix. When no checkpoint exists yet the run simply trains from scratch.
+    """
+    name = config.checkpoint_name or derive_checkpoint_name(config)
+    reporter.progress(
+        "checkpoint", "pulling best checkpoint from bucket", {"bucket": bucket, "name": name}
+    )
+    dest = Path(config.run_directory) / "warm_start.json"
+    path = download_best_checkpoint(name, dest, bucket=bucket, missing_ok=True)
+    if path is None:
+        reporter.warning(
+            "checkpoint", "no checkpoint on bucket; training from scratch", {"name": name}
+        )
+        return config
+    return replace(config, warm_start=str(path))
+
+
+def _training_callbacks(
+    config: TrainingPipelineConfig,
+    upload_checkpoints: bool,
+    bucket: str,
+    upload_every_hours: float,
+) -> CallbackManager | None:
+    """Build the callback manager for a run, adding an HF uploader when requested.
+
+    Returns ``None`` when no upload is requested so the pipeline builds its own
+    default callbacks; otherwise returns the defaults plus a periodic uploader
+    reading the run's bundle directory the pipeline keeps current.
+    """
+    if not upload_checkpoints:
+        return None
+    uploader = PeriodicCheckpointUploader(
+        Path(config.run_directory) / "model_checkpoint",
+        bucket=bucket,
+        every_hours=upload_every_hours,
+    )
+    return default_training_callbacks(config.run_directory, extra=(uploader,))
 
 
 def _present_plots(plot_paths: Sequence[str], reporter: CliReporter) -> None:
@@ -614,6 +723,7 @@ def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
         workers=args.workers,
         checkpoint_every=args.checkpoint_every,
         log_every=args.log_every,
+        time_limit_s=args.minutes * 60 if args.minutes > 0 else None,
     )
     report = grow_dataset(
         path,

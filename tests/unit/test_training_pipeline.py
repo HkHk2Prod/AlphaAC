@@ -121,7 +121,7 @@ def test_training_pipeline_writes_checkpoint_and_summary(tmp_path: Path) -> None
         assert Path(plot).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-def test_training_pipeline_writes_bundle_and_warm_starts(tmp_path: Path) -> None:
+def test_training_pipeline_writes_bundle_and_warm_starts(tmp_path: Path, capsys) -> None:
     base = dict(
         scramble_depth=1,
         max_moves=4,
@@ -152,6 +152,10 @@ def test_training_pipeline_writes_bundle_and_warm_starts(tmp_path: Path) -> None
     warm_summary = run_training_pipeline(warm, seed=9)
     warm_meta = json.loads((Path(warm_summary.checkpoint_bundle_dir) / "meta.json").read_text())
     assert warm_meta["warm_started_from"] == str(bundle / "best.json")
+
+    # The warm start is announced in the run log with its provenance.
+    out = capsys.readouterr().out
+    assert f"[warm-start] initialized model from {bundle / 'best.json'}" in out
 
 
 def test_config_reads_warm_start_and_checkpoint_name_from_mapping() -> None:
@@ -289,6 +293,187 @@ def test_ensure_training_dataset_pulls_only_when_missing(monkeypatch, tmp_path: 
     _ensure_training_dataset(config, reporter)
     assert len(calls) == 1
     reporter.close()
+
+
+def test_training_callbacks_adds_uploader_only_when_requested(tmp_path: Path) -> None:
+    from ac_zero.cli import _training_callbacks
+    from ac_zero.training.hub_checkpoints import PeriodicCheckpointUploader
+
+    config = TrainingPipelineConfig(run_directory=str(tmp_path / "run"))
+
+    # Without the flag the pipeline builds its own defaults.
+    assert _training_callbacks(config, False, None, 3.0) is None
+
+    # With the flag the default callbacks gain a periodic uploader pointed at the
+    # run's bundle directory, using the configured bucket and interval.
+    manager = _training_callbacks(config, True, "ns/bucket", 1.5)
+    assert manager is not None
+    uploaders = [cb for cb in manager._callbacks if isinstance(cb, PeriodicCheckpointUploader)]
+    assert len(uploaders) == 1
+    uploader = uploaders[0]
+    assert uploader.bundle_dir == Path(config.run_directory) / "model_checkpoint"
+    assert uploader.bucket == "ns/bucket"
+    assert uploader.interval_s == 1.5 * 3600.0
+
+
+def test_cli_train_uploads_checkpoints_when_flagged(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    pushed: list[tuple[str, str]] = []
+
+    def _fake_push(bundle_dir, *, bucket):  # type: ignore[no-untyped-def]
+        pushed.append((str(bundle_dir), bucket))
+        return "prefix"
+
+    monkeypatch.setattr("ac_zero.training.hub_checkpoints.push_checkpoint_bundle", _fake_push)
+    config_path = tmp_path / "train.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "rank: 2",
+                "max_moves: 4",
+                "model: linear_policy_value",
+                "dataset:",
+                "  count: 1",
+                "  depth: 1",
+                "training:",
+                "  iterations: 1",
+                "  episodes_per_iteration: 1",
+                "  optimizer_updates: 1",
+                "  batch_size: 1",
+                "  mcts_simulations: 2",
+                "  run_directory: runs/train/upload",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "train",
+            "--config",
+            str(config_path),
+            "--seed",
+            "3",
+            "--upload-checkpoints",
+            "--checkpoint-bucket",
+            "ns/bucket",
+        ]
+    )
+    assert exit_code == 0
+    # The final push (on close) fired against the run's bundle and the given bucket.
+    assert ("runs/train/upload/model_checkpoint", "ns/bucket") in pushed
+
+
+def test_warm_start_from_hf_uses_name_and_falls_back(monkeypatch, tmp_path: Path) -> None:
+    from ac_zero.cli import _warm_start_from_hf
+    from ac_zero.system.reporting import CliReporter
+    from ac_zero.training.checkpoint_name import derive_checkpoint_name
+
+    reporter = CliReporter("train", run_directory=str(tmp_path / "logs"))
+    calls: list[tuple[str, str, str, bool]] = []
+
+    def _fake_download(name, dest, *, bucket, missing_ok):  # type: ignore[no-untyped-def]
+        calls.append((name, str(dest), bucket, missing_ok))
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_text("{}", encoding="utf-8")
+        return Path(dest)
+
+    monkeypatch.setattr("ac_zero.cli.download_best_checkpoint", _fake_download)
+
+    # An explicit checkpoint name addresses that lineage; the model warm-starts
+    # from the downloaded best.json under the run directory.
+    named = TrainingPipelineConfig(run_directory=str(tmp_path / "run"), checkpoint_name="mine")
+    out = _warm_start_from_hf(named, "ns/bucket", reporter)
+    dest = str(tmp_path / "run" / "warm_start.json")
+    assert calls == [("mine", dest, "ns/bucket", True)]
+    assert out.warm_start == dest
+
+    # With no explicit name, download addresses the run's derived identity name.
+    calls.clear()
+    unnamed = TrainingPipelineConfig(run_directory=str(tmp_path / "run2"))
+    _warm_start_from_hf(unnamed, "ns/bucket", reporter)
+    assert calls[0][0] == derive_checkpoint_name(unnamed)
+
+    # No checkpoint on the bucket: config is returned unchanged (train from scratch).
+    monkeypatch.setattr(
+        "ac_zero.cli.download_best_checkpoint",
+        lambda *a, **k: None,  # type: ignore[no-untyped-def]
+    )
+    result = _warm_start_from_hf(named, "ns/bucket", reporter)
+    assert result.warm_start is None
+    reporter.close()
+
+
+def test_cli_train_download_checkpoint_warm_starts(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    base = dict(
+        scramble_depth=1,
+        max_moves=4,
+        model="residual_mlp",
+        mcts_simulations=4,
+        iterations=1,
+        episodes_per_iteration=2,
+        optimizer_updates=2,
+        batch_size=2,
+    )
+    # A first run produces a real best.json to warm-start the CLI run from.
+    seed = TrainingPipelineConfig(run_directory=str(tmp_path / "seed"), **base)
+    seed_summary = run_training_pipeline(seed, seed=1)
+    best = Path(seed_summary.checkpoint_bundle_dir) / "best.json"
+
+    requested: list[tuple[str, str]] = []
+
+    def _fake_download(name, dest, *, bucket, missing_ok):  # type: ignore[no-untyped-def]
+        requested.append((name, bucket))
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_text(best.read_text(), encoding="utf-8")
+        return Path(dest)
+
+    monkeypatch.setattr("ac_zero.cli.download_best_checkpoint", _fake_download)
+    config_path = tmp_path / "train.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "rank: 2",
+                "max_moves: 4",
+                "model: residual_mlp",
+                "dataset:",
+                "  count: 1",
+                "  depth: 1",
+                "training:",
+                "  iterations: 1",
+                "  episodes_per_iteration: 1",
+                "  optimizer_updates: 1",
+                "  batch_size: 1",
+                "  mcts_simulations: 2",
+                "  run_directory: runs/train/warm",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "train",
+            "--config",
+            str(config_path),
+            "--seed",
+            "2",
+            "--download-checkpoint",
+            "--checkpoint-name",
+            "my-lineage",
+        ]
+    )
+    assert exit_code == 0
+    # Download addressed the requested lineage on the default bucket, and the run
+    # records that it warm-started from the downloaded file.
+    assert requested == [("my-lineage", "HkHk2Prod/alphaac-data")]
+    meta = json.loads((tmp_path / "runs/train/warm/model_checkpoint/meta.json").read_text())
+    assert meta["warm_started_from"] == "runs/train/warm/warm_start.json"
+    # The custom name flows through to the uploaded lineage identity too.
+    assert meta["checkpoint_name"] == "my-lineage"
 
 
 def test_cli_train_uses_configured_pipeline(monkeypatch, tmp_path: Path) -> None:

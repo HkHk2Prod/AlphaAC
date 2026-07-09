@@ -30,7 +30,9 @@ tasks:
     stop_after_current_iteration: false
     config:
       rank: 2
-      target: 2000
+      # Effectively uncapped: the notebook passes --minutes so the soft runtime
+      # deadline (not the target) ends the run and it fills the whole budget.
+      target: 100000000
       total_length_cap: 48
       workers: 0
       output: /kaggle/working/train_rank2.groups.json

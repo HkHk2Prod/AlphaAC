@@ -99,8 +99,14 @@ def default_smoke_callbacks(run_directory: str | Path) -> CallbackManager:
     )
 
 
-def default_training_callbacks(run_directory: str | Path) -> CallbackManager:
-    """Create default callbacks for config-driven training pipeline runs."""
+def default_training_callbacks(
+    run_directory: str | Path, *, extra: Iterable[TrainingCallback] = ()
+) -> CallbackManager:
+    """Create default callbacks for config-driven training pipeline runs.
+
+    ``extra`` callbacks (e.g. a checkpoint uploader) are appended after the
+    default file loggers so callers can add behaviour without rebuilding them.
+    """
 
     run = Path(run_directory)
     log_dir = run / "logs"
@@ -122,5 +128,6 @@ def default_training_callbacks(run_directory: str | Path) -> CallbackManager:
                     "success_rate",
                 ),
             ),
+            *extra,
         )
     )

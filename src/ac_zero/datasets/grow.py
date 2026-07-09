@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -52,6 +53,11 @@ class GrowConfig:
     # silences the per-round updates (the start/finish lines still fire). Kept
     # separate from checkpointing so disk writes stay rarer than status lines.
     log_every: int = 1000
+    # Soft wall-clock budget in seconds; None runs until `target` is reached or
+    # the frontier is exhausted. When set, the run stops submitting new batches
+    # once the budget is spent, drains the in-flight ones, and flushes -- a clean
+    # exit at a round boundary, not a mid-batch kill.
+    time_limit_s: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,8 +79,9 @@ def grow_dataset(
     Loads the dataset at `path` (seeding the trivial root on the first run),
     repeatedly expands non-exhausted groups by every catalog move, and records
     each novel group with its co-optimal construction edges until `config.target`
-    new groups have been added or the reachable frontier (within the length cap)
-    is exhausted. The file is rewritten atomically -- both at the end and every
+    new groups have been added, the reachable frontier (within the length cap) is
+    exhausted, or the optional `config.time_limit_s` wall-clock budget runs out.
+    The file is rewritten atomically -- both at the end and every
     `config.checkpoint_every` added groups -- so a run interrupted mid-way resumes
     from its last checkpoint, and every run only ever grows the database.
 
@@ -96,6 +103,8 @@ def grow_dataset(
     expanded = 0
     checkpointed = 0
     logged = 0
+    timed_out = False
+    deadline = None if config.time_limit_s is None else time.monotonic() + config.time_limit_s
     claimed: set[str] = set()
     inflight: deque[tuple[list[GroupNode], BatchHandle]] = deque()
     with ExpansionPool(config.rank, config.total_length_cap, config.workers) as pool:
@@ -111,6 +120,10 @@ def grow_dataset(
             return True
 
         def refill() -> None:
+            nonlocal timed_out
+            if deadline is not None and time.monotonic() >= deadline:
+                timed_out = True  # stop submitting; drain what is already in flight
+                return
             while added < config.target and len(inflight) < _LOOKAHEAD:
                 if not submit_next():
                     break
@@ -148,7 +161,7 @@ def grow_dataset(
     report = GrowReport(len(graph.nodes), added, expanded, graph.frontier(), graph.max_length())
     if progress is not None:
         progress(
-            "grow complete",
+            "grow complete" if not timed_out else "grow stopped: time limit",
             {
                 "groups": report.total,
                 "added": added,

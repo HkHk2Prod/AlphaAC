@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.groups import MOVE_CATALOG, SCHEMA_VERSION
@@ -59,3 +60,35 @@ def test_grow_only_ever_grows_on_resume(tmp_path: Path) -> None:
     # Still exactly one trivial root after resuming.
     data = json.loads(path.read_text())
     assert sum(1 for e in data["groups"] if e["source"] == "trivial") == 1
+
+
+def test_grow_stops_at_time_limit_before_target(tmp_path: Path, monkeypatch) -> None:
+    """A spent wall-clock budget ends the run cleanly, well before a huge target."""
+    # A monotonic clock that jumps past the deadline after the first read, so the
+    # run primes the pipeline once and then stops submitting new batches. Swap the
+    # whole `time` reference in grow so the real clock (and other modules) is left
+    # untouched.
+    ticks = iter([0.0, 0.0, 100.0, 100.0, 100.0, 100.0, 100.0])
+    last = [0.0]
+
+    def fake_monotonic() -> float:
+        last[0] = next(ticks, last[0])
+        return last[0]
+
+    monkeypatch.setattr("ac_zero.datasets.grow.time", SimpleNamespace(monotonic=fake_monotonic))
+    path = tmp_path / "toy.groups.json"
+    report = grow_dataset(
+        path,
+        GrowConfig(rank=2, target=1_000_000, total_length_cap=10, workers=1, time_limit_s=1.0),
+    )
+    # Time, not the (astronomical) target, bounded the run; the file is a valid,
+    # flushed dataset with at least the trivial root.
+    assert report.added < 1_000_000
+    data = json.loads(path.read_text())
+    assert sum(1 for e in data["groups"] if e["source"] == "trivial") == 1
+
+
+def test_grow_no_time_limit_reaches_target(tmp_path: Path) -> None:
+    """Without a budget the run still stops on the target, not the clock."""
+    data = _grow(tmp_path / "toy.groups.json", target=20, time_limit_s=None)
+    assert len(data["groups"]) >= 20

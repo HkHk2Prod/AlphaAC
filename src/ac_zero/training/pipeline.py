@@ -143,9 +143,16 @@ class _TrainingRun:
         the configured model so its weights load into the fresh network.
         """
         if not self.config.warm_start:
+            print("[warm-start] no checkpoint configured; training a fresh model")
             return None
         data = json.loads(Path(self.config.warm_start).read_text(encoding="utf-8"))
         self.model = model_from_json(data.get("model_state", data))
+        iteration, metric = data.get("iteration"), data.get("checkpoint_metric")
+        provenance = ""
+        if iteration is not None:
+            provenance += f" (iteration {iteration}"
+            provenance += f", metric {metric:.4f})" if isinstance(metric, (int, float)) else ")"
+        print(f"[warm-start] initialized model from {self.config.warm_start}{provenance}")
         return self.config.warm_start
 
     def _record_iteration_stats(self, mean_return: float, success_rate: float) -> None:

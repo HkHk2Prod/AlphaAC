@@ -15,7 +15,7 @@ dataset:
   count: 8
   depth: 6
 training:
-  iterations: 100
+  iterations: 1000000
   episodes_per_iteration: 24
   optimizer_updates: 32
   batch_size: 32
