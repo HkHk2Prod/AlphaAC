@@ -44,7 +44,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install kaggle "huggingface_hub>=1.21" pyyaml
+          # Pin the classic Kaggle CLI: kaggle 2.x dropped username+key / kaggle.json
+          # auth (it wants KAGGLE_API_TOKEN/OAuth), which our credential step writes.
+          pip install "kaggle<2.0" "huggingface_hub>=1.21" pyyaml
 
       - name: Configure Kaggle credentials
         env:
@@ -61,6 +63,7 @@ jobs:
       - name: Update private Kaggle runtime-secrets dataset (HF model token)
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
           # Prefer a dedicated model token; fall back to the shared HF_TOKEN.
           HF_MODEL_TOKEN: ${{ secrets.HF_MODEL_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
