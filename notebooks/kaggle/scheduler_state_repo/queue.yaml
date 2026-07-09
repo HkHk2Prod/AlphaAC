@@ -11,9 +11,12 @@ limits:
   max_total_active: 5
   max_cpu_active: 5
   max_gpu_active: 1
-  max_launches_per_tick: 1
+  max_launches_per_tick: 5   # start several tasks per tick (each has its own slug)
   stale_heartbeat_minutes: 180
 
+# Each task has its OWN notebook_slug so they run as independent Kaggle kernels
+# concurrently. They share one notebook_dir / code_file; the scheduler patches the
+# kernel id per task, so pushing to distinct slugs creates distinct kernels.
 tasks:
   - id: generation-main
     active: true
@@ -21,7 +24,7 @@ tasks:
     mode: generation
     accelerator: cpu
     priority: 100
-    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_slug: hkhk2prod/alphaac-generation
     notebook_dir: notebooks/kaggle
     max_runtime_minutes: 705
     stop_after_current_iteration: false
@@ -38,7 +41,7 @@ tasks:
     mode: annotation
     accelerator: cpu
     priority: 90
-    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_slug: hkhk2prod/alphaac-annotation
     notebook_dir: notebooks/kaggle
     max_runtime_minutes: 705
     stop_after_current_iteration: false
@@ -47,18 +50,18 @@ tasks:
       max_depth: 32
       workers: 0
 
-  # --- Training methods (all DEACTIVATED; flip active: true to schedule) -------
+  # --- Training methods -------------------------------------------------------
   # ac_primitive moves = the strict-ac move set; reward = potential (needs the
   # per-group distance-to-origin, so these seed self-play from the grown dataset +
   # its strict-ac annotations, pulled from the bucket by the notebook at startup).
 
   - id: train-alphazero-strict-potential
-    active: false
+    active: true
     remaining_runs: null
     mode: training
     accelerator: cpu
     priority: 50
-    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_slug: hkhk2prod/alphaac-train-alphazero
     notebook_dir: notebooks/kaggle
     max_runtime_minutes: 705
     stop_after_current_iteration: false
@@ -89,12 +92,12 @@ tasks:
         workers: 0
 
   - id: train-ppo-strict-potential
-    active: false
+    active: true
     remaining_runs: null
     mode: training
     accelerator: cpu
     priority: 50
-    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_slug: hkhk2prod/alphaac-train-ppo
     notebook_dir: notebooks/kaggle
     max_runtime_minutes: 705
     stop_after_current_iteration: false
@@ -127,12 +130,12 @@ tasks:
   # greedy-RL is a non-learning search baseline: no training, so reward/potential
   # do not apply. It solves the grown strict-ac dataset with the greedy agent.
   - id: solve-greedy-strict
-    active: false
+    active: true
     remaining_runs: null
     mode: solve
     accelerator: cpu
     priority: 40
-    notebook_slug: HkHk2Prod/alphaac-scheduler-runner
+    notebook_slug: hkhk2prod/alphaac-solve-greedy
     notebook_dir: notebooks/kaggle
     max_runtime_minutes: 705
     stop_after_current_iteration: false
