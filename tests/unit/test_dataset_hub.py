@@ -34,8 +34,12 @@ def _install_fake(monkeypatch: pytest.MonkeyPatch, tree: list[_Item]) -> dict:
     def batch_bucket_files(bucket: str, add=None, delete=None, copy=None):  # type: ignore[no-untyped-def]
         record["add"] = {"bucket": bucket, "add": add}
 
-    def download_bucket_files(bucket: str, files=None):  # type: ignore[no-untyped-def]
-        record["download"] = {"bucket": bucket, "files": files}
+    def download_bucket_files(bucket: str, files=None, *, raise_on_missing_files=False):  # type: ignore[no-untyped-def]
+        record["download"] = {
+            "bucket": bucket,
+            "files": files,
+            "raise_on_missing_files": raise_on_missing_files,
+        }
         for _remote, local in files or []:
             Path(local).write_text("{}", encoding="utf-8")
 
@@ -89,9 +93,11 @@ def test_download_dataset_writes_local_file(
 
     assert result == target
     assert target.is_file()  # parent dir was created and the file written
+    # An absent object must raise rather than silently leave `target` unwritten.
     assert record["download"] == {
         "bucket": "ns/bucket",
         "files": [("train_rank2.json", str(target))],
+        "raise_on_missing_files": True,
     }
 
 

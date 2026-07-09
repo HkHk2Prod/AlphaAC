@@ -113,13 +113,17 @@ def download_file(
     """Download a single ``remote_name`` object from the bucket to ``local_path``.
 
     With ``missing_ok=True`` returns ``None`` instead of raising when the object
-    is absent from the bucket.
+    is absent from the bucket. Otherwise an absent object raises: the hub skips
+    missing files with a warning by default, which would leave callers holding a
+    path to a file that was never written.
     """
     local = Path(local_path)
     if missing_ok and not remote_exists(remote_name, bucket=bucket):
         return None
     local.parent.mkdir(parents=True, exist_ok=True)
-    _hub().download_bucket_files(bucket, files=[(remote_name, str(local))])
+    _hub().download_bucket_files(
+        bucket, files=[(remote_name, str(local))], raise_on_missing_files=True
+    )
     return local
 
 

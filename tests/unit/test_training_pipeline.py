@@ -224,6 +224,68 @@ def test_config_reads_progress_every_from_mapping() -> None:
         TrainingPipelineConfig(progress_every=0).validate()
 
 
+def test_config_validates_time_limit() -> None:
+    # No budget by default: the run does every configured iteration.
+    assert TrainingPipelineConfig().time_limit_s is None
+    with pytest.raises(ValueError, match="time_limit_s must be positive when set"):
+        TrainingPipelineConfig(time_limit_s=0).validate()
+
+
+def test_pipeline_stops_at_the_wall_clock_budget(tmp_path: Path) -> None:
+    """A spent budget ends the loop early but still produces every artifact."""
+    config = TrainingPipelineConfig(
+        scramble_depth=1,
+        max_moves=4,
+        model="residual_mlp",
+        mcts_simulations=4,
+        iterations=25,
+        episodes_per_iteration=2,
+        optimizer_updates=2,
+        batch_size=2,
+        # Already spent by the time the first iteration finishes.
+        time_limit_s=0.001,
+        run_directory=str(tmp_path / "train"),
+    )
+    sink = _CapturingSink()
+    summary = run_training_pipeline(config, seed=3, callbacks=CallbackManager((sink,)))
+
+    # Stopped at the first iteration boundary, and the summary reports the
+    # iterations actually run rather than the configured cap.
+    assert summary.iterations == 1
+    budget = [event for event in sink.events if event.phase == "budget"]
+    assert len(budget) == 1
+    assert budget[0].metrics["iteration"] == 1
+
+    # The early stop is clean: checkpoint, bundle, plots, certificate, summary.
+    assert Path(summary.checkpoint_path).is_file()
+    assert (Path(summary.checkpoint_bundle_dir) / "best.json").is_file()
+    assert Path(summary.certificate_path).is_file()
+    assert summary.checkpoint_restored
+    assert [event.phase for event in sink.events[-2:]] == ["certificate", "completed"]
+    # Event ids stay monotonic across the truncated loop and the closing events.
+    steps = [event.step for event in sink.events]
+    assert steps == sorted(steps)
+
+
+def test_pipeline_without_a_budget_runs_every_iteration(tmp_path: Path) -> None:
+    config = TrainingPipelineConfig(
+        scramble_depth=1,
+        max_moves=4,
+        model="residual_mlp",
+        mcts_simulations=4,
+        iterations=3,
+        episodes_per_iteration=2,
+        optimizer_updates=2,
+        batch_size=2,
+        run_directory=str(tmp_path / "train"),
+    )
+    sink = _CapturingSink()
+    summary = run_training_pipeline(config, seed=3, callbacks=CallbackManager((sink,)))
+
+    assert summary.iterations == 3
+    assert not [event for event in sink.events if event.phase == "budget"]
+
+
 def test_progress_every_throttles_recurring_events_to_debug(tmp_path: Path) -> None:
     from ac_zero.training.events import LogLevel
 
@@ -494,6 +556,42 @@ def test_warm_start_from_hf_uses_name_and_falls_back(monkeypatch, tmp_path: Path
     result = _warm_start_from_hf(named, "ns/bucket", reporter)
     assert result.warm_start is None
     reporter.close()
+
+
+def test_cli_train_minutes_bounds_the_run(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "train.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "rank: 2",
+                "max_moves: 4",
+                "model: residual_mlp",
+                "dataset:",
+                "  count: 1",
+                "  depth: 1",
+                "training:",
+                "  iterations: 25",
+                "  episodes_per_iteration: 1",
+                "  optimizer_updates: 1",
+                "  batch_size: 1",
+                "  mcts_simulations: 2",
+                "  run_directory: runs/train/budget",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # A budget of 0.006 s is spent by the end of the first iteration.
+    exit_code = main(
+        ["train", "--config", str(config_path), "--minutes", "0.0001", "--self-generated"]
+    )
+    assert exit_code == 0
+    summary = json.loads(
+        (tmp_path / "runs/train/budget/artifacts/training_summary.json").read_text()
+    )
+    assert summary["iterations"] == 1  # not the configured 25
 
 
 def test_cli_train_download_checkpoint_warm_starts(monkeypatch, tmp_path: Path) -> None:

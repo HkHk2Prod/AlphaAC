@@ -156,6 +156,13 @@ def main(argv: list[str] | None = None) -> int:
         help="self-play worker processes; 0 uses all cores, overrides the config",
     )
     train.add_argument(
+        "--minutes",
+        type=float,
+        default=0.0,
+        help="soft wall-clock budget in minutes; the run stops at the next iteration boundary "
+        "past it and still writes its checkpoint, plots, and summary (0 = run all iterations)",
+    )
+    train.add_argument(
         "--upload-checkpoints",
         action="store_true",
         help="push the checkpoint bundle to the HF bucket while training and once at the end",
@@ -259,6 +266,7 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             args.seed,
             args.workers,
             reporter,
+            minutes=args.minutes,
             upload_checkpoints=args.upload_checkpoints,
             download_checkpoint=args.download_checkpoint,
             checkpoint_name=args.checkpoint_name,
@@ -332,6 +340,7 @@ def _train(
     workers: int | None,
     reporter: CliReporter,
     *,
+    minutes: float = 0.0,
     upload_checkpoints: bool = False,
     download_checkpoint: bool = False,
     checkpoint_name: str | None = None,
@@ -344,6 +353,8 @@ def _train(
     config = TrainingPipelineConfig.from_mapping(_load_config(config_path))
     if workers is not None:
         config = replace(config, workers=workers)
+    if minutes > 0:
+        config = replace(config, time_limit_s=minutes * 60)
     if checkpoint_name:
         config = replace(config, checkpoint_name=checkpoint_name)
     # Seed self-play from the HF group dataset by default (deriving the rank/moveset
@@ -367,6 +378,7 @@ def _train(
             "training": summary.run_directory,
             "checkpoint": summary.checkpoint_path,
             "certificate": summary.certificate_path,
+            "iterations": summary.iterations,
             "optimizer_updates": summary.optimizer_updates,
             "plots": list(summary.plot_paths),
         },
