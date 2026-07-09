@@ -181,6 +181,11 @@ def main(argv: list[str] | None = None) -> int:
         default=3.0,
         help="hours between checkpoint uploads; the final best model is always pushed",
     )
+    train.add_argument(
+        "--force-download-dataset",
+        action="store_true",
+        help="re-pull the dataset groups and annotations from the bucket even if present locally",
+    )
     bench = sub.add_parser("benchmark")
     bench.add_argument("--config", default="configs/experiments/benchmark_rank2.yaml")
     solve = sub.add_parser("solve")
@@ -253,6 +258,7 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             checkpoint_name=args.checkpoint_name,
             checkpoint_bucket=args.checkpoint_bucket,
             upload_every_hours=args.upload_every_hours,
+            force_download_dataset=args.force_download_dataset,
         )
     if args.cmd == "benchmark":
         return _benchmark(reporter)
@@ -324,6 +330,7 @@ def _train(
     checkpoint_name: str | None = None,
     checkpoint_bucket: str | None = None,
     upload_every_hours: float = 3.0,
+    force_download_dataset: bool = False,
 ) -> int:
     """Run the config-driven replay and policy/value training pipeline."""
     config = TrainingPipelineConfig.from_mapping(_load_config(config_path))
@@ -332,7 +339,7 @@ def _train(
     if checkpoint_name:
         config = replace(config, checkpoint_name=checkpoint_name)
     bucket = checkpoint_bucket or DEFAULT_BUCKET
-    _ensure_training_dataset(config, reporter)
+    _ensure_training_dataset(config, reporter, force=force_download_dataset)
     if download_checkpoint:
         config = _warm_start_from_hf(config, bucket, reporter)
     callbacks = _training_callbacks(config, upload_checkpoints, bucket, upload_every_hours)
@@ -353,21 +360,32 @@ def _train(
     return 0
 
 
-def _ensure_training_dataset(config: TrainingPipelineConfig, reporter: CliReporter) -> None:
-    """Pull the configured self-play dataset from the HF bucket if it is not local.
+def _ensure_training_dataset(
+    config: TrainingPipelineConfig, reporter: CliReporter, *, force: bool = False
+) -> None:
+    """Pull the configured self-play dataset (groups + annotations) from the bucket.
 
-    A run seeds self-play from `dataset_path` when set; if that file is missing we
-    fetch it from the dataset bucket (default AlphaAC's) so `aczero train` works on
-    a fresh machine the same way the Kaggle notebook does.
+    A run seeds self-play from `dataset_path` when set; its companion annotations
+    feed the curriculum. Each file is fetched when missing locally so `aczero
+    train` works on a fresh machine the same way the Kaggle notebook does; `force`
+    re-downloads both even when they already exist, refreshing a stale copy.
     """
     if not config.dataset_path:
         return
-    local = Path(config.dataset_path)
-    if local.exists():
-        return
     bucket = config.dataset_bucket or DEFAULT_BUCKET
-    reporter.progress("dataset", "pulling training dataset from bucket", {"bucket": bucket})
-    download_dataset(local, bucket=bucket)
+    groups = Path(config.dataset_path)
+    if force or not groups.exists():
+        reporter.progress("dataset", "pulling groups from bucket", {"bucket": bucket})
+        download_dataset(groups, bucket=bucket)
+    if not config.dataset_annotations_path:
+        return
+    annotations = Path(config.dataset_annotations_path)
+    if force or not annotations.exists():
+        reporter.progress("dataset", "pulling annotations from bucket", {"bucket": bucket})
+        if download_dataset(annotations, bucket=bucket, missing_ok=True) is None:
+            reporter.warning(
+                "dataset", "annotations absent from bucket", {"name": annotations.name}
+            )
 
 
 def _warm_start_from_hf(

@@ -292,6 +292,39 @@ def test_ensure_training_dataset_pulls_only_when_missing(monkeypatch, tmp_path: 
     # Already on disk: not pulled again.
     _ensure_training_dataset(config, reporter)
     assert len(calls) == 1
+
+    # force=True re-pulls even when the file is already present.
+    _ensure_training_dataset(config, reporter, force=True)
+    assert calls == [(str(dataset), "ns/bucket"), (str(dataset), "ns/bucket")]
+    reporter.close()
+
+
+def test_ensure_training_dataset_pulls_annotations(monkeypatch, tmp_path: Path) -> None:
+    from ac_zero.cli import _ensure_training_dataset
+    from ac_zero.system.reporting import CliReporter
+
+    calls: list[tuple[str, bool]] = []
+
+    def _fake_download(local, *, remote_name=None, bucket, missing_ok=False):  # type: ignore[no-untyped-def]
+        calls.append((str(local), missing_ok))
+        Path(local).write_text("{}", encoding="utf-8")
+        return Path(local)
+
+    monkeypatch.setattr("ac_zero.cli.download_dataset", _fake_download)
+    reporter = CliReporter("train", run_directory=str(tmp_path / "logs"))
+    groups = tmp_path / "train_rank2.groups.json"
+    annotations = tmp_path / "train_rank2.strict-ac.annotations.json"
+    config = TrainingPipelineConfig(
+        dataset_path=str(groups), dataset_annotations_path=str(annotations)
+    )
+
+    # Both companion files are pulled when missing; annotations tolerate absence.
+    _ensure_training_dataset(config, reporter)
+    assert calls == [(str(groups), False), (str(annotations), True)]
+
+    # Present locally: neither is pulled again.
+    _ensure_training_dataset(config, reporter)
+    assert len(calls) == 2
     reporter.close()
 
 
