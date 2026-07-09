@@ -12,6 +12,7 @@ from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.models.registry import create_trainable_model
 from ac_zero.training.checkpointing import CheckpointManager
+from ac_zero.training.instance_source import build_instance_source
 from ac_zero.training.losses import masked_softmax
 from ac_zero.training.pipeline import run_training_pipeline
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
@@ -94,7 +95,12 @@ def test_generalized_advantages_matches_manual_gae() -> None:
 def test_collect_rollouts_normalizes_advantages_and_records_legal_actions() -> None:
     config = _ppo_config()
     examples, episodes = collect_rollouts(
-        config, StateEncoder(config.max_word_length), create_trainable_model("residual_mlp"), 1, 0
+        config,
+        StateEncoder(config.max_word_length),
+        create_trainable_model("residual_mlp"),
+        1,
+        0,
+        build_instance_source(config),
     )
     assert len(episodes) == config.episodes_per_iteration
     assert examples
@@ -149,7 +155,9 @@ def test_trainer_iteration_updates_the_model_and_reports_finite_stats() -> None:
     env = ACEnvironment(generate_solvable(2, 2, 0).presentation, ACEnvironmentConfig(max_moves=6))
     model.apply(StateEncoder().encode(env.state), len(env.legal_action_mask()))
     before = model.to_json()["parameters"]
-    trainer = PPOTrainer(config, StateEncoder(config.max_word_length))
+    trainer = PPOTrainer(
+        config, StateEncoder(config.max_word_length), build_instance_source(config)
+    )
     result = trainer.run_iteration(model, seed=5, iteration=1, rng=random.Random(5))
 
     assert len(result.episodes) == config.episodes_per_iteration
@@ -221,7 +229,9 @@ def test_cli_train_selects_the_ppo_backend(monkeypatch, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    assert main(["train", "--config", str(config_path), "--seed", "3", "--workers", "1"]) == 0
+    argv = ["train", "--config", str(config_path), "--seed", "3"]
+    argv += ["--workers", "1", "--self-generated"]
+    assert main(argv) == 0
     checkpoint = CheckpointManager(tmp_path / "runs/ppo/checkpoints").load_json("latest")
     assert checkpoint["config"]["agent"] == "ppo"
     assert checkpoint["config"]["max_moves"] == 6  # the `horizon` alias fed max_moves

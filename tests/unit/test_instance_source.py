@@ -169,6 +169,38 @@ def test_scramble_source_has_no_potentials() -> None:
     assert ScrambleSource(rank=2, depth=3).potentials == {}
 
 
+def test_scramble_source_describes_itself() -> None:
+    assert ScrambleSource(rank=2, depth=6).describe() == {
+        "source": "scramble",
+        "rank": 2,
+        "depth": 6,
+    }
+
+
+def test_dataset_source_describe_reports_group_and_annotation_stats(tmp_path: Path) -> None:
+    presentations = _presentations([1, 2, 5, 8])
+    dataset = tmp_path / "train.groups.json"
+    annotations = tmp_path / "train.universal.annotations.json"
+    _write_groups(dataset, presentations)
+    # Three of four groups carry a known distance; one is left unresolved.
+    rows = {p.content_hash: {"origin": d} for p, d in zip(presentations, [1, 2, 5], strict=False)}
+    rows[presentations[3].content_hash] = {"origin": None}
+    _write_annotations(annotations, rows, moveset="universal")
+
+    summary = DatasetSource.from_file(dataset, annotations, max_difficulty=2).describe()
+    assert summary["source"] == "dataset"
+    assert summary["path"] == str(dataset)
+    assert summary["groups_total"] == 4
+    # max_difficulty=2 keeps only the two easiest groups.
+    assert summary["groups_used"] == 2
+    # Annotation coverage is over the whole file, not the filtered subset.
+    assert summary["annotated"] == 3
+    assert summary["annotated_pct"] == 75.0
+    assert summary["max_difficulty"] == 2
+    assert summary["distance_min"] == 1
+    assert summary["distance_max"] == 2
+
+
 def test_build_instance_source_switches_on_config(tmp_path: Path) -> None:
     presentations = _presentations([1, 2])
     dataset = tmp_path / "train.groups.json"

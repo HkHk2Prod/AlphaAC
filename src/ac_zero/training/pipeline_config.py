@@ -59,6 +59,12 @@ class TrainingPipelineConfig:
     learning_rate: float = 0.05
     value_loss_weight: float = 1.0
     checkpoint_every: int = 1
+    # Emit a terminal progress line at INFO on the first and every
+    # ``progress_every``-th recurring event (self-play iteration, optimizer
+    # step); the steps in between are logged at DEBUG so the JSONL event log and
+    # ASCII graphs still receive every point while the terminal stays readable on
+    # long Kaggle/PC runs.
+    progress_every: int = 100
     run_directory: str = "runs/train"
     # Optional local checkpoint (``best.json``/``latest.json`` payload) whose model
     # weights initialize this run -- a warm start from a previous run's best model.
@@ -158,6 +164,12 @@ class TrainingPipelineConfig:
                     data.get("checkpoint_every", defaults.checkpoint_every),
                 )
             ),
+            progress_every=int(
+                training.get(
+                    "progress_every",
+                    data.get("progress_every", defaults.progress_every),
+                )
+            ),
             run_directory=str(
                 training.get("run_directory", data.get("run_directory", defaults.run_directory))
             ),
@@ -230,6 +242,8 @@ class TrainingPipelineConfig:
             raise ValueError("value_loss_weight must be non-negative")
         if self.checkpoint_every <= 0:
             raise ValueError("checkpoint_every must be positive")
+        if self.progress_every <= 0:
+            raise ValueError("progress_every must be positive")
 
 
 def _dict_value(data: dict[str, Any], key: str) -> dict[str, Any]:

@@ -69,18 +69,20 @@ def collect_episodes(
     model: TrainablePolicyValueModel,
     seed: int,
     iteration: int,
+    source: InstanceSource,
 ) -> list[tuple[list[ReplayExample], EpisodeMetrics]]:
     """Collect one iteration's self-play episodes, fanning out across processes.
 
     Each episode is fully determined by its seed and the current model, so the
     episodes run independently and are reassembled in order; the result is
-    identical whether one or many worker processes are used.
+    identical whether one or many worker processes are used. ``source`` is the
+    run's instance source, reused across iterations so a large grown dataset is
+    parsed once; worker processes build their own copy once per worker instead.
     """
     episode_seeds = [
         seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)
     ]
     if resolve_worker_count(config.workers) <= 1:
-        source = build_instance_source(config)
         return [
             _collect_episode(config, encoder, episode_seed, model, source)
             for episode_seed in episode_seeds

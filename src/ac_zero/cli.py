@@ -182,6 +182,12 @@ def main(argv: list[str] | None = None) -> int:
         help="hours between checkpoint uploads; the final best model is always pushed",
     )
     train.add_argument(
+        "--self-generated",
+        action="store_true",
+        help="seed self-play from random scrambles instead of the HF group dataset (the default); "
+        "ignores any dataset.path in the config",
+    )
+    train.add_argument(
         "--force-download-dataset",
         action="store_true",
         help="re-pull the dataset groups and annotations from the bucket even if present locally",
@@ -258,6 +264,7 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             checkpoint_name=args.checkpoint_name,
             checkpoint_bucket=args.checkpoint_bucket,
             upload_every_hours=args.upload_every_hours,
+            self_generated=args.self_generated,
             force_download_dataset=args.force_download_dataset,
         )
     if args.cmd == "benchmark":
@@ -330,6 +337,7 @@ def _train(
     checkpoint_name: str | None = None,
     checkpoint_bucket: str | None = None,
     upload_every_hours: float = 3.0,
+    self_generated: bool = False,
     force_download_dataset: bool = False,
 ) -> int:
     """Run the config-driven replay and policy/value training pipeline."""
@@ -338,6 +346,13 @@ def _train(
         config = replace(config, workers=workers)
     if checkpoint_name:
         config = replace(config, checkpoint_name=checkpoint_name)
+    # Seed self-play from the HF group dataset by default (deriving the rank/moveset
+    # file names when the config leaves them unset); `--self-generated` opts back
+    # into random scrambles by clearing the dataset paths.
+    if self_generated:
+        config = replace(config, dataset_path=None, dataset_annotations_path=None)
+    else:
+        config = _seed_from_default_dataset(config)
     bucket = checkpoint_bucket or DEFAULT_BUCKET
     _ensure_training_dataset(config, reporter, force=force_download_dataset)
     if download_checkpoint:
@@ -358,6 +373,22 @@ def _train(
         sort_keys=True,
     )
     return 0
+
+
+def _seed_from_default_dataset(config: TrainingPipelineConfig) -> TrainingPipelineConfig:
+    """Point the run at the rank/moveset default dataset files under ``DATASET_DIR``.
+
+    Mirrors the Kaggle notebook's naming (``train_rank{rank}.groups.json`` and
+    ``train_rank{rank}.{moveset}.annotations.json``) so ``aczero train`` seeds
+    from the same HF group dataset. Explicit ``dataset.path``/``dataset.annotations``
+    in the config win, so a user-set path is never overridden.
+    """
+    groups = config.dataset_path or f"{DATASET_DIR}/train_rank{config.rank}.groups.json"
+    annotations = (
+        config.dataset_annotations_path
+        or f"{DATASET_DIR}/train_rank{config.rank}.{config.moveset}.annotations.json"
+    )
+    return replace(config, dataset_path=groups, dataset_annotations_path=annotations)
 
 
 def _ensure_training_dataset(

@@ -161,11 +161,15 @@ def collect_rollouts(
     model: TrainablePolicyValueModel,
     seed: int,
     iteration: int,
+    source: InstanceSource,
 ) -> tuple[list[PPOExample], list[EpisodeMetrics]]:
-    """Collect one iteration's rollouts and build advantage-normalized examples."""
+    """Collect one iteration's rollouts and build advantage-normalized examples.
+
+    ``source`` is the run's instance source, reused across iterations so a large
+    grown dataset is parsed once; workers build their own copy once per worker.
+    """
     seeds = [seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)]
     if resolve_worker_count(config.workers) <= 1:
-        source = build_instance_source(config)
         rollouts = [_collect_rollout(config, encoder, s, model, source) for s in seeds]
     else:
         rollouts = parallel_map(
@@ -218,10 +222,13 @@ class PPOTrainer:
     it iteration by iteration and handles logging and checkpoints.
     """
 
-    def __init__(self, config: TrainingPipelineConfig, encoder: StateEncoder) -> None:
-        """Bind the trainer to the run config and shared state encoder."""
+    def __init__(
+        self, config: TrainingPipelineConfig, encoder: StateEncoder, source: InstanceSource
+    ) -> None:
+        """Bind the trainer to the run config, state encoder, and instance source."""
         self.config = config
         self.encoder = encoder
+        self.source = source
 
     def run_iteration(
         self,
@@ -231,7 +238,9 @@ class PPOTrainer:
         rng: random.Random,
     ) -> PPOIterationResult:
         """Collect rollouts and apply this iteration's PPO updates to `model`."""
-        examples, episodes = collect_rollouts(self.config, self.encoder, model, seed, iteration)
+        examples, episodes = collect_rollouts(
+            self.config, self.encoder, model, seed, iteration, self.source
+        )
         updates = self._optimize(model, examples, rng) if examples else []
         return PPOIterationResult(len(examples), episodes, updates)
 

@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from ac_zero.cli import main
+from ac_zero.datasets.generator import generate_solvable
 from ac_zero.training.callbacks import CallbackManager
 from ac_zero.training.checkpointing import CheckpointManager
 from ac_zero.training.events import TrainingEvent
@@ -55,8 +56,13 @@ def test_training_pipeline_opens_with_full_task_description(tmp_path: Path) -> N
     assert start.metrics["episodes_per_iteration"] == config.episodes_per_iteration
     assert start.metrics["learning_rate"] == config.learning_rate
     assert start.metrics["run_directory"] == config.run_directory
+    # It then summarizes the instance source episodes start from (here: scrambles).
+    dataset_event = sink.events[1]
+    assert dataset_event.phase == "dataset"
+    assert dataset_event.metrics["source"] == "scramble"
+    assert dataset_event.metrics["depth"] == config.scramble_depth
     # The run then reports whether it fans self-play out across worker processes.
-    worker_event = sink.events[1]
+    worker_event = sink.events[2]
     assert worker_event.metrics["parallel"] is True
     assert worker_event.metrics["workers"] == 2
 
@@ -206,6 +212,57 @@ def test_config_reads_worker_count_from_mapping() -> None:
     # The default autodetects: 0 means "use every CPU core".
     assert TrainingPipelineConfig().workers == 0
     assert TrainingPipelineConfig.from_mapping({"training": {"workers": 1}}).workers == 1
+
+
+def test_config_reads_progress_every_from_mapping() -> None:
+    assert TrainingPipelineConfig().progress_every == 100
+    assert (
+        TrainingPipelineConfig.from_mapping({"training": {"progress_every": 25}}).progress_every
+        == 25
+    )
+    with pytest.raises(ValueError, match="progress_every must be positive"):
+        TrainingPipelineConfig(progress_every=0).validate()
+
+
+def test_progress_every_throttles_recurring_events_to_debug(tmp_path: Path) -> None:
+    from ac_zero.training.events import LogLevel
+
+    config = TrainingPipelineConfig(
+        scramble_depth=1,
+        max_moves=4,
+        model="residual_mlp",
+        mcts_simulations=4,
+        iterations=3,
+        episodes_per_iteration=2,
+        optimizer_updates=2,
+        batch_size=2,
+        progress_every=2,
+        run_directory=str(tmp_path / "train"),
+    )
+    sink = _CapturingSink()
+    run_training_pipeline(config, seed=7, callbacks=CallbackManager((sink,)))
+
+    # Optimizer steps 1..6: INFO on the first and every 2nd step, DEBUG otherwise.
+    optimizer_levels = {
+        event.metrics["optimizer_step"]: event.level
+        for event in sink.events
+        if event.phase == "optimizer"
+    }
+    assert optimizer_levels[1] == LogLevel.INFO  # always announce the first step
+    assert optimizer_levels[2] == LogLevel.INFO
+    assert optimizer_levels[3] == LogLevel.DEBUG
+    assert optimizer_levels[4] == LogLevel.INFO
+    assert optimizer_levels[5] == LogLevel.DEBUG
+
+    # Self-play iterations follow the same interval on their own counter.
+    self_play_levels = {
+        event.metrics["iteration"]: event.level
+        for event in sink.events
+        if event.phase == "self_play" and "iteration" in event.metrics
+    }
+    assert self_play_levels[1] == LogLevel.INFO
+    assert self_play_levels[2] == LogLevel.INFO
+    assert self_play_levels[3] == LogLevel.DEBUG
 
 
 def test_config_reads_dataset_seeding_from_mapping() -> None:
@@ -391,6 +448,7 @@ def test_cli_train_uploads_checkpoints_when_flagged(monkeypatch, tmp_path: Path)
             "--upload-checkpoints",
             "--checkpoint-bucket",
             "ns/bucket",
+            "--self-generated",
         ]
     )
     assert exit_code == 0
@@ -497,6 +555,7 @@ def test_cli_train_download_checkpoint_warm_starts(monkeypatch, tmp_path: Path) 
             "--download-checkpoint",
             "--checkpoint-name",
             "my-lineage",
+            "--self-generated",
         ]
     )
     assert exit_code == 0
@@ -507,6 +566,112 @@ def test_cli_train_download_checkpoint_warm_starts(monkeypatch, tmp_path: Path) 
     assert meta["warm_started_from"] == "runs/train/warm/warm_start.json"
     # The custom name flows through to the uploaded lineage identity too.
     assert meta["checkpoint_name"] == "my-lineage"
+
+
+def test_seed_from_default_dataset_derives_names_and_respects_config() -> None:
+    from ac_zero.cli import _seed_from_default_dataset
+
+    # With nothing set, both files are derived from rank + moveset.
+    derived = _seed_from_default_dataset(TrainingPipelineConfig(rank=2, moveset="strict-ac"))
+    assert derived.dataset_path == "data/generated/train_rank2.groups.json"
+    assert derived.dataset_annotations_path == (
+        "data/generated/train_rank2.strict-ac.annotations.json"
+    )
+
+    # An explicit config path is never overridden by the derivation.
+    explicit = _seed_from_default_dataset(
+        TrainingPipelineConfig(rank=3, dataset_path="custom/groups.json")
+    )
+    assert explicit.dataset_path == "custom/groups.json"
+    assert explicit.dataset_annotations_path == (
+        "data/generated/train_rank3.strict-ac.annotations.json"
+    )
+
+
+def test_cli_train_seeds_from_dataset_by_default(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    pulled: list[str] = []
+
+    def _fake_download(local, *, remote_name=None, bucket, missing_ok=False):  # type: ignore[no-untyped-def]
+        pulled.append(str(local))
+        Path(local).parent.mkdir(parents=True, exist_ok=True)
+        # Groups file the DatasetSource can load; annotations can be a stub.
+        if str(local).endswith(".groups.json"):
+            from ac_zero.datasets.groups import group_entry
+
+            fixture = generate_solvable(rank=2, depth=2, seed=0).presentation
+            entry = group_entry(fixture, ac_trivial=True, source="test")
+            Path(local).write_text(json.dumps({"rank": 2, "groups": [entry]}), encoding="utf-8")
+        else:
+            Path(local).write_text(json.dumps({"annotations": []}), encoding="utf-8")
+        return Path(local)
+
+    monkeypatch.setattr("ac_zero.cli.download_dataset", _fake_download)
+    config_path = tmp_path / "train.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "rank: 2",
+                "max_moves: 4",
+                "model: linear_policy_value",
+                "moveset: strict-ac",
+                "training:",
+                "  iterations: 1",
+                "  episodes_per_iteration: 1",
+                "  optimizer_updates: 1",
+                "  batch_size: 1",
+                "  mcts_simulations: 2",
+                "  run_directory: runs/train/seeded",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # No flag: the run seeds from the HF dataset, pulling both derived files.
+    exit_code = main(["train", "--config", str(config_path), "--seed", "0"])
+    assert exit_code == 0
+    assert "data/generated/train_rank2.groups.json" in pulled
+    assert "data/generated/train_rank2.strict-ac.annotations.json" in pulled
+
+
+def test_cli_train_self_generated_uses_scrambles(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    pulled: list[str] = []
+
+    def _fail_download(*args, **kwargs):  # type: ignore[no-untyped-def]
+        pulled.append("called")
+        raise AssertionError("no dataset download expected for --self-generated")
+
+    monkeypatch.setattr("ac_zero.cli.download_dataset", _fail_download)
+    config_path = tmp_path / "train.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "rank: 2",
+                "max_moves: 4",
+                "model: linear_policy_value",
+                # An explicit dataset.path is ignored under --self-generated.
+                "dataset:",
+                "  path: data/generated/train_rank2.groups.json",
+                "training:",
+                "  iterations: 1",
+                "  episodes_per_iteration: 1",
+                "  optimizer_updates: 1",
+                "  batch_size: 1",
+                "  mcts_simulations: 2",
+                "  run_directory: runs/train/scrambled",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["train", "--config", str(config_path), "--seed", "0", "--self-generated"])
+    assert exit_code == 0
+    assert pulled == []
+    events = (tmp_path / "runs/train/scrambled/logs/training_events.jsonl").read_text()
+    assert '"source": "scramble"' in events
 
 
 def test_cli_train_uses_configured_pipeline(monkeypatch, tmp_path: Path) -> None:
@@ -534,7 +699,8 @@ def test_cli_train_uses_configured_pipeline(monkeypatch, tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    assert main(["train", "--config", str(config_path), "--seed", "3"]) == 0
+    # --self-generated keeps this offline (no dataset download).
+    assert main(["train", "--config", str(config_path), "--seed", "3", "--self-generated"]) == 0
     checkpoint = CheckpointManager(tmp_path / "runs/train/test/checkpoints").load_json("latest")
     assert checkpoint["schema_version"] == "aczero-training-checkpoint-v1"
     assert checkpoint["optimizer_state"]["step"] == 1

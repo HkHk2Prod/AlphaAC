@@ -20,6 +20,7 @@ from ac_zero.training.callbacks import CallbackManager, default_training_callbac
 from ac_zero.training.checkpoint_name import derive_checkpoint_name
 from ac_zero.training.checkpoint_writer import RunCheckpointer
 from ac_zero.training.events import LogLevel
+from ac_zero.training.instance_source import build_instance_source
 from ac_zero.training.losses import PolicyValueLoss
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
 from ac_zero.training.pipeline_episodes import (
@@ -113,6 +114,9 @@ class _TrainingRun:
         self.manager = callbacks or default_training_callbacks(self.dirs.run)
         self.replay = ReplayBuffer[ReplayExample](config.replay_capacity)
         self.encoder = StateEncoder(config.max_word_length)
+        # Built once up front so the run can log what it trains on; self-play
+        # rebuilds its own source per iteration (and per worker).
+        self._instance_source = build_instance_source(config)
         self.rng = random.Random(seed)
         self.model = create_trainable_model(config.model, seed=seed)
         self.warm_started_from = self._warm_start()
@@ -133,7 +137,11 @@ class _TrainingRun:
         self.return_ema: float | None = None
         self.last_mean_return = 0.0
         self.last_success_rate = 0.0
-        self.ppo = PPOTrainer(config, self.encoder) if config.agent == "ppo" else None
+        self.ppo = (
+            PPOTrainer(config, self.encoder, self._instance_source)
+            if config.agent == "ppo"
+            else None
+        )
 
     def _warm_start(self) -> str | None:
         """Initialize the model from a prior checkpoint when configured.
@@ -166,8 +174,11 @@ class _TrainingRun:
     def execute(self) -> TrainingPipelineSummary:
         try:
             self.manager.emit(0, "start", "starting training pipeline", self._run_description())
+            self.manager.emit(
+                1, "dataset", "self-play instance source", dict(self._instance_source.describe())
+            )
             _, worker_message, worker_metrics = describe_worker_pool(self.config.workers)
-            self.manager.emit(1, "self_play", worker_message, worker_metrics)
+            self.manager.emit(2, "self_play", worker_message, worker_metrics)
 
             for iteration in range(1, self.config.iterations + 1):
                 self._train_iteration(iteration)
@@ -220,6 +231,17 @@ class _TrainingRun:
         finally:
             self.manager.close()
 
+    def _progress_level(self, count: int) -> LogLevel:
+        """INFO on the first and every ``progress_every``-th recurring event, else DEBUG.
+
+        Throttles the terminal progress log on long runs: the DEBUG steps in
+        between are still recorded by the JSONL event log and the ASCII graphs
+        (which process every event); only the INFO terminal sink is quieted.
+        """
+        if count == 1 or count % self.config.progress_every == 0:
+            return LogLevel.INFO
+        return LogLevel.DEBUG
+
     def _train_iteration(self, iteration: int) -> None:
         """Run one iteration's self-play, then its optimizer updates and checkpoint."""
         if self.ppo is not None:
@@ -240,6 +262,7 @@ class _TrainingRun:
                 "success_rate": success_rate,
                 "replay_size": len(self.replay),
             },
+            level=self._progress_level(iteration),
         )
         self._run_optimizer_updates(iteration, mean_return, success_rate)
         if iteration % self.config.checkpoint_every == 0:
@@ -269,6 +292,7 @@ class _TrainingRun:
                 "success_rate": success_rate,
                 "examples": result.example_count,
             },
+            level=self._progress_level(iteration),
         )
         for stats in result.updates:
             self.optimizer_step += 1
@@ -288,7 +312,11 @@ class _TrainingRun:
             }
             self.metrics_rows.append(row)
             self.manager.emit(
-                iteration * 100 + self.optimizer_step, "optimizer", "updated policy via PPO", row
+                iteration * 100 + self.optimizer_step,
+                "optimizer",
+                "updated policy via PPO",
+                row,
+                level=self._progress_level(self.optimizer_step),
             )
         if iteration % self.config.checkpoint_every == 0:
             self._save_checkpoint(iteration)
@@ -302,7 +330,9 @@ class _TrainingRun:
     def _collect_iteration(self, iteration: int) -> list[EpisodeMetrics]:
         """Collect this iteration's self-play episodes into the replay buffer."""
         episodes: list[EpisodeMetrics] = []
-        collected = collect_episodes(self.config, self.encoder, self.model, self.seed, iteration)
+        collected = collect_episodes(
+            self.config, self.encoder, self.model, self.seed, iteration, self._instance_source
+        )
         for examples, episode_metrics in collected:
             self.replay.extend(examples)
             episodes.append(episode_metrics)
@@ -338,6 +368,7 @@ class _TrainingRun:
                 "optimizer",
                 "updated policy-value model",
                 row,
+                level=self._progress_level(self.optimizer_step),
             )
 
     def _save_checkpoint(self, iteration: int) -> Path:
