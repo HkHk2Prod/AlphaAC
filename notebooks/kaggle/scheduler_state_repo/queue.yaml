@@ -81,7 +81,9 @@ tasks:
       training:
         reward_mode: potential    # potential-based shaping from distance-to-origin
         gamma: 0.99
-        iterations: 40
+        # Effectively uncapped: the notebook passes --minutes, so the soft runtime
+        # deadline (not this cap) ends the run and it fills the whole budget.
+        iterations: 100000000
         episodes_per_iteration: 24
         optimizer_updates: 8
         batch_size: 64
@@ -117,7 +119,8 @@ tasks:
       training:
         reward_mode: potential
         gamma: 0.99
-        iterations: 40
+        # Effectively uncapped: --minutes ends the run (see the AlphaZero task).
+        iterations: 100000000
         episodes_per_iteration: 32
         batch_size: 64
         ppo_epochs: 4

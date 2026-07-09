@@ -8,11 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ac_zero.agents.greedy import GreedySolver
-from ac_zero.certificates.verifier import CertificateVerifier
-from ac_zero.datasets.generator import generate_solvable
 from ac_zero.encoding.padded import StateEncoder
-from ac_zero.environment.env import ACEnvironment
 from ac_zero.models.registry import create_trainable_model, model_from_json
 from ac_zero.system.manifests import ReproducibilityManifest
 from ac_zero.system.parallel import describe_worker_pool
@@ -22,14 +18,9 @@ from ac_zero.training.checkpoint_writer import RunCheckpointer
 from ac_zero.training.events import LogLevel
 from ac_zero.training.instance_source import build_instance_source
 from ac_zero.training.losses import PolicyValueLoss
+from ac_zero.training.pipeline_artifacts import render_plots, write_fixture_certificate
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
-from ac_zero.training.pipeline_episodes import (
-    EpisodeMetrics,
-    ReplayExample,
-    build_env_config,
-    collect_episodes,
-)
-from ac_zero.training.plots import PlotsUnavailable, render_training_plots
+from ac_zero.training.pipeline_episodes import EpisodeMetrics, ReplayExample, collect_episodes
 from ac_zero.training.ppo import PPOTrainer
 from ac_zero.training.replay_buffer import ReplayBuffer
 
@@ -130,6 +121,12 @@ class _TrainingRun:
         )
         self.metrics_rows: list[MetricsRow] = []
         self.optimizer_step = 0
+        # Iterations actually run: the wall-clock budget can end the loop early,
+        # so this -- not `config.iterations` -- is what the summary reports.
+        self.completed_iterations = 0
+        self.deadline = (
+            None if config.time_limit_s is None else time.monotonic() + config.time_limit_s
+        )
         self.final_loss = PolicyValueLoss(0.0, 0.0, 0.0)
         self.total_episodes = 0
         # Best model is picked by an EMA of self-play mean return, smoothing the
@@ -182,8 +179,17 @@ class _TrainingRun:
 
             for iteration in range(1, self.config.iterations + 1):
                 self._train_iteration(iteration)
+                self.completed_iterations = iteration
+                if self._budget_spent():
+                    self.manager.emit(
+                        self._late_event_id(2),
+                        "budget",
+                        "wall-clock budget spent; stopping at iteration boundary",
+                        {"iteration": iteration, "optimizer_step": self.optimizer_step},
+                    )
+                    break
 
-            checkpoint_path = self._save_checkpoint(self.config.iterations)
+            checkpoint_path = self._save_checkpoint(self.completed_iterations)
             restored = self.checkpointer.load_latest()
             checkpoint_restored = restored["optimizer_state"]["step"] == self.optimizer_step
             self._write_metrics()
@@ -194,7 +200,7 @@ class _TrainingRun:
 
             certificate_path, certificate_verified = self._write_certificate()
             self.manager.emit(
-                self._late_event_id(2),
+                self._late_event_id(4),
                 "certificate",
                 "solved fixture and verified certificate",
                 {
@@ -211,7 +217,7 @@ class _TrainingRun:
                 plot_paths,
             )
             self.manager.emit(
-                self._late_event_id(3),
+                self._late_event_id(5),
                 "completed",
                 "training pipeline completed",
                 {
@@ -392,46 +398,19 @@ class _TrainingRun:
             encoding="utf-8",
         )
 
+    def _budget_spent(self) -> bool:
+        """Whether the optional wall-clock budget has run out."""
+        return self.deadline is not None and time.monotonic() >= self.deadline
+
     def _write_certificate(self) -> tuple[Path, bool]:
-        """Solve a small fixture with the greedy solver and check its certificate verifies."""
         certificate_path = self.dirs.certificates / "example.json"
-        fixture = generate_solvable(self.config.rank, min(self.config.scramble_depth, 2), self.seed)
-        solve_env = ACEnvironment(fixture.presentation, build_env_config(self.config))
-        result = GreedySolver().solve(
-            solve_env,
-            certificate_path=certificate_path,
-            experiment_id="training",
-            seed=self.seed,
-        )
-        verified = bool(result.success and CertificateVerifier().verify_path(certificate_path).ok)
+        verified = write_fixture_certificate(self.config, self.seed, certificate_path)
         return certificate_path, verified
 
     def _render_plots(self) -> tuple[str, ...]:
-        """Render training-progress plots, reporting the outcome through the log.
-
-        Returns the written PNG paths. If matplotlib is not installed the run still
-        succeeds — a warning is logged pointing at the always-available ASCII graphs
-        and an empty tuple is returned.
-        """
-        try:
-            paths = render_training_plots(self.metrics_rows, self.dirs.artifacts)
-        except PlotsUnavailable:
-            self.manager.emit(
-                self.optimizer_step + 10,
-                "plots",
-                "matplotlib not installed; skipping image plots (ASCII graphs still written)",
-                {"matplotlib": False},
-                level=LogLevel.WARNING,
-            )
-            return ()
-        if paths:
-            self.manager.emit(
-                self.optimizer_step + 10,
-                "plots",
-                "rendered training-progress plots",
-                {"count": len(paths), "directory": str(self.dirs.artifacts)},
-            )
-        return tuple(str(path) for path in paths)
+        return render_plots(
+            self.metrics_rows, self.dirs.artifacts, self.manager, self._late_event_id(3)
+        )
 
     def _build_summary(
         self,
@@ -450,7 +429,7 @@ class _TrainingRun:
             checkpoint_bundle_dir=str(self.checkpointer.bundle.directory),
             run_id=self.checkpointer.run_id,
             best_return=self.checkpointer.best_metric,
-            iterations=self.config.iterations,
+            iterations=self.completed_iterations,
             episodes=self.total_episodes,
             replay_size=len(self.replay),
             optimizer_updates=self.optimizer_step,
@@ -466,7 +445,7 @@ class _TrainingRun:
 
     def _late_event_id(self, offset: int) -> int:
         """Monotonic event id for the post-loop artifact/certificate/completion events."""
-        return self.config.iterations * 100 + self.optimizer_step + offset
+        return self.completed_iterations * 100 + self.optimizer_step + offset
 
     def _run_description(self) -> MetricsRow:
         """Full description of the run: every parameter that shapes the trained model,

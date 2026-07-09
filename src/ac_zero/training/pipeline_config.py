@@ -65,6 +65,11 @@ class TrainingPipelineConfig:
     # ASCII graphs still receive every point while the terminal stays readable on
     # long Kaggle/PC runs.
     progress_every: int = 100
+    # Optional soft wall-clock budget in seconds. When set, the run stops at the
+    # first iteration boundary past the deadline and still writes its checkpoint,
+    # plots, and summary -- so a hosted run (Kaggle) ends cleanly and uploads its
+    # best model instead of being killed mid-iteration. None runs all `iterations`.
+    time_limit_s: float | None = None
     run_directory: str = "runs/train"
     # Optional local checkpoint (``best.json``/``latest.json`` payload) whose model
     # weights initialize this run -- a warm start from a previous run's best model.
@@ -244,6 +249,8 @@ class TrainingPipelineConfig:
             raise ValueError("checkpoint_every must be positive")
         if self.progress_every <= 0:
             raise ValueError("progress_every must be positive")
+        if self.time_limit_s is not None and self.time_limit_s <= 0:
+            raise ValueError("time_limit_s must be positive when set")
 
 
 def _dict_value(data: dict[str, Any], key: str) -> dict[str, Any]:

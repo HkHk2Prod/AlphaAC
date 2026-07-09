@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Fixed scheduled Kaggle training runs, which ended after `training.iterations`
+  (40) instead of filling their runtime budget, and never touched Hugging Face.
+  `aczero train` gains `--minutes`, a soft wall-clock budget (mirroring `dataset
+  grow`) that stops the loop at the next iteration boundary and still writes the
+  checkpoint, plots, certificate, and summary; `TrainingPipelineSummary.iterations`
+  now reports the iterations actually run. `scheduler_runner.ipynb` passes it --
+  reserving head-room so the final upload is not cut short by the watchdog -- plus
+  `--download-checkpoint`, `--upload-checkpoints`, and `--checkpoint-bucket`, so a
+  scheduled run warm-starts from the lineage's best model on the bucket and pushes
+  its own bundle back. `queue.yaml` no longer caps training iterations.
+- Fixed `datasets.hub.download_file` silently returning a path to a file that was
+  never written when the object is absent from the bucket: the hub skips missing
+  files with a warning by default, so it now passes `raise_on_missing_files=True`.
 - Added Hugging Face model checkpoints with warm start. Each run keeps a bundle
   (`<run>/model_checkpoint/`: `best.json`, `latest.json`, `metrics.jsonl`,
   `meta.json`) current, tracking the best model by an EMA of self-play mean

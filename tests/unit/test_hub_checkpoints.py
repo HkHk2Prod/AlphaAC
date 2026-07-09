@@ -36,8 +36,12 @@ def _install_bucket(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
         for local, remote in add or []:
             store[remote] = Path(local).read_bytes()
 
-    def download_bucket_files(bucket: str, files=None):  # type: ignore[no-untyped-def]
+    def download_bucket_files(bucket: str, files=None, *, raise_on_missing_files=False):  # type: ignore[no-untyped-def]
         for remote, local in files or []:
+            if remote not in store:
+                if raise_on_missing_files:
+                    raise FileNotFoundError(remote)
+                continue  # the real hub skips missing files with a warning
             Path(local).write_bytes(store[remote])
 
     module.list_bucket_tree = list_bucket_tree  # type: ignore[attr-defined]
