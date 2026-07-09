@@ -42,9 +42,14 @@ def _notebook_dir(tmp_path: Path) -> Path:
     nb = tmp_path / "nb"
     nb.mkdir()
     (nb / "kernel-metadata.json").write_text(
-        json.dumps({"id": "u/runner", "code_file": "x.ipynb", "dataset_sources": []}),
+        json.dumps({"id": "u/runner", "code_file": "runner.ipynb", "dataset_sources": []}),
         encoding="utf-8",
     )
+    minimal_nb = {
+        "cells": [{"cell_type": "markdown", "metadata": {}, "source": ["#"]}],
+        "nbformat": 4,
+    }
+    (nb / "runner.ipynb").write_text(json.dumps(minimal_nb), encoding="utf-8")
     return nb
 
 
@@ -221,11 +226,15 @@ def test_stop_launching_drains_without_killing(tmp_path: Path) -> None:
     assert report.launched == []
 
 
-def test_runtime_config_written_locally_and_archived(tmp_path: Path) -> None:
+def test_runtime_config_injected_into_notebook_and_archived(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
     store, backend = _store({"queue.yaml": _queue_yaml(nb, remaining_runs="null")})
     run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
-    local = json.loads((nb / "runtime_config.json").read_text())
-    assert local["mode"] == "generation"
+    # The config rides inside the pushed notebook (kaggle push uploads only the .ipynb).
+    notebook = json.loads((nb / "runner.ipynb").read_text())
+    injected = "".join(notebook["cells"][0]["source"])
+    assert "scheduler-runtime-config" in notebook["cells"][0]["metadata"]["tags"]
+    assert '"mode": "generation"' in injected and "runtime_config.json" in injected
+    # ...and is archived to the state repo for auditing.
     archived = backend.read_text("runtime_configs/latest/runtime_config.json")
     assert archived is not None and json.loads(archived)["task_id"] == "gen"

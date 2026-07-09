@@ -18,8 +18,9 @@ from ac_zero.scheduler.kaggle import KaggleClient
 from ac_zero.scheduler.models import Queue, SchedulerState, Task, utc_now
 from ac_zero.scheduler.runtime import (
     build_runtime_config,
+    code_file_of,
+    inject_runtime_config,
     patch_kernel_metadata,
-    write_runtime_config,
 )
 from ac_zero.scheduler.selection import Decision, run_is_live, select_launches
 from ac_zero.scheduler.store import RUNTIME_CONFIG_LATEST, Snapshot, StateConflict, StateStore
@@ -134,15 +135,15 @@ def _launch(
         state_repo_id=config.state_repo_id,
         state_repo_type=config.state_repo_type,
     )
-    write_runtime_config(task.notebook_dir, runtime)
-    patch_kernel_metadata(task.notebook_dir, task, secrets_dataset=config.secrets_dataset)
-
     rt = state.task_state(task.id)
     from ac_zero.scheduler.kaggle import KaggleError
 
     try:
+        patch_kernel_metadata(task.notebook_dir, task, secrets_dataset=config.secrets_dataset)
+        code_file = code_file_of(task.notebook_dir)
+        inject_runtime_config(task.notebook_dir, code_file, runtime)
         result = kaggle.push(task.notebook_dir)
-    except (KaggleError, FileNotFoundError) as exc:
+    except (KaggleError, FileNotFoundError, ValueError) as exc:
         rt.latest_error = str(exc)
         rt.latest_status = "launch_failed"
         log(f"  LAUNCH FAILED {task.id}: {exc}")

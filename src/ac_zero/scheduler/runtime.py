@@ -1,9 +1,14 @@
-"""Build the per-run ``runtime_config.json`` and patch ``kernel-metadata.json``.
+"""Build the per-run runtime config and prepare the notebook for ``kaggle push``.
 
-Immediately before ``kaggle kernels push``, the controller drops a
-``runtime_config.json`` into the local notebook directory and rewrites the
-kernel metadata for this task (GPU flag, privacy, secrets dataset input). The
-notebook reads the config at startup and branches on ``mode``.
+Immediately before ``kaggle kernels push``, the controller injects the per-run
+config **into the notebook itself** and rewrites the kernel metadata for this
+task (GPU flag, privacy, secrets dataset input). The notebook reads the config
+at startup and branches on ``mode``.
+
+``kaggle kernels push`` uploads only the notebook and ``kernel-metadata.json`` --
+not other files in the directory -- so the config cannot be shipped as a
+separate ``runtime_config.json`` file; it is embedded as the notebook's first
+cell, which recreates ``runtime_config.json`` at runtime on Kaggle.
 
 Secrets never appear here: the HF token travels only through the private Kaggle
 ``runtime-secrets`` dataset, never through this config or the metadata.
@@ -17,8 +22,8 @@ from typing import Any
 
 from ac_zero.scheduler.models import Task
 
-RUNTIME_CONFIG_NAME = "runtime_config.json"
 KERNEL_METADATA_NAME = "kernel-metadata.json"
+CONFIG_CELL_TAG = "scheduler-runtime-config"
 
 
 def build_runtime_config(
@@ -42,12 +47,57 @@ def build_runtime_config(
     }
 
 
-def write_runtime_config(notebook_dir: str | Path, config: dict[str, Any]) -> Path:
-    """Write ``runtime_config.json`` into the notebook dir; return its path."""
-    path = Path(notebook_dir) / RUNTIME_CONFIG_NAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+def _config_cell_source(config: dict[str, Any]) -> list[str]:
+    """Python source (as nbformat line list) that recreates the config file."""
+    lines = [
+        "# Injected by the Kaggle scheduler: recreate runtime_config.json for this run.\n",
+        "# `kaggle kernels push` uploads only the notebook, so the config rides inside it.\n",
+        "import json as _json\n",
+        f"_RUNTIME_CONFIG = {json.dumps(config)}\n",
+        'with open("runtime_config.json", "w") as _f:\n',
+        "    _json.dump(_RUNTIME_CONFIG, _f)\n",
+    ]
+    return lines
+
+
+def inject_runtime_config(notebook_dir: str | Path, code_file: str, config: dict[str, Any]) -> Path:
+    """Embed ``config`` as the notebook's first cell (idempotent).
+
+    Removes any previously injected config cell first, then inserts a fresh one
+    that writes ``runtime_config.json`` at runtime. Returns the notebook path.
+    """
+    path = Path(notebook_dir) / code_file
+    if not path.is_file():
+        raise FileNotFoundError(f"{path} not found; the notebook dir must ship {code_file}.")
+    notebook = json.loads(path.read_text(encoding="utf-8"))
+    cells = [
+        cell
+        for cell in notebook.get("cells", [])
+        if CONFIG_CELL_TAG not in cell.get("metadata", {}).get("tags", [])
+    ]
+    config_cell = {
+        "cell_type": "code",
+        "metadata": {"tags": [CONFIG_CELL_TAG]},
+        "execution_count": None,
+        "outputs": [],
+        "source": _config_cell_source(config),
+    }
+    cells.insert(0, config_cell)
+    notebook["cells"] = cells
+    path.write_text(json.dumps(notebook, indent=1) + "\n", encoding="utf-8")
     return path
+
+
+def code_file_of(notebook_dir: str | Path) -> str:
+    """Read the notebook's filename from its ``kernel-metadata.json``."""
+    meta_path = Path(notebook_dir) / KERNEL_METADATA_NAME
+    if not meta_path.is_file():
+        raise FileNotFoundError(f"{meta_path} not found; cannot determine the notebook file.")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    code_file = meta.get("code_file")
+    if not code_file:
+        raise ValueError(f"{meta_path} has no 'code_file' field.")
+    return str(code_file)
 
 
 def patch_kernel_metadata(
