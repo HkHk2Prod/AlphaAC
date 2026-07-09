@@ -114,8 +114,8 @@ class _TrainingRun:
         self.manager = callbacks or default_training_callbacks(self.dirs.run)
         self.replay = ReplayBuffer[ReplayExample](config.replay_capacity)
         self.encoder = StateEncoder(config.max_word_length)
-        # Built once up front so the run can log what it trains on; self-play
-        # rebuilds its own source per iteration (and per worker).
+        # Built once up front so the run can log what it trains on, and so the
+        # dataset sidecar is compiled here rather than raced for by every worker.
         self._instance_source = build_instance_source(config)
         self.rng = random.Random(seed)
         self.model = create_trainable_model(config.model, seed=seed)

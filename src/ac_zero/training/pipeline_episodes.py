@@ -76,8 +76,9 @@ def collect_episodes(
     Each episode is fully determined by its seed and the current model, so the
     episodes run independently and are reassembled in order; the result is
     identical whether one or many worker processes are used. ``source`` is the
-    run's instance source, reused across iterations so a large grown dataset is
-    parsed once; worker processes build their own copy once per worker instead.
+    run's instance source, reused across iterations. Workers open their own handle
+    on it, which memory-maps the same dataset sidecar rather than parsing the
+    dataset again (see :mod:`ac_zero.datasets.instance_store`).
     """
     episode_seeds = [
         seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)

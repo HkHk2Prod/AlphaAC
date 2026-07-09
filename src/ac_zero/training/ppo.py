@@ -165,8 +165,9 @@ def collect_rollouts(
 ) -> tuple[list[PPOExample], list[EpisodeMetrics]]:
     """Collect one iteration's rollouts and build advantage-normalized examples.
 
-    ``source`` is the run's instance source, reused across iterations so a large
-    grown dataset is parsed once; workers build their own copy once per worker.
+    ``source`` is the run's instance source, reused across iterations. Workers
+    open their own handle on it, which memory-maps the same dataset sidecar rather
+    than parsing the dataset again (see :mod:`ac_zero.datasets.instance_store`).
     """
     seeds = [seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)]
     if resolve_worker_count(config.workers) <= 1:
