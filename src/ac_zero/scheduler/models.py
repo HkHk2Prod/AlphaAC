@@ -143,9 +143,7 @@ class SchedulerState:
             stop_launching=bool(data.get("stop_launching", False)),
             last_scheduler_started_at=data.get("last_scheduler_started_at"),
             last_scheduler_finished_at=data.get("last_scheduler_finished_at"),
-            tasks={
-                k: TaskRuntimeState.from_dict(v) for k, v in (data.get("tasks") or {}).items()
-            },
+            tasks={k: TaskRuntimeState.from_dict(v) for k, v in (data.get("tasks") or {}).items()},
             last_decisions=list(data.get("last_decisions") or []),
         )
 

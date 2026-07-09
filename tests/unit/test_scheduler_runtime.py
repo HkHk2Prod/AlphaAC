@@ -35,6 +35,7 @@ def test_generation_runtime_config_is_valid_and_secret_free() -> None:
     assert cfg["mode"] == "generation"
     assert cfg["config"]["rank"] == 2
     assert cfg["hf_state_repo_id"] == REPO
+
     # No secret material: no token-shaped values, no credential-named keys.
     def _values(obj: object) -> list[str]:
         if isinstance(obj, dict):

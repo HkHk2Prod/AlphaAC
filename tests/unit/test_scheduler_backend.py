@@ -54,9 +54,7 @@ def test_bucket_backend_commit_writes_all_files(monkeypatch: pytest.MonkeyPatch)
     store: dict[str, str] = {}
     _fake_bucket(monkeypatch, store)
     b = BucketStateBackend("u/bucket")
-    sha = b.commit(
-        {"queue.yaml": "q", "runs/latest.json": "{}\n"}, message="m", parent_sha=None
-    )
+    sha = b.commit({"queue.yaml": "q", "runs/latest.json": "{}\n"}, message="m", parent_sha=None)
     assert sha == ""  # buckets have no head SHA
     assert store["queue.yaml"] == "q"
     assert store["runs/latest.json"] == "{}\n"

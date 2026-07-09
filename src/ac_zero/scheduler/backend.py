@@ -61,9 +61,7 @@ class StateBackend(Protocol):
         """Return the file's text, or ``None`` if it does not exist."""
         ...
 
-    def commit(
-        self, files: dict[str, str], *, message: str, parent_sha: str | None
-    ) -> str:
+    def commit(self, files: dict[str, str], *, message: str, parent_sha: str | None) -> str:
         """Atomically write ``{path: text}``.
 
         If ``parent_sha`` is not ``None`` and differs from the current head,
@@ -90,9 +88,7 @@ class MemoryStateBackend:
     def read_text(self, path: str) -> str | None:
         return self._files.get(path)
 
-    def commit(
-        self, files: dict[str, str], *, message: str, parent_sha: str | None
-    ) -> str:
+    def commit(self, files: dict[str, str], *, message: str, parent_sha: str | None) -> str:
         if parent_sha is not None and parent_sha != self._sha:
             raise StateConflict(
                 f"remote state changed (head={self._sha!r}, expected={parent_sha!r})"
@@ -149,9 +145,7 @@ class HubStateBackend:
         with open(local, encoding="utf-8") as handle:
             return handle.read()
 
-    def commit(
-        self, files: dict[str, str], *, message: str, parent_sha: str | None
-    ) -> str:
+    def commit(self, files: dict[str, str], *, message: str, parent_sha: str | None) -> str:
         from huggingface_hub import CommitOperationAdd
 
         operations = [
@@ -207,9 +201,7 @@ class BucketStateBackend:
                 return None
             return local.read_text(encoding="utf-8")
 
-    def commit(
-        self, files: dict[str, str], *, message: str, parent_sha: str | None
-    ) -> str:
+    def commit(self, files: dict[str, str], *, message: str, parent_sha: str | None) -> str:
         from ac_zero.datasets.hub import upload_files
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -222,9 +214,7 @@ class BucketStateBackend:
         return ""
 
 
-def make_state_backend(
-    repo_id: str, *, token: str, repo_type: str = "dataset"
-) -> StateBackend:
+def make_state_backend(repo_id: str, *, token: str, repo_type: str = "dataset") -> StateBackend:
     """Build the backend for ``repo_type`` (``"bucket"`` or ``"dataset"``)."""
     if repo_type == "bucket":
         return BucketStateBackend(repo_id, token=token)

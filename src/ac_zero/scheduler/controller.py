@@ -224,8 +224,10 @@ def run_tick(
         )
         report.decisions = decisions
         for decision in decisions:
-            log(f"  decision {decision.task_id}: {'LAUNCH' if decision.launch else 'skip'} "
-                f"-- {decision.reason}")
+            log(
+                f"  decision {decision.task_id}: {'LAUNCH' if decision.launch else 'skip'} "
+                f"-- {decision.reason}"
+            )
 
         if selected and not config.dry_run and not store.owns_lease(config.owner):
             msg = "lost the scheduler lease before launching; aborting launches."
