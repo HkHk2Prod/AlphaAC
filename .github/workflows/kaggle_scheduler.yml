@@ -34,6 +34,14 @@ permissions:
 jobs:
   schedule:
     runs-on: ubuntu-latest
+    # Kaggle 2.x auth: the new-style token (kaggle.com/settings -> "Create New
+    # Token", a `KGAT_...` string) is stored in the KAGGLE_KEY secret and read
+    # from KAGGLE_API_TOKEN. KAGGLE_USERNAME is still used to derive Kaggle slugs
+    # (e.g. <user>/runtime-secrets), not for auth. Both propagate to the `kaggle`
+    # subprocesses the scheduler spawns.
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_KEY }}
+      KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,27 +52,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Pin the classic Kaggle CLI: kaggle 2.x (and the 1.7+/kagglesdk line)
-          # changed auth away from the username+key / kaggle.json our credential
-          # step writes. 1.6.17 uses stable REST basic auth with KAGGLE_USERNAME+KEY.
-          pip install "kaggle==1.6.17" "huggingface_hub>=1.21" pyyaml
-
-      - name: Configure Kaggle credentials
-        env:
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
-        run: |
-          set +x
-          mkdir -p ~/.kaggle
-          cat > ~/.kaggle/kaggle.json <<EOF
-          {"username":"$KAGGLE_USERNAME","key":"$KAGGLE_KEY"}
-          EOF
-          chmod 600 ~/.kaggle/kaggle.json
+          pip install "kaggle>=2.2" "huggingface_hub>=1.21" pyyaml
 
       - name: Update private Kaggle runtime-secrets dataset (HF model token)
         env:
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
           # Prefer a dedicated model token; fall back to the shared HF_TOKEN.
           HF_MODEL_TOKEN: ${{ secrets.HF_MODEL_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -74,8 +65,6 @@ jobs:
 
       - name: Run Kaggle scheduler
         env:
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
           # Prefer a dedicated state token; fall back to the shared HF_TOKEN.
           # (Python also applies this fallback, so either wiring works.)
           HF_STATE_TOKEN: ${{ secrets.HF_STATE_TOKEN }}
