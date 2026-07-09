@@ -232,9 +232,10 @@ def test_runtime_config_injected_into_notebook_and_archived(tmp_path: Path) -> N
     run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
     # The config rides inside the pushed notebook (kaggle push uploads only the .ipynb).
     notebook = json.loads((nb / "runner.ipynb").read_text())
-    injected = "".join(notebook["cells"][0]["source"])
-    assert "scheduler-runtime-config" in notebook["cells"][0]["metadata"]["tags"]
-    assert '"mode": "generation"' in injected and "runtime_config.json" in injected
+    first = notebook["cells"][0]
+    assert "scheduler-runtime-config" in first["metadata"]["tags"]
+    injected = "".join(first["source"])
+    assert "runtime_config.json" in injected and "generation" in injected
     # ...and is archived to the state repo for auditing.
     archived = backend.read_text("runtime_configs/latest/runtime_config.json")
     assert archived is not None and json.loads(archived)["task_id"] == "gen"

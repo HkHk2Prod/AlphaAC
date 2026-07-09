@@ -18,7 +18,20 @@ Runner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
 # Kaggle kernel statuses that mean the run is no longer occupying a slot.
 TERMINAL_STATUSES = frozenset({"complete", "error", "cancelacknowledged"})
 
-_STATUS_RE = re.compile(r'status\s+"?([A-Za-z]+)"?', re.IGNORECASE)
+# Matches both the classic 1.x form (`status "complete"`) and the 2.x enum form
+# (`status "KernelWorkerStatus.ERROR"`). The capture keeps dots/underscores so
+# `_normalize_status` can take the trailing enum member.
+_STATUS_RE = re.compile(r'status\s+"?([A-Za-z_.]+)"?', re.IGNORECASE)
+
+
+def _normalize_status(raw: str) -> str:
+    """Reduce a raw status token to a bare lowercase word.
+
+    ``KernelWorkerStatus.ERROR`` -> ``error``; ``CANCEL_ACKNOWLEDGED`` ->
+    ``cancelacknowledged``; ``complete`` -> ``complete``.
+    """
+    member = raw.rsplit(".", 1)[-1]
+    return member.replace("_", "").lower()
 
 
 class KaggleError(RuntimeError):
@@ -63,8 +76,8 @@ class KaggleClient:
         proc = self._run(["kaggle", "kernels", "status", slug])
         if proc.returncode != 0:
             return None
-        match = _STATUS_RE.search(proc.stdout or "")
-        return match.group(1).lower() if match else None
+        match = _STATUS_RE.search((proc.stdout or "") + (proc.stderr or ""))
+        return _normalize_status(match.group(1)) if match else None
 
     @staticmethod
     def is_terminal(status: str | None) -> bool:

@@ -48,16 +48,20 @@ def build_runtime_config(
 
 
 def _config_cell_source(config: dict[str, Any]) -> list[str]:
-    """Python source (as nbformat line list) that recreates the config file."""
-    lines = [
+    """Python source (as nbformat line list) that recreates the config file.
+
+    The config is embedded as a JSON *string* (double-encoded) and written
+    verbatim -- embedding the dict as a Python literal would break on JSON
+    ``false``/``true``/``null``, which are not Python identifiers.
+    """
+    payload = json.dumps(config)
+    return [
         "# Injected by the Kaggle scheduler: recreate runtime_config.json for this run.\n",
         "# `kaggle kernels push` uploads only the notebook, so the config rides inside it.\n",
-        "import json as _json\n",
-        f"_RUNTIME_CONFIG = {json.dumps(config)}\n",
+        f"_CONFIG_JSON = {json.dumps(payload)}\n",
         'with open("runtime_config.json", "w") as _f:\n',
-        "    _json.dump(_RUNTIME_CONFIG, _f)\n",
+        "    _f.write(_CONFIG_JSON)\n",
     ]
-    return lines
 
 
 def inject_runtime_config(notebook_dir: str | Path, code_file: str, config: dict[str, Any]) -> Path:

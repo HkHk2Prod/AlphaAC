@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -66,17 +67,33 @@ def _seed_notebook(tmp_path: Path, code_file: str = "runner.ipynb") -> Path:
     return path
 
 
-def test_inject_runtime_config_adds_first_cell(tmp_path: Path) -> None:
+def _exec_injected_cell(tmp_path: Path, run_dir: Path) -> dict:
+    """Run the notebook's first (injected) cell in run_dir; return the config it writes."""
+    nb = json.loads((tmp_path / "runner.ipynb").read_text())
+    first = nb["cells"][0]
+    assert CONFIG_CELL_TAG in first["metadata"]["tags"]
+    cwd = Path.cwd()
+    try:
+        os.chdir(run_dir)
+        exec(compile("".join(first["source"]), "<injected>", "exec"), {})
+    finally:
+        os.chdir(cwd)
+    return json.loads((run_dir / "runtime_config.json").read_text())
+
+
+def test_inject_runtime_config_cell_writes_valid_config(tmp_path: Path) -> None:
     _seed_notebook(tmp_path)
+    # stop_after_current_iteration -> JSON `false`, which must survive the round trip
+    # (embedding as a Python literal would raise NameError: name 'false' is not defined).
     cfg = build_runtime_config(
         _task("t", "generation"), run_id="r", state_repo_id=REPO, state_repo_type="bucket"
     )
     inject_runtime_config(tmp_path, "runner.ipynb", cfg)
-    nb = json.loads((tmp_path / "runner.ipynb").read_text())
-    first = nb["cells"][0]
-    assert CONFIG_CELL_TAG in first["metadata"]["tags"]
-    src = "".join(first["source"])
-    assert '"run_id": "r"' in src and "runtime_config.json" in src
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    written = _exec_injected_cell(tmp_path, run_dir)
+    assert written == cfg
+    assert written["stop_after_current_iteration"] is False
 
 
 def test_inject_runtime_config_is_idempotent(tmp_path: Path) -> None:
@@ -89,7 +106,9 @@ def test_inject_runtime_config_is_idempotent(tmp_path: Path) -> None:
     nb = json.loads((tmp_path / "runner.ipynb").read_text())
     tagged = [c for c in nb["cells"] if CONFIG_CELL_TAG in c.get("metadata", {}).get("tags", [])]
     assert len(tagged) == 1  # replaced, not accumulated
-    assert '"run_id": "r2"' in "".join(tagged[0]["source"])
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    assert _exec_injected_cell(tmp_path, run_dir)["run_id"] == "r2"
 
 
 def test_code_file_of_reads_metadata(tmp_path: Path) -> None:
