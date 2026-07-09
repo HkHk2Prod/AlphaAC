@@ -144,6 +144,17 @@ def test_patch_metadata_sets_gpu_and_secrets_source(tmp_path: Path) -> None:
     assert "user/runtime-secrets" in meta["dataset_sources"]
 
 
+def test_patch_metadata_title_resolves_to_id_slug(tmp_path: Path) -> None:
+    _seed_metadata(tmp_path)
+    task = _task("t", "training")
+    task.notebook_slug = "hkhk2prod/alphaac-train-alphazero"
+    patch_kernel_metadata(tmp_path, task, secrets_dataset="u/runtime-secrets")
+    meta = json.loads((tmp_path / "kernel-metadata.json").read_text())
+    assert meta["id"] == "hkhk2prod/alphaac-train-alphazero"
+    # Kaggle requires slugify(title) == id slug; hyphens->spaces round-trips.
+    assert meta["title"].replace(" ", "-") == "alphaac-train-alphazero"
+
+
 def test_patch_metadata_cpu_disables_gpu_and_is_idempotent(tmp_path: Path) -> None:
     _seed_metadata(tmp_path)
     task = _task("t", "generation", accelerator="cpu")

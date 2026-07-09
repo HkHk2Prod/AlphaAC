@@ -112,10 +112,10 @@ def patch_kernel_metadata(
 ) -> Path:
     """Patch the existing ``kernel-metadata.json`` for this launch.
 
-    Sets the kernel id to the task's slug, toggles the GPU per the task's
-    accelerator, forces the kernel private, and ensures the private
-    runtime-secrets dataset is listed as an input source. Preserves any other
-    fields (title, code_file, extra sources) already in the file.
+    Sets the kernel id (and a matching title -- Kaggle rejects a push whose title
+    does not slugify to the id), toggles the GPU per the task's accelerator,
+    forces the kernel private, and ensures the private runtime-secrets dataset is
+    listed as an input source. Preserves other fields (code_file, extra sources).
     """
     path = Path(notebook_dir) / KERNEL_METADATA_NAME
     if not path.is_file():
@@ -125,6 +125,10 @@ def patch_kernel_metadata(
     meta: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
 
     meta["id"] = task.notebook_slug
+    # Kaggle requires slugify(title) == the id's slug. Derive the title from the
+    # slug (hyphens -> spaces) so any per-task slug pushes cleanly.
+    slug = task.notebook_slug.split("/")[-1]
+    meta["title"] = slug.replace("-", " ")
     meta["kernel_type"] = meta.get("kernel_type", "notebook")
     meta["language"] = meta.get("language", "python")
     meta["is_private"] = "true"
