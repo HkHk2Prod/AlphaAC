@@ -49,40 +49,51 @@ def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(argv, capture_output=True, text=True)
 
 
+def _out(proc: subprocess.CompletedProcess[str]) -> str:
+    return (proc.stdout + proc.stderr).strip()
+
+
 def _publish(work: Path, slug: str, title: str) -> None:
-    """Create the dataset on first run, otherwise push a new version."""
+    """Push a new version if the dataset exists, otherwise create it.
+
+    Rather than fragile message-matching, this just tries each path in order and
+    stops at the first success: version-with-prune -> plain version -> create.
+    On the very first run the version calls fail (no dataset yet) and create
+    succeeds; on later runs the first version call wins.
+    """
     (work / "dataset-metadata.json").write_text(
         json.dumps({"title": title, "id": slug, "licenses": [{"name": "other"}]}, indent=2),
         encoding="utf-8",
     )
     base = ["kaggle", "datasets", "version", "-p", str(work),
             "-m", "rotate hf token", "--dir-mode", "zip"]
-    # A new version keeps the same slug; --delete-old-versions prunes stale token
-    # copies (needs a recent Kaggle CLI; ignored/failed calls fall back to create).
-    version = _run([*base, "--delete-old-versions"])
-    if version.returncode == 0:
-        print(f"Updated private Kaggle dataset {slug} (new version).")
+
+    # --delete-old-versions prunes stale token copies (needs a recent Kaggle CLI).
+    pruned = _run([*base, "--delete-old-versions"])
+    if pruned.returncode == 0:
+        print(f"Updated private Kaggle dataset {slug} (new version; old versions pruned).")
         return
 
-    combined = (version.stdout + version.stderr).lower()
-    if any(flag in combined for flag in ("delete-old-versions", "unrecognized", "no such option")):
-        version = _run(base)
-        if version.returncode == 0:
-            print(
-                f"Updated private Kaggle dataset {slug} (new version). NOTE: installed Kaggle "
-                "CLI cannot delete old versions; old token versions accumulate."
-            )
-            return
-        combined = (version.stdout + version.stderr).lower()
+    plain = _run(base)
+    if plain.returncode == 0:
+        print(
+            f"Updated private Kaggle dataset {slug} (new version). NOTE: installed Kaggle CLI "
+            "could not prune old versions; old token versions accumulate."
+        )
+        return
 
-    if "not found" in combined or "404" in combined or "does not exist" in combined:
-        create = _run(["kaggle", "datasets", "create", "-p", str(work), "--dir-mode", "zip"])
-        if create.returncode == 0:
-            print(f"Created private Kaggle dataset {slug}.")
-            return
-        raise SystemExit(f"ERROR: failed to create Kaggle dataset {slug}: {create.stderr.strip()}")
+    # Neither version call worked -- the dataset most likely does not exist yet.
+    create = _run(["kaggle", "datasets", "create", "-p", str(work), "--dir-mode", "zip"])
+    if create.returncode == 0:
+        print(f"Created private Kaggle dataset {slug}.")
+        return
 
-    raise SystemExit(f"ERROR: failed to update Kaggle dataset {slug}: {version.stderr.strip()}")
+    raise SystemExit(
+        f"ERROR: could not update or create Kaggle dataset {slug}.\n"
+        f"--- `datasets version --delete-old-versions` ---\n{_out(pruned)}\n"
+        f"--- `datasets version` ---\n{_out(plain)}\n"
+        f"--- `datasets create` ---\n{_out(create)}"
+    )
 
 
 def main() -> int:
