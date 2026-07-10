@@ -11,6 +11,7 @@ from ac_zero.training.events import LogLevel, TrainingEvent
 from ac_zero.training.navigation_curriculum import DistanceCurriculum, DistanceCurriculumConfig
 from ac_zero.training.navigation_metrics import (
     fold_alpha,
+    fold_curriculum,
     log_curriculum,
     navigation_eval_metrics,
 )
@@ -103,6 +104,7 @@ def _episode(progress: float, success: bool, *, start: int = 10) -> EpisodeMetri
         success=success,
         moves=3,
         nav=stats,
+        start_distance=start,
     )
 
 
@@ -194,6 +196,26 @@ def test_log_curriculum_emits_no_length_cap_event_when_lmax_holds() -> None:
     assert not [e for e in sink.events if e.phase == "length_cap"]
 
 
+def test_fold_curriculum_advances_on_distance_without_navigation_stats() -> None:
+    # A potential-reward run carries no `nav` stats, but its episodes still have a
+    # known start distance -- the curriculum must fold over those and advance L_max,
+    # not sit frozen because `nav` is None.
+    curriculum = DistanceCurriculum(
+        DistanceCurriculumConfig(
+            min_frontier_episodes_before_update=2, frontier_success_ema_rate=1.0
+        )
+    )
+    frontier = [
+        EpisodeMetrics(
+            total_return=1.0, normalized_return=1.0, success=True, moves=3, start_distance=2
+        )
+        for _ in range(2)
+    ]
+    updates = fold_curriculum(curriculum, frontier, L_max_episode=2)
+    assert len(updates) == 2  # both distance-annotated episodes were folded
+    assert curriculum.current_L_max() == 3  # ceiling grew off the solved frontier
+
+
 def _navigation_config(tmp_path: Path, agent: str) -> TrainingPipelineConfig:
     dataset_path, annotations_path = _annotated_dataset(tmp_path)
     return TrainingPipelineConfig(
@@ -228,6 +250,14 @@ def test_navigation_pipeline_emits_alpha_and_eval_metrics(tmp_path: Path, agent:
     # Per-episode alpha logging (item 1 of the reward spec).
     episode_events = [e for e in sink.events if e.phase == "navigation_episode"]
     assert episode_events
+    # Each iteration's self-play line reports the run's live dynamic parameters:
+    # the shaping weight alpha and the distance curriculum ceiling L_max.
+    iteration_events = [
+        e for e in sink.events if e.phase == "self_play" and "iteration" in e.metrics
+    ]
+    assert iteration_events
+    assert "alpha" in iteration_events[-1].metrics
+    assert "L_max" in iteration_events[-1].metrics
 
 
 def test_distance_curriculum_is_on_by_default_for_any_dataset_run(tmp_path: Path) -> None:

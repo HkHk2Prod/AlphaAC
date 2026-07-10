@@ -75,6 +75,9 @@ def test_console_summary_bundles_iteration_and_drops_per_episode_events() -> Non
                 "mean_return": 0.42,
                 "success_rate": 0.5,
                 "replay_size": 4096,
+                # Dynamic learning parameters folded onto the iteration line.
+                "alpha": 0.3,
+                "L_max": 4,
             },
         )
     )
@@ -86,6 +89,20 @@ def test_console_summary_bundles_iteration_and_drops_per_episode_events() -> Non
     assert "success=0.50" in printed
     assert "loss=0.1234" in printed
     assert "replay=4096" in printed
+    # Each iteration line shows the current value of the run's dynamic parameters.
+    assert "alpha=0.300" in printed
+    assert "L_max=4" in printed
+
+
+def test_console_iteration_line_omits_inactive_dynamic_parameters() -> None:
+    stream = io.StringIO()
+    logger = ConsoleSummaryLogger(stream=stream)
+    # A plain run carries neither alpha nor L_max, so the line adds no params.
+    logger.on_event(_event("self_play", {"iteration": 1, "episodes": 4, "mean_return": 0.1}))
+    printed = stream.getvalue()
+    assert "iter     1" in printed
+    assert "alpha=" not in printed
+    assert "L_max=" not in printed
 
 
 def test_console_summary_start_prints_every_parameter() -> None:

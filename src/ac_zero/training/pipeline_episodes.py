@@ -45,7 +45,10 @@ class EpisodeMetrics:
 
     ``nav`` carries the navigation reward's per-episode aggregate (progress,
     success, component sums) that feeds the alpha updater and the evaluation
-    metrics; ``None`` for other reward modes.
+    metrics; ``None`` for other reward modes. ``start_distance`` is the episode's
+    problem distance ``L`` to the destination -- what the distance curriculum folds
+    over -- set for every dataset episode with a known distance regardless of reward
+    mode (``None`` for a scramble or an off-graph, unannotated group).
     """
 
     total_return: float
@@ -53,6 +56,7 @@ class EpisodeMetrics:
     success: bool
     moves: int
     nav: EpisodeStats | None = None
+    start_distance: int | None = None
 
 
 def batch_return_and_success(episodes: list[EpisodeMetrics]) -> tuple[float, float]:
@@ -220,7 +224,7 @@ def _collect_episode(
     # reproduce exactly.
     rng = random.Random(episode_seed)
     presentation = source.sample(episode_seed, max_distance)
-    _, max_moves = episode_distance_and_moves(
+    start_distance, max_moves = episode_distance_and_moves(
         source, presentation, config.curriculum_config.unknown_distance_max_moves
     )
     env = build_env(config, presentation, source, alpha, max_moves)
@@ -268,6 +272,7 @@ def _collect_episode(
         success=terminated,
         moves=len(pending),
         nav=nav,
+        start_distance=start_distance,
     )
 
 
