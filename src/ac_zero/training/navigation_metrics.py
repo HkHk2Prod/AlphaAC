@@ -29,6 +29,22 @@ def _episode_stats(episodes: Sequence[EpisodeMetrics]) -> list[EpisodeStats]:
     return [episode.nav for episode in episodes if episode.nav is not None]
 
 
+def _curriculum_episodes(episodes: Sequence[EpisodeMetrics]) -> list[tuple[int, bool]]:
+    """``(distance L, success)`` for each episode the distance curriculum folds over.
+
+    Keyed on ``start_distance`` rather than the navigation ``nav`` stats, so the
+    curriculum advances for every dataset-seeded run (``potential`` included), not
+    only the navigation reward. Scrambles and off-graph groups carry no distance
+    and are skipped.
+    """
+    folded: list[tuple[int, bool]] = []
+    for episode in episodes:
+        L = episode.start_distance
+        if L is not None:
+            folded.append((L, episode.success))
+    return folded
+
+
 def fold_alpha(updater: AlphaUpdater, episodes: Sequence[EpisodeMetrics]) -> list[dict[str, float]]:
     """Advance ``updater`` over each navigation episode, in collection order.
 
@@ -122,17 +138,15 @@ def log_navigation(
 def fold_curriculum(
     curriculum: DistanceCurriculum, episodes: Sequence[EpisodeMetrics], L_max_episode: int
 ) -> list[CurriculumUpdate]:
-    """Advance ``curriculum`` over each navigation episode, in collection order.
+    """Advance ``curriculum`` over each distance-annotated episode, in collection order.
 
     ``L_max_episode`` is the ceiling the batch was sampled under; it is what
     decides each episode's frontier membership, independent of any ``L_max``
     change the fold itself triggers partway through.
     """
     return [
-        curriculum.update(
-            L=stats.start_distance, success=stats.success, L_max_episode=L_max_episode
-        )
-        for stats in _episode_stats(episodes)
+        curriculum.update(L=L, success=success, L_max_episode=L_max_episode)
+        for L, success in _curriculum_episodes(episodes)
     ]
 
 
@@ -165,11 +179,11 @@ def curriculum_aggregate(
     updates: Sequence[CurriculumUpdate], episodes: Sequence[EpisodeMetrics]
 ) -> dict[str, float | int | bool | str]:
     """Batch-level curriculum metrics: frontier share and success by distance/band."""
-    stats = _episode_stats(episodes)
-    if not updates or not stats:
+    eligible = _curriculum_episodes(episodes)
+    if not updates or not eligible:
         return {}
     count = len(updates)
-    successes = [1.0 if s.success else 0.0 for s in stats]
+    successes = [1.0 if success else 0.0 for _, success in eligible]
     distances = [u.L for u in updates]
     histogram = Counter(distances)
     return {

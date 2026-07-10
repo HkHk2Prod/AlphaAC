@@ -100,6 +100,14 @@ class ConsoleSummaryLogger:
             parts.append(f"replay={int(metrics['replay_size'])}")
         elif "examples" in metrics:
             parts.append(f"examples={int(metrics['examples'])}")
+        # The run's dynamic learning parameters, folded onto the same line so their
+        # current value is visible every iteration: the navigation shaping weight
+        # ``alpha`` and the distance curriculum's ceiling ``L_max`` (each present
+        # only when its mechanism is active for this run).
+        if "alpha" in metrics:
+            parts.append(f"alpha={float(metrics['alpha']):.3f}")
+        if "L_max" in metrics:
+            parts.append(f"L_max={int(metrics['L_max'])}")
         return "  ".join(parts)
 
     def _start_report(self, event: TrainingEvent) -> str:

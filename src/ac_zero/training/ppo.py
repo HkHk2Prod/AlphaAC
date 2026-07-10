@@ -88,7 +88,7 @@ def _collect_rollout(
     """Play one episode by sampling the current policy and record every step."""
     rng = random.Random(seed)
     presentation = source.sample(seed, max_distance)
-    _, max_moves = episode_distance_and_moves(
+    start_distance, max_moves = episode_distance_and_moves(
         source, presentation, config.curriculum_config.unknown_distance_max_moves
     )
     env = build_env(config, presentation, source, alpha, max_moves)
@@ -124,7 +124,7 @@ def _collect_rollout(
     bootstrap = _bootstrap_value(env, encoder, model, action_count, terminated, bool(transitions))
     total = float(sum(rewards))
     nav = env.navigation_episode_stats() if config.reward_mode == "navigation" else None
-    metrics = EpisodeMetrics(total, total, terminated, len(transitions), nav)
+    metrics = EpisodeMetrics(total, total, terminated, len(transitions), nav, start_distance)
     return _Rollout(transitions, bootstrap, metrics)
 
 

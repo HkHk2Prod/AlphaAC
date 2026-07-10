@@ -155,6 +155,22 @@ class _TrainingRun:
             return None
         return self.distance_curriculum.current_L_max()
 
+    def _dynamic_params(self, L_max_episode: int | None) -> dict[str, float | int]:
+        """Current values of the run's dynamic learning parameters for the iteration line.
+
+        Reported every iteration so their live value is visible on the terminal:
+        the navigation shaping weight ``alpha`` (advanced by the alpha updater) and
+        the distance curriculum's ceiling ``L_max``. Each key is present only when
+        its mechanism is active for this run, so a plain run adds nothing.
+        """
+        params: dict[str, float | int] = {}
+        alpha = self._current_alpha()
+        if alpha is not None:
+            params["alpha"] = alpha
+        if L_max_episode is not None:
+            params["L_max"] = L_max_episode
+        return params
+
     def _checkpoint_metric(self) -> float | None:
         """Best-model metric, favoring success rate over shaped return.
 
@@ -315,6 +331,7 @@ class _TrainingRun:
                 "mean_return": mean_return,
                 "success_rate": success_rate,
                 "replay_size": len(self.replay),
+                **self._dynamic_params(L_max_episode),
             },
             level=self._progress_level(iteration),
         )
@@ -350,6 +367,7 @@ class _TrainingRun:
                 "mean_return": mean_return,
                 "success_rate": success_rate,
                 "examples": result.example_count,
+                **self._dynamic_params(L_max_episode),
             },
             level=self._progress_level(iteration),
         )
