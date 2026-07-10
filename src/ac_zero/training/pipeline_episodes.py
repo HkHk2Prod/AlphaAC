@@ -62,11 +62,22 @@ def batch_return_and_success(episodes: list[EpisodeMetrics]) -> tuple[float, flo
     return mean_return, success_rate
 
 
+def moves_for_distance(distance: int) -> int:
+    """Self-play horizon for a problem at distance ``distance`` from the target.
+
+    The default (and only) horizon rule: ``3 * L + 6`` moves for a problem whose
+    shortest-path distance to the destination is ``L``. Enough slack to recover
+    from a few wrong turns while still bounding an episode tightly to its problem's
+    difficulty rather than a single global cap.
+    """
+    return 3 * distance + 6
+
+
 def build_env_config(
-    config: TrainingPipelineConfig, alpha: float | None = None, max_moves: int | None = None
+    config: TrainingPipelineConfig, alpha: float | None, max_moves: int
 ) -> ACEnvironmentConfig:
     return ACEnvironmentConfig(
-        max_moves=config.max_moves if max_moves is None else max_moves,
+        max_moves=max_moves,
         total_length_cap=config.total_length_cap,
         goal_mode=config.goal_mode,
         reward_mode=config.reward_mode,
@@ -81,15 +92,15 @@ def build_env(
     config: TrainingPipelineConfig,
     presentation: BalancedPresentation,
     source: InstanceSource,
-    alpha: float | None = None,
-    max_moves: int | None = None,
+    alpha: float | None,
+    max_moves: int,
 ) -> ACEnvironment:
     """Construct the episode env, wiring the potential map for distance-based rewards.
 
     ``alpha`` is the shaping weight for the "navigation" reward this episode runs
     at (ignored by other modes); the training loop advances it between iterations.
-    ``max_moves`` overrides the global horizon with this episode's ``3 * L + 6``
-    when the distance curriculum is active (``None`` keeps ``config.max_moves``).
+    ``max_moves`` is this episode's horizon -- ``3 * L + 6`` for its distance ``L``
+    (see :func:`episode_distance_and_moves`).
     """
     potentials = source.potentials if config.reward_mode in ("potential", "navigation") else None
     return ACEnvironment(
@@ -102,18 +113,18 @@ def episode_distance_and_moves(
 ) -> tuple[int | None, int]:
     """Return this problem's distance ``L`` and its horizon ``max_moves``.
 
-    Called under the distance curriculum, where the presentation was usually drawn
-    with a ``max_distance`` cap and so carries a known, positive distance to the
-    destination -- then the horizon is ``3 * L + 6``, scaling with the *sampled*
-    ``L`` and never ``L_max``. A problem off the annotated graph has no known ``L``
-    (returned as ``None``); it falls back to the large ``unknown_max_moves`` cutoff
-    so it is given room to solve rather than truncated early.
+    The horizon is always ``3 * L + 6`` for a problem whose shortest-path distance
+    to the destination is known -- the default rule for every training run, scaling
+    each episode to its own difficulty rather than a fixed global cap. A problem off
+    the annotated graph (a scramble, or an unannotated dataset group) has no known
+    ``L`` (returned as ``None``); it falls back to the large ``unknown_max_moves``
+    cutoff so it is given room to solve rather than truncated early.
     """
     distance = source.potentials.get(presentation.content_hash)
     if distance is None:
         return None, unknown_max_moves
     L = int(distance)
-    return L, 3 * L + 6
+    return L, moves_for_distance(L)
 
 
 def collect_episodes(
@@ -209,11 +220,9 @@ def _collect_episode(
     # reproduce exactly.
     rng = random.Random(episode_seed)
     presentation = source.sample(episode_seed, max_distance)
-    max_moves = None
-    if max_distance is not None:
-        _, max_moves = episode_distance_and_moves(
-            source, presentation, config.curriculum_config.unknown_distance_max_moves
-        )
+    _, max_moves = episode_distance_and_moves(
+        source, presentation, config.curriculum_config.unknown_distance_max_moves
+    )
     env = build_env(config, presentation, source, alpha, max_moves)
     mcts = PUCTMCTS(
         model, encoder, PUCTConfig(simulations=config.mcts_simulations, c_puct=config.c_puct)

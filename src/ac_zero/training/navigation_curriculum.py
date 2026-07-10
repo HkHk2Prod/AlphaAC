@@ -44,10 +44,11 @@ class DistanceCurriculumConfig:
     # ``L_max`` is frozen until this many frontier episodes have been observed
     # since the last change, so a change rests on a settled estimate.
     min_frontier_episodes_before_update: int = 100
-    # Fallback horizon for a sampled problem whose distance to the destination is
-    # unknown (off the annotated graph), where ``3 * L + 6`` cannot be formed. A
-    # deliberately large cutoff so an unmeasured problem is still given room to
-    # solve rather than truncated early.
+    # Fallback self-play horizon for a sampled problem whose distance to the
+    # destination is unknown (a scramble, or a dataset group off the annotated
+    # graph), where the default ``3 * L + 6`` rule cannot be formed. A deliberately
+    # large cutoff so an unmeasured problem is still given room to solve rather than
+    # truncated early. Read for every run, not only when the curriculum is active.
     unknown_distance_max_moves: int = 512
 
     def validate(self) -> None:

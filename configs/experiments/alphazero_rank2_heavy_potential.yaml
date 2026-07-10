@@ -1,0 +1,29 @@
+# Heavy / "serious" RL run with potential-based shaping. Identical knobs to
+# alphazero_rank2_heavy.yaml, but `reward_mode: potential` shapes the return by
+# the annotated distance-to-origin (path-length invariant, undiscounted), so the
+# run needs the group dataset's companion `.strict-ac.annotations.json`. Leaving
+# dataset.path unset lets `aczero train` seed from the online HF dataset by
+# default (it auto-pulls groups + annotations for rank/moveset into
+# data/generated/ if absent). See README "Scaling Up For A Serious Run".
+rank: 2
+agent: alphazero
+model: residual_mlp
+total_length_cap: 128
+moveset: strict-ac
+dataset:
+  count: 8
+  depth: 6
+training:
+  reward_mode: potential
+  iterations: 1000000
+  episodes_per_iteration: 24
+  optimizer_updates: 32
+  batch_size: 32
+  replay_capacity: 8192
+  learning_rate: 0.01
+  value_loss_weight: 1.0
+  mcts_simulations: 256
+  c_puct: 1.5
+  checkpoint_every: 5
+  workers: 0
+  run_directory: runs/train/alphazero_rank2_heavy_potential

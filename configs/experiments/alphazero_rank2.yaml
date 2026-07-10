@@ -1,7 +1,6 @@
 rank: 2
 agent: alphazero
 model: linear_policy_value
-max_moves: 8
 total_length_cap: 128
 dataset:
   count: 4

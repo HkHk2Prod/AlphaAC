@@ -33,7 +33,7 @@ tasks:
       # Effectively uncapped: the notebook passes --minutes so the soft runtime
       # deadline (not the target) ends the run and it fills the whole budget.
       target: 100000000
-      total_length_cap: 48
+      total_length_cap: 0        # 0 = no relator-length cap (unbounded)
       workers: 0
       output: /kaggle/working/train_rank2.groups.json
 
@@ -49,7 +49,7 @@ tasks:
     stop_after_current_iteration: false
     config:
       moveset: strict-ac
-      max_depth: 32
+      max_depth: 0                # 0 = unbounded search depth
       workers: 0
 
   # --- Training methods -------------------------------------------------------
@@ -72,7 +72,6 @@ tasks:
       agent: alphazero
       model: residual_mlp
       moveset: strict-ac          # ac_primitive moves
-      max_moves: 8
       total_length_cap: 128
       seed: 0
       dataset:
@@ -110,7 +109,6 @@ tasks:
       agent: ppo
       model: residual_mlp
       moveset: strict-ac          # ac_primitive moves
-      max_moves: 16
       total_length_cap: 128
       seed: 0
       dataset:

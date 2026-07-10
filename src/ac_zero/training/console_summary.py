@@ -23,14 +23,21 @@ _LOSS_KEYS = ("total_loss", "policy_loss", "value_loss")
 # the rest (histograms, per-component breakdowns) stay in the JSONL record.
 _MILESTONE_FIELDS: dict[str, tuple[str, ...]] = {
     "self_play": (),  # the worker-pool description event: message only
-    "dataset": (),
+    # Show where episodes start from: `source` (dataset vs scramble) plus, for a
+    # grown dataset, how many groups are in play -- so the terminal confirms a run
+    # is seeded from the HF dataset rather than random scrambles.
+    "dataset": ("source", "groups_used", "annotated"),
     "navigation": ("success_rate", "progress_rate", "alpha"),
     "curriculum": ("L_max", "frontier_episode_fraction"),
-    "checkpoint": ("iteration",),
+    "length_cap": ("L_max", "direction", "max_moves"),
     "budget": ("iteration",),
     "certificate": ("certificate_verified",),
     "completed": ("optimizer_updates", "replay_size", "total_loss"),
 }
+
+# Milestones important enough to surface even at the ``quiet`` level: the run's
+# terminal state plus every distance-curriculum length-cap change.
+_QUIET_MILESTONES = ("completed", "budget", "length_cap")
 
 
 class ConsoleSummaryLogger:
@@ -68,9 +75,9 @@ class ConsoleSummaryLogger:
         if event.level < LogLevel.INFO:
             return None
         if event.phase == "start":
-            return f"start: {event.message}"
+            return self._start_report(event)
         if not self._iterations:
-            return self._milestone(event) if event.phase in ("completed", "budget") else None
+            return self._milestone(event) if event.phase in _QUIET_MILESTONES else None
         if event.phase == "self_play" and "iteration" in event.metrics:
             return self._iteration_line(event)
         if event.phase in _MILESTONE_FIELDS:
@@ -94,6 +101,20 @@ class ConsoleSummaryLogger:
         elif "examples" in metrics:
             parts.append(f"examples={int(metrics['examples'])}")
         return "  ".join(parts)
+
+    def _start_report(self, event: TrainingEvent) -> str:
+        """Print the opening banner followed by every run parameter, one per line.
+
+        The ``start`` event carries the full ``run_description`` config dump; the
+        summary console renders it as a readable block so a run is fully described
+        on the terminal from its first line, not just in the JSONL log.
+        """
+        lines = [f"start: {event.message}"]
+        for key in sorted(event.metrics):
+            value = event.metrics[key]
+            rendered = f"{value:.4g}" if isinstance(value, float) else value
+            lines.append(f"  {key} = {rendered}")
+        return "\n".join(lines)
 
     def _milestone(self, event: TrainingEvent) -> str:
         fields = _MILESTONE_FIELDS.get(event.phase, ())

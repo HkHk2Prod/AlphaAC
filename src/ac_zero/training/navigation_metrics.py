@@ -216,3 +216,31 @@ def log_curriculum(
             {"iteration": iteration, "L_max": curriculum.L_max, **aggregate},
             level=level,
         )
+    _log_length_cap_changes(manager, base_event_id + len(episodes) + 2, iteration, updates)
+
+
+def _log_length_cap_changes(
+    manager: CallbackManager,
+    base_event_id: int,
+    iteration: int,
+    updates: Sequence[CurriculumUpdate],
+) -> None:
+    """Emit an INFO event for each episode that moved the curriculum's ``L_max``.
+
+    Always INFO (never throttled by the progress level) so a length-cap change --
+    a rare, significant milestone -- reaches the console on every verbosity level
+    the moment it happens, not only on a progress-report iteration.
+    """
+    for offset, update in enumerate(u for u in updates if u.L_max_changed):
+        manager.emit(
+            base_event_id + offset,
+            "length_cap",
+            f"distance curriculum length cap {update.L_max_change_direction}d",
+            {
+                "iteration": iteration,
+                "L_max": update.L_max,
+                "direction": update.L_max_change_direction,
+                "max_moves": 3 * update.L_max + 6,
+            },
+            level=LogLevel.INFO,
+        )

@@ -15,6 +15,7 @@ from ac_zero.training.losses import (
     return_to_go,
     visit_count_policy,
 )
+from ac_zero.training.navigation_curriculum import DistanceCurriculumConfig
 from ac_zero.training.pipeline import TrainingPipelineConfig, run_training_pipeline
 
 
@@ -34,7 +35,7 @@ class _CapturingSink:
 def test_training_pipeline_opens_with_full_task_description(tmp_path: Path) -> None:
     config = TrainingPipelineConfig(
         scramble_depth=1,
-        max_moves=4,
+        curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=4),
         model="residual_mlp",
         mcts_simulations=4,
         iterations=1,
@@ -96,7 +97,7 @@ def test_visit_policy_and_masked_loss_ignore_illegal_actions() -> None:
 def test_training_pipeline_writes_checkpoint_and_summary(tmp_path: Path) -> None:
     config = TrainingPipelineConfig(
         scramble_depth=1,
-        max_moves=4,
+        curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=4),
         model="residual_mlp",
         mcts_simulations=4,
         iterations=1,
@@ -130,7 +131,7 @@ def test_training_pipeline_writes_checkpoint_and_summary(tmp_path: Path) -> None
 def test_training_pipeline_writes_bundle_and_warm_starts(tmp_path: Path, capsys) -> None:
     base = dict(
         scramble_depth=1,
-        max_moves=4,
+        curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=4),
         model="residual_mlp",
         mcts_simulations=4,
         iterations=2,
@@ -178,7 +179,7 @@ def test_training_pipeline_model_is_invariant_to_worker_count(tmp_path: Path) ->
     def _run(workers: int, name: str) -> dict:
         config = TrainingPipelineConfig(
             scramble_depth=1,
-            max_moves=4,
+            curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=4),
             model="residual_mlp",
             mcts_simulations=4,
             iterations=2,
@@ -214,8 +215,59 @@ def test_config_reads_worker_count_from_mapping() -> None:
     assert TrainingPipelineConfig.from_mapping({"training": {"workers": 1}}).workers == 1
 
 
+def test_run_description_reports_core_and_agent_specific_parameters() -> None:
+    from ac_zero.training.pipeline_config import run_description
+
+    ppo = run_description(
+        TrainingPipelineConfig(agent="ppo"), seed=7, training_model="residual_mlp"
+    )
+    # Core knobs every run should carry, named up front.
+    for key in (
+        "seed",
+        "moveset",
+        "reward_mode",
+        "gamma",
+        "total_length_cap",
+        "checkpoint_every",
+        "progress_every",
+        "verbosity",
+        "workers",
+    ):
+        assert key in ppo
+    assert ppo["verbosity"] == "summary"
+    # The PPO backend's hyperparameters, not the AlphaZero search knobs.
+    assert "ppo_clip" in ppo and "mcts_simulations" not in ppo
+
+    az = run_description(TrainingPipelineConfig(agent="alphazero"), seed=1, training_model="linear")
+    assert "mcts_simulations" in az and "ppo_clip" not in az
+
+
+def test_run_description_adds_curriculum_when_active_and_reward_only_for_navigation() -> None:
+    from ac_zero.training.pipeline_config import run_description
+
+    config = TrainingPipelineConfig(reward_mode="navigation")
+    report = run_description(
+        config, seed=0, training_model="residual_mlp", distance_curriculum_active=True
+    )
+    assert report["curriculum.L_max_initial"] == config.curriculum_config.L_max_initial
+    assert report["reward.alpha_initial"] == config.reward_config.alpha_initial
+    # A dataset-seeded non-navigation run reports the curriculum it runs, but not
+    # the navigation-only reward-shaping block.
+    dataset = run_description(
+        TrainingPipelineConfig(reward_mode="potential"),
+        seed=0,
+        training_model="residual_mlp",
+        distance_curriculum_active=True,
+    )
+    assert dataset["curriculum.L_max_initial"] == DistanceCurriculumConfig().L_max_initial
+    assert not any(key.startswith("reward.") for key in dataset)
+    # A scramble run (no curriculum) omits both blocks.
+    plain = run_description(TrainingPipelineConfig(), seed=0, training_model="linear")
+    assert not any(key.startswith(("curriculum.", "reward.")) for key in plain)
+
+
 def test_config_reads_progress_every_from_mapping() -> None:
-    assert TrainingPipelineConfig().progress_every == 100
+    assert TrainingPipelineConfig().progress_every == 10
     assert (
         TrainingPipelineConfig.from_mapping({"training": {"progress_every": 25}}).progress_every
         == 25
@@ -249,7 +301,7 @@ def test_pipeline_stops_at_the_wall_clock_budget(tmp_path: Path) -> None:
     """A spent budget ends the loop early but still produces every artifact."""
     config = TrainingPipelineConfig(
         scramble_depth=1,
-        max_moves=4,
+        curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=4),
         model="residual_mlp",
         mcts_simulations=4,
         iterations=25,
@@ -284,7 +336,7 @@ def test_pipeline_stops_at_the_wall_clock_budget(tmp_path: Path) -> None:
 def test_pipeline_without_a_budget_runs_every_iteration(tmp_path: Path) -> None:
     config = TrainingPipelineConfig(
         scramble_depth=1,
-        max_moves=4,
+        curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=4),
         model="residual_mlp",
         mcts_simulations=4,
         iterations=3,
@@ -305,7 +357,7 @@ def test_progress_every_throttles_recurring_events_to_debug(tmp_path: Path) -> N
 
     config = TrainingPipelineConfig(
         scramble_depth=1,
-        max_moves=4,
+        curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=4),
         model="residual_mlp",
         mcts_simulations=4,
         iterations=3,
@@ -496,12 +548,13 @@ def test_cli_train_uploads_checkpoints_when_flagged(monkeypatch, tmp_path: Path)
         "\n".join(
             [
                 "rank: 2",
-                "max_moves: 4",
                 "model: linear_policy_value",
                 "dataset:",
                 "  count: 1",
                 "  depth: 1",
                 "training:",
+                "  curriculum:",
+                "    unknown_distance_max_moves: 4",
                 "  iterations: 1",
                 "  episodes_per_iteration: 1",
                 "  optimizer_updates: 1",
@@ -579,12 +632,13 @@ def test_cli_train_minutes_bounds_the_run(monkeypatch, tmp_path: Path) -> None:
         "\n".join(
             [
                 "rank: 2",
-                "max_moves: 4",
                 "model: residual_mlp",
                 "dataset:",
                 "  count: 1",
                 "  depth: 1",
                 "training:",
+                "  curriculum:",
+                "    unknown_distance_max_moves: 4",
                 "  iterations: 25",
                 "  episodes_per_iteration: 1",
                 "  optimizer_updates: 1",
@@ -612,7 +666,7 @@ def test_cli_train_download_checkpoint_warm_starts(monkeypatch, tmp_path: Path) 
     monkeypatch.chdir(tmp_path)
     base = dict(
         scramble_depth=1,
-        max_moves=4,
+        curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=4),
         model="residual_mlp",
         mcts_simulations=4,
         iterations=1,
@@ -639,12 +693,13 @@ def test_cli_train_download_checkpoint_warm_starts(monkeypatch, tmp_path: Path) 
         "\n".join(
             [
                 "rank: 2",
-                "max_moves: 4",
                 "model: residual_mlp",
                 "dataset:",
                 "  count: 1",
                 "  depth: 1",
                 "training:",
+                "  curriculum:",
+                "    unknown_distance_max_moves: 4",
                 "  iterations: 1",
                 "  episodes_per_iteration: 1",
                 "  optimizer_updates: 1",
@@ -724,10 +779,11 @@ def test_cli_train_seeds_from_dataset_by_default(monkeypatch, tmp_path: Path) ->
         "\n".join(
             [
                 "rank: 2",
-                "max_moves: 4",
                 "model: linear_policy_value",
                 "moveset: strict-ac",
                 "training:",
+                "  curriculum:",
+                "    unknown_distance_max_moves: 4",
                 "  iterations: 1",
                 "  episodes_per_iteration: 1",
                 "  optimizer_updates: 1",
@@ -761,12 +817,13 @@ def test_cli_train_self_generated_uses_scrambles(monkeypatch, tmp_path: Path) ->
         "\n".join(
             [
                 "rank: 2",
-                "max_moves: 4",
                 "model: linear_policy_value",
                 # An explicit dataset.path is ignored under --self-generated.
                 "dataset:",
                 "  path: data/generated/train_rank2.groups.json",
                 "training:",
+                "  curriculum:",
+                "    unknown_distance_max_moves: 4",
                 "  iterations: 1",
                 "  episodes_per_iteration: 1",
                 "  optimizer_updates: 1",
@@ -793,12 +850,13 @@ def test_cli_train_uses_configured_pipeline(monkeypatch, tmp_path: Path) -> None
         "\n".join(
             [
                 "rank: 2",
-                "max_moves: 4",
                 "model: linear_policy_value",
                 "dataset:",
                 "  count: 1",
                 "  depth: 1",
                 "training:",
+                "  curriculum:",
+                "    unknown_distance_max_moves: 4",
                 "  iterations: 1",
                 "  episodes_per_iteration: 1",
                 "  optimizer_updates: 1",
