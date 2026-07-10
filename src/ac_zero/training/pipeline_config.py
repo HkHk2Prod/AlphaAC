@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
+from ac_zero.environment.navigation_reward import RewardConfig
 from ac_zero.environment.rewards import REWARD_MODES
 from ac_zero.moves.universal import MOVE_SET_NAMES
+from ac_zero.training.events import Verbosity
+from ac_zero.training.navigation_curriculum import DistanceCurriculumConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +36,16 @@ class TrainingPipelineConfig:
     # steps with.
     moveset: str = "strict-ac"
     goal_reward: float = 1.0
+    # Scales and thresholds for the "navigation" reward mode and its per-episode
+    # alpha updater (ignored by other reward modes). Parsed from a `reward:`
+    # sub-mapping in the experiment YAML.
+    reward_config: RewardConfig = field(default_factory=RewardConfig)
+    # Dynamic max-distance curriculum for the "navigation" reward: caps the
+    # sampled problem distance ``L`` at ``L_max`` and grows it as the policy
+    # solves the frontier. Independent of the alpha updater above; parsed from a
+    # `curriculum:` sub-mapping in the experiment YAML. Active only when the
+    # instance source carries distance annotations (a grown dataset).
+    curriculum_config: DistanceCurriculumConfig = field(default_factory=DistanceCurriculumConfig)
     # Reward discount applied to every training pipeline: the AlphaZero
     # return-to-go targets and the PPO GAE returns/advantages alike. `gamma < 1`
     # weights nearer rewards more, so shorter paths to the goal are preferred; it
@@ -65,6 +78,11 @@ class TrainingPipelineConfig:
     # ASCII graphs still receive every point while the terminal stays readable on
     # long Kaggle/PC runs.
     progress_every: int = 100
+    # How much of the event stream reaches the terminal: "verbose" (per-event
+    # lines + live graphs), "summary" (one bundled line per logged iteration +
+    # the final graph, the default), or "quiet" (start/stop + warnings only). The
+    # JSONL event log and graph files always record everything regardless.
+    verbosity: Verbosity = Verbosity.SUMMARY
     # Optional soft wall-clock budget in seconds. When set, the run stops at the
     # first iteration boundary past the deadline and still writes its checkpoint,
     # plots, and summary -- so a hosted run (Kaggle) ends cleanly and uploads its
@@ -109,6 +127,10 @@ class TrainingPipelineConfig:
             moveset=str(data.get("moveset", defaults.moveset)),
             goal_reward=float(
                 training.get("goal_reward", data.get("goal_reward", defaults.goal_reward))
+            ),
+            reward_config=_reward_config(training.get("reward", data.get("reward"))),
+            curriculum_config=_curriculum_config(
+                training.get("curriculum", data.get("curriculum"))
             ),
             gamma=float(training.get("gamma", data.get("gamma", defaults.gamma))),
             model=str(data.get("model", defaults.model)),
@@ -175,6 +197,9 @@ class TrainingPipelineConfig:
                     data.get("progress_every", defaults.progress_every),
                 )
             ),
+            verbosity=Verbosity.parse(
+                training.get("verbosity", data.get("verbosity", defaults.verbosity))
+            ),
             run_directory=str(
                 training.get("run_directory", data.get("run_directory", defaults.run_directory))
             ),
@@ -201,6 +226,15 @@ class TrainingPipelineConfig:
             raise ValueError("max_word_length must be positive")
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
+        if self.reward_mode == "navigation":
+            self.reward_config.validate()
+            self.curriculum_config.validate()
+            if not self.dataset_annotations_path:
+                raise ValueError(
+                    "reward_mode 'navigation' needs dataset.annotations for the "
+                    "start-to-goal distance L0; without it the destination reward and "
+                    "distance shaping are undefined"
+                )
         if self.reward_mode == "potential" and not self.dataset_annotations_path:
             raise ValueError(
                 "reward_mode 'potential' needs dataset.annotations for the distance to "
@@ -258,6 +292,59 @@ def _dict_value(data: dict[str, Any], key: str) -> dict[str, Any]:
     if isinstance(value, dict):
         return cast(dict[str, Any], value)
     return {}
+
+
+def run_description(
+    config: TrainingPipelineConfig, seed: int, training_model: str
+) -> dict[str, float | int | bool | str]:
+    """Every parameter that shapes the trained model, for the opening run log.
+
+    Named up front so a run is reproducible from its first event alone.
+    """
+    return {
+        "seed": seed,
+        "rank": config.rank,
+        "agent": config.agent,
+        "requested_model": config.model,
+        "training_model": training_model,
+        "scramble_depth": config.scramble_depth,
+        "iterations": config.iterations,
+        "episodes_per_iteration": config.episodes_per_iteration,
+        "mcts_simulations": config.mcts_simulations,
+        "c_puct": config.c_puct,
+        "optimizer_updates": config.optimizer_updates,
+        "batch_size": config.batch_size,
+        "replay_capacity": config.replay_capacity,
+        "learning_rate": config.learning_rate,
+        "value_loss_weight": config.value_loss_weight,
+        "run_directory": config.run_directory,
+    }
+
+
+def _reward_config(value: Any) -> RewardConfig:
+    """Build a navigation `RewardConfig`, overriding only the keys present."""
+    defaults = RewardConfig()
+    if not isinstance(value, dict):
+        return defaults
+    fields = {f: getattr(defaults, f) for f in RewardConfig.__dataclass_fields__}
+    return RewardConfig(**{f: float(value[f]) for f in fields if f in value})
+
+
+def _curriculum_config(value: Any) -> DistanceCurriculumConfig:
+    """Build a `DistanceCurriculumConfig`, overriding only the keys present.
+
+    Each field is coerced to its default's type (int ceilings/counts, float
+    fractions/thresholds) so YAML scalars land as the dataclass expects.
+    """
+    defaults = DistanceCurriculumConfig()
+    if not isinstance(value, dict):
+        return defaults
+    overrides: dict[str, Any] = {}
+    for name in DistanceCurriculumConfig.__dataclass_fields__:
+        if name in value:
+            coerce = int if isinstance(getattr(defaults, name), int) else float
+            overrides[name] = coerce(value[name])
+    return DistanceCurriculumConfig(**overrides)
 
 
 def _optional_str(value: Any) -> str | None:

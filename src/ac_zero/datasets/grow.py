@@ -37,7 +37,7 @@ class GrowConfig:
     target: int
     select: SelectStrategy = "smallest"
     seed: int = 0
-    total_length_cap: int = 48
+    total_length_cap: int = 48  # discard neighbours longer than this; 0 = no cap
     short_bias: float = 2.0
     workers: int = 0
     # Groups claimed and expanded per round. Kept independent of the worker count

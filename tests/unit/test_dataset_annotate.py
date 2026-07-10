@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from ac_zero.algebra.presentation import BalancedPresentation
-from ac_zero.datasets.annotate import AnnotateConfig, annotate, annotation_path
+from ac_zero.datasets.annotate import (
+    AnnotateConfig,
+    _init_worker,
+    _shorter_for,
+    annotate,
+    annotation_path,
+)
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
 from ac_zero.moves.universal import UniversalCatalog, move_set
 
@@ -87,6 +93,20 @@ def test_distance_to_shorter_reaches_a_smaller_group(tmp_path: Path) -> None:
     origin = BalancedPresentation.standard(2).content_hash
     assert ann[origin]["distance_to_shorter"] is None
     assert min(lengths.values()) == lengths[origin]
+
+
+def test_shorter_search_max_depth_zero_is_unbounded() -> None:
+    """max_depth=0 removes the depth cut, so a multi-move shortening still settles."""
+    # A(3) -> B(3) -> C(2): the only shortening is two moves away from A.
+    adjacency = {"A": {0: "B"}, "B": {0: "C", 1: "A"}}
+    lengths = {"A": 3, "B": 3, "C": 2}
+    moves = frozenset({0, 1})
+    # A shallow budget cannot reach C within one layer and reports "not proven".
+    _init_worker(adjacency, lengths, moves, 1)
+    assert _shorter_for("A") == (None, [], False)
+    # max_depth=0 -> unbounded: it reaches C at distance 2 and proves the shortening.
+    _init_worker(adjacency, lengths, moves, 0)
+    assert _shorter_for("A") == (2, [0], True)
 
 
 def test_checkpoint_progress_reports_percent_complete(tmp_path: Path) -> None:

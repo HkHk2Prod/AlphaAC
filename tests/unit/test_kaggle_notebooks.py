@@ -120,6 +120,21 @@ def test_annotate_notebook_never_uploads_the_group_dataset() -> None:
     assert "upload_dataset(path" in source
 
 
+def test_generate_notebook_writes_and_publishes_a_summary() -> None:
+    source = _code_source(_load("01_generate_dataset.ipynb"))
+    # Uses the shared summary module (not an inline copy) and publishes the report
+    # into the bucket's datasets_summaries/ folder keyed by the dataset name.
+    assert "write_dataset_summary" in source
+    assert "summary_remote_name(summary_path)" in source
+
+
+def test_annotate_notebook_writes_and_publishes_a_summary() -> None:
+    source = _code_source(_load("02_annotate_dataset.ipynb"))
+    # One summary per annotation file, published into datasets_summaries/.
+    assert "write_annotation_summary" in source
+    assert "summary_remote_name(p)" in source
+
+
 @pytest.mark.parametrize("name", ("01_generate_dataset.ipynb", "02_annotate_dataset.ipynb"))
 def test_fails_fast_when_upload_is_required_but_no_hf_token(name: str) -> None:
     source = _code_source(_load(name))

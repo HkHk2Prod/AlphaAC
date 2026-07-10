@@ -24,7 +24,7 @@ class AnnotateConfig:
     """Parameters for one per-move-set annotation pass."""
 
     moveset: str = "universal"
-    max_depth: int = 32
+    max_depth: int = 32  # max moves per per-group shorter-distance search; 0 = unbounded
     workers: int = 0
     # Rewrite the whole file every this many freshly computed shorter-distance
     # entries so an interrupted pass keeps its progress; 0 writes only at the end.
@@ -242,7 +242,7 @@ def _shorter_for(start: str) -> tuple[int | None, list[int], bool]:
     visited = {start}
     depth = 0
     while frontier:
-        if depth >= _MAX_DEPTH:
+        if _MAX_DEPTH > 0 and depth >= _MAX_DEPTH:
             return (None, [], False)  # cut by the depth budget: not proven
         depth += 1
         nxt: dict[str, set[int]] = {}

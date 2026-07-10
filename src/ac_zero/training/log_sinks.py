@@ -111,13 +111,20 @@ class TerminalProgressLogger:
         stream: TextIO | None = None,
         *,
         min_level: LogLevel = LogLevel.INFO,
+        console: bool = True,
         max_bytes: int = DEFAULT_MAX_BYTES,
         backup_count: int = DEFAULT_BACKUP_COUNT,
     ) -> None:
-        """Create a terminal logger with an optional output stream and level."""
+        """Create a terminal logger with an optional output stream and level.
+
+        ``console=False`` keeps the rotating text mirror on disk but never prints
+        to the stream, so a low-verbosity run can retain the full progress.log
+        without flooding the terminal.
+        """
         self._writer = RotatingFileWriter(path, max_bytes=max_bytes, backup_count=backup_count)
         self._stream = stream or sys.stdout
         self._min_level = min_level
+        self._console = console
         self.path = self._writer.path
 
     def on_event(self, event: TrainingEvent) -> None:
@@ -129,7 +136,8 @@ class TerminalProgressLogger:
         line = (
             f"[step {event.step:03d}] {event.level.name:<7} {event.phase}: {event.message}{suffix}"
         )
-        print(line, file=self._stream)
+        if self._console:
+            print(line, file=self._stream)
         self._writer.write_line(line)
 
     def close(self) -> None:
@@ -149,8 +157,16 @@ class AsciiGraphLogger:
         stream: TextIO | None = None,
         every_n_events: int = 1,
         width: int = 24,
+        console_live: bool = True,
+        console_final: bool = True,
     ) -> None:
-        """Track selected numeric metrics and write live/final graph summaries."""
+        """Track selected numeric metrics and write live/final graph summaries.
+
+        ``console_live``/``console_final`` gate whether the live and final graphs
+        are printed to the stream; the ``live_graphs.txt``/``final_graphs.txt``
+        files are always written, so a low-verbosity run keeps the graph record on
+        disk while showing only what its level allows on the terminal.
+        """
         if every_n_events <= 0:
             raise ValueError("every_n_events must be positive")
         if width <= 0:
@@ -164,10 +180,12 @@ class AsciiGraphLogger:
         self._stream = stream or sys.stdout
         self._every_n_events = every_n_events
         self._width = width
+        self._console_live = console_live
+        self._console_final = console_final
         self._seen_events = 0
 
     def on_event(self, event: TrainingEvent) -> None:
-        """Collect metric values and periodically print live ASCII graphs."""
+        """Collect metric values and periodically render live ASCII graphs."""
         self._seen_events += 1
         updated = False
         for name in self._metric_names:
@@ -182,13 +200,15 @@ class AsciiGraphLogger:
             updated = True
         if updated and self._seen_events % self._every_n_events == 0:
             rendered = self._render(title=f"live graphs after {event.phase}")
-            print(rendered, file=self._stream)
+            if self._console_live:
+                print(rendered, file=self._stream)
             self.live_path.write_text(rendered + "\n", encoding="utf-8")
 
     def close(self) -> None:
-        """Write and print final graph summaries."""
+        """Write and optionally print the final graph summaries."""
         rendered = self._render(title="final training graphs")
-        print(rendered, file=self._stream)
+        if self._console_final:
+            print(rendered, file=self._stream)
         self.final_path.write_text(rendered + "\n", encoding="utf-8")
 
     def _render(self, title: str) -> str:

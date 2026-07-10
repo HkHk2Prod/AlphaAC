@@ -9,6 +9,7 @@ import numpy as np
 
 from ac_zero.encoding.padded import PaddedEncoding, StateEncoder
 from ac_zero.environment.env import ACEnvironment
+from ac_zero.environment.navigation_reward import RewardComponents
 from ac_zero.models.base import PolicyValueModel
 from ac_zero.models.registry import model_from_json
 from ac_zero.models.trainable import TrainablePolicyValueModel
@@ -16,7 +17,11 @@ from ac_zero.system.parallel import parallel_map, resolve_worker_count
 from ac_zero.training.instance_source import InstanceSource, build_instance_source
 from ac_zero.training.losses import PPOBatchStats, masked_softmax, sample_from_policy
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
-from ac_zero.training.pipeline_episodes import EpisodeMetrics, build_env
+from ac_zero.training.pipeline_episodes import (
+    EpisodeMetrics,
+    build_env,
+    episode_distance_and_moves,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +42,12 @@ class PPOExample:
 
 @dataclass(frozen=True, slots=True)
 class _Transition:
-    """One sampled step retained for advantage estimation."""
+    """One sampled step retained for advantage estimation.
+
+    ``components`` keeps the separated navigation-reward parts (item 6 of the
+    reward spec) so a stored transition can be re-scored later; ``None`` for the
+    scalar-reward modes.
+    """
 
     encoding: PaddedEncoding
     legal_mask: tuple[bool, ...]
@@ -45,6 +55,7 @@ class _Transition:
     log_prob: float
     reward: float
     value: float
+    components: RewardComponents | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,11 +82,18 @@ def _collect_rollout(
     seed: int,
     model: PolicyValueModel,
     source: InstanceSource,
+    alpha: float | None = None,
+    max_distance: int | None = None,
 ) -> _Rollout:
     """Play one episode by sampling the current policy and record every step."""
     rng = random.Random(seed)
-    presentation = source.sample(seed)
-    env = build_env(config, presentation, source)
+    presentation = source.sample(seed, max_distance)
+    max_moves = None
+    if max_distance is not None:
+        _, max_moves = episode_distance_and_moves(
+            source, presentation, config.curriculum_config.unknown_distance_max_moves
+        )
+    env = build_env(config, presentation, source, alpha, max_moves)
     scale = 1.0 / max(1.0, float(env.initial.total_length))
     action_count = len(env.catalog)
     transitions: list[_Transition] = []
@@ -90,15 +108,25 @@ def _collect_rollout(
         probs = masked_softmax(output.logits, mask)
         action = sample_from_policy(probs, rng)
         log_prob = math.log(max(float(probs[action]), 1e-12))
-        _, reward, terminated, truncated, _ = env.step(action)
+        _, reward, terminated, truncated, info = env.step(action)
         normalized = reward * scale
+        components = info.get("reward_components")
         transitions.append(
-            _Transition(encoding, mask, action, log_prob, normalized, float(output.value))
+            _Transition(
+                encoding,
+                mask,
+                action,
+                log_prob,
+                normalized,
+                float(output.value),
+                components if isinstance(components, RewardComponents) else None,
+            )
         )
         rewards.append(normalized)
     bootstrap = _bootstrap_value(env, encoder, model, action_count, terminated, bool(transitions))
     total = float(sum(rewards))
-    metrics = EpisodeMetrics(total, total, terminated, len(transitions))
+    nav = env.navigation_episode_stats() if config.reward_mode == "navigation" else None
+    metrics = EpisodeMetrics(total, total, terminated, len(transitions), nav)
     return _Rollout(transitions, bootstrap, metrics)
 
 
@@ -139,20 +167,38 @@ _WORKER_CONFIG: TrainingPipelineConfig | None = None
 _WORKER_ENCODER: StateEncoder | None = None
 _WORKER_MODEL: PolicyValueModel | None = None
 _WORKER_SOURCE: InstanceSource | None = None
+_WORKER_ALPHA: float | None = None
+_WORKER_MAX_DISTANCE: int | None = None
 
 
-def _init_rollout_worker(config: TrainingPipelineConfig, model_state: dict[str, Any]) -> None:
+def _init_rollout_worker(
+    config: TrainingPipelineConfig,
+    model_state: dict[str, Any],
+    alpha: float | None,
+    max_distance: int | None,
+) -> None:
     global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL, _WORKER_SOURCE
+    global _WORKER_ALPHA, _WORKER_MAX_DISTANCE
     _WORKER_CONFIG = config
     _WORKER_ENCODER = StateEncoder(config.max_word_length)
     _WORKER_MODEL = model_from_json(model_state)
     _WORKER_SOURCE = build_instance_source(config)
+    _WORKER_ALPHA = alpha
+    _WORKER_MAX_DISTANCE = max_distance
 
 
 def _rollout_worker(seed: int) -> _Rollout:
     assert _WORKER_CONFIG is not None and _WORKER_ENCODER is not None and _WORKER_MODEL is not None
     assert _WORKER_SOURCE is not None
-    return _collect_rollout(_WORKER_CONFIG, _WORKER_ENCODER, seed, _WORKER_MODEL, _WORKER_SOURCE)
+    return _collect_rollout(
+        _WORKER_CONFIG,
+        _WORKER_ENCODER,
+        seed,
+        _WORKER_MODEL,
+        _WORKER_SOURCE,
+        _WORKER_ALPHA,
+        _WORKER_MAX_DISTANCE,
+    )
 
 
 def collect_rollouts(
@@ -162,23 +208,29 @@ def collect_rollouts(
     seed: int,
     iteration: int,
     source: InstanceSource,
+    alpha: float | None = None,
+    max_distance: int | None = None,
 ) -> tuple[list[PPOExample], list[EpisodeMetrics]]:
     """Collect one iteration's rollouts and build advantage-normalized examples.
 
     ``source`` is the run's instance source, reused across iterations. Workers
     open their own handle on it, which memory-maps the same dataset sidecar rather
     than parsing the dataset again (see :mod:`ac_zero.datasets.instance_store`).
+    ``max_distance`` is the distance curriculum's ceiling this batch was sampled
+    under (``None`` off the curriculum), held constant across the batch.
     """
     seeds = [seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)]
     if resolve_worker_count(config.workers) <= 1:
-        rollouts = [_collect_rollout(config, encoder, s, model, source) for s in seeds]
+        rollouts = [
+            _collect_rollout(config, encoder, s, model, source, alpha, max_distance) for s in seeds
+        ]
     else:
         rollouts = parallel_map(
             _rollout_worker,
             seeds,
             workers=config.workers,
             initializer=_init_rollout_worker,
-            initargs=(config, model.to_json()),
+            initargs=(config, model.to_json(), alpha, max_distance),
         )
     scored: list[tuple[_Transition, float, float]] = []
     for rollout in rollouts:
@@ -237,10 +289,12 @@ class PPOTrainer:
         seed: int,
         iteration: int,
         rng: random.Random,
+        alpha: float | None = None,
+        max_distance: int | None = None,
     ) -> PPOIterationResult:
         """Collect rollouts and apply this iteration's PPO updates to `model`."""
         examples, episodes = collect_rollouts(
-            self.config, self.encoder, model, seed, iteration, self.source
+            self.config, self.encoder, model, seed, iteration, self.source, alpha, max_distance
         )
         updates = self._optimize(model, examples, rng) if examples else []
         return PPOIterationResult(len(examples), episodes, updates)

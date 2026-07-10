@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import gymnasium
@@ -11,6 +11,12 @@ from gymnasium import spaces
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.goals import exact_standard_goal, signed_permuted_basis_goal
+from ac_zero.environment.navigation_reward import (
+    EpisodeStats,
+    RewardComponents,
+    RewardComputer,
+    RewardConfig,
+)
 from ac_zero.environment.rewards import RewardSignal, step_reward
 from ac_zero.environment.state import ACSearchState
 from ac_zero.moves.universal import moveset_catalog
@@ -30,6 +36,12 @@ class ACEnvironmentConfig:
     # is the unique optimum; pure length reduction saturates at non-goal states.
     reward_mode: str = "length_reduction_and_goal"
     goal_reward: float = 1.0
+    # Config for the "navigation" reward mode (ignored by other modes).
+    reward_config: RewardConfig = field(default_factory=RewardConfig)
+    # Shaping weight this episode runs at under the "navigation" mode; the
+    # training loop advances it between episodes with an `AlphaUpdater`. `None`
+    # falls back to `reward_config.alpha_initial`.
+    alpha: float | None = None
     # Which named move set (`ac_zero.moves.universal.MOVE_SET_NAMES`) the episode
     # steps with.
     moveset: str = "strict-ac"
@@ -67,7 +79,22 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         self.catalog = moveset_catalog(self.config.moveset, presentation.rank)
         self.action_space = spaces.Discrete(len(self.catalog))
         self.observation_space = self._build_observation_space()
+        # The "navigation" reward keeps within-episode state (visited set, running
+        # minimum distance), so the env drives a RewardComputer instead of the
+        # pure `step_reward`. `None` for every other mode.
+        self._reward = (
+            RewardComputer(self.config.reward_config)
+            if self.config.reward_mode == "navigation"
+            else None
+        )
+        self._last_components: RewardComponents | None = None
+        # Last known distance to the destination, carried so the navigation reward
+        # can defer an off-graph excursion's shaping credit until the search
+        # re-enters a node whose distance is known (see `_navigation_step`).
+        self._nav_anchor: int = 0
         self.state = self._initial_state()
+        if self._reward is not None:
+            self._start_navigation_episode()
 
     def _build_observation_space(self) -> spaces.Dict:
         rank = self.initial.rank
@@ -103,6 +130,9 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         """Reset to the initial Markov state and return `(observation, info)`."""
         super().reset(seed=seed)
         self.state = self._initial_state()
+        self._last_components = None
+        if self._reward is not None:
+            self._start_navigation_episode()
         return self._observation(), self._info(self.state, "running", False)
 
     def _observation(self) -> dict[str, Any]:
@@ -128,16 +158,19 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         best = min(prev.best_length, nxt_pres.total_length)
         terminated = self._is_goal(nxt_pres)
         potential_delta, anchor = self._potential_step(prev, nxt_pres, terminated)
-        reward = step_reward(
-            self.config.reward_mode,
-            RewardSignal(
-                previous_best_length=prev.best_length,
-                new_best_length=best,
-                goal_reached=terminated,
-                goal_reward=self.config.goal_reward,
-                potential_delta=potential_delta,
-            ),
-        )
+        if self._reward is not None:
+            reward = self._navigation_step(nxt_pres, terminated)
+        else:
+            reward = step_reward(
+                self.config.reward_mode,
+                RewardSignal(
+                    previous_best_length=prev.best_length,
+                    new_best_length=best,
+                    goal_reached=terminated,
+                    goal_reward=self.config.goal_reward,
+                    potential_delta=potential_delta,
+                ),
+            )
         remaining = max(0, prev.moves_remaining - 1)
         nxt = ACSearchState(
             presentation=nxt_pres,
@@ -169,7 +202,7 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
 
     def _info(self, state: ACSearchState, reason: str, success: bool) -> dict[str, Any]:
         pres = state.presentation
-        return {
+        info: dict[str, Any] = {
             "state": state,
             "action_mask": np.asarray(self.legal_action_mask(state), dtype=np.int8),
             "current_total_length": pres.total_length,
@@ -182,6 +215,9 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
             "termination_reason": reason,
             "presentation_hash": pres.content_hash,
         }
+        if self._last_components is not None:
+            info["reward_components"] = self._last_components
+        return info
 
     def _known_potential(self, presentation: BalancedPresentation, is_goal: bool) -> float | None:
         """Distance to the trivial group, or `None` off the annotated graph.
@@ -211,6 +247,63 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         anchor = prev.last_known_potential
         delta = 0.0 if anchor is None else anchor - next_potential
         return delta, next_potential
+
+    def _navigation_distance(self, presentation: BalancedPresentation, is_goal: bool) -> int | None:
+        """Shortest-path distance to the destination for the navigation reward.
+
+        The destination (goal) is always distance zero; annotated groups use their
+        exact ``distance_to_origin`` from ``potentials``. A presentation off the
+        annotated graph has no known distance and returns ``None`` -- navigation
+        never invents a length proxy; it defers the excursion's shaping credit to
+        the re-entry step instead (see `_navigation_step`). Navigation runs require
+        annotations, so the start node and the goal are always known.
+        """
+        if is_goal:
+            return 0
+        distance = self.potentials.get(presentation.content_hash)
+        return int(distance) if distance is not None else None
+
+    def _start_navigation_episode(self) -> None:
+        """Reset the RewardComputer and distance anchor at the current ``alpha``."""
+        assert self._reward is not None
+        start = self.initial
+        alpha = self.config.alpha
+        if alpha is None:
+            alpha = self.config.reward_config.alpha_initial
+        known = self._navigation_distance(start, self._is_goal(start))
+        # Navigation requires annotations, so the start is a known node; the guard
+        # only defends a misconfigured off-graph start (anchor 0 -> no shaping/bonus).
+        self._nav_anchor = known if known is not None else 0
+        self._reward.start_episode(
+            alpha=alpha, start_node=start.content_hash, start_distance=self._nav_anchor
+        )
+
+    def _navigation_step(self, next_node: BalancedPresentation, terminated: bool) -> float:
+        """Score one transition with the RewardComputer, deferring off-graph credit.
+
+        The step is scored against the anchor (the last known distance): re-entering
+        a known node credits the whole ``anchor - distance`` descent at once, while an
+        off-graph step holds the anchor and so scores zero shaping.
+        """
+        assert self._reward is not None
+        known_after = self._navigation_distance(next_node, terminated)
+        distance_after = self._nav_anchor if known_after is None else known_after
+        components = self._reward.step(
+            next_node=next_node.content_hash,
+            distance_before=self._nav_anchor,
+            distance_after=distance_after,
+            reached_destination=terminated,
+        )
+        if known_after is not None:
+            self._nav_anchor = known_after
+        self._last_components = components
+        return components.reward_total
+
+    def navigation_episode_stats(self) -> EpisodeStats:
+        """Aggregate stats for the finished navigation episode (alpha updater input)."""
+        if self._reward is None:
+            raise ValueError("navigation_episode_stats requires reward_mode 'navigation'")
+        return self._reward.episode_stats()
 
     def _is_goal(self, presentation: BalancedPresentation) -> bool:
         if self.config.goal_mode == "exact_standard":

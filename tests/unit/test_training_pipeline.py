@@ -224,6 +224,20 @@ def test_config_reads_progress_every_from_mapping() -> None:
         TrainingPipelineConfig(progress_every=0).validate()
 
 
+def test_config_reads_verbosity_from_mapping() -> None:
+    from ac_zero.training.events import Verbosity
+
+    # The pipeline defaults to a compact per-iteration summary, not the flood.
+    assert TrainingPipelineConfig().verbosity is Verbosity.SUMMARY
+    assert (
+        TrainingPipelineConfig.from_mapping({"training": {"verbosity": "verbose"}}).verbosity
+        is Verbosity.VERBOSE
+    )
+    assert TrainingPipelineConfig.from_mapping({"verbosity": "quiet"}).verbosity is Verbosity.QUIET
+    with pytest.raises(ValueError, match="verbosity must be one of"):
+        TrainingPipelineConfig.from_mapping({"training": {"verbosity": "loud"}})
+
+
 def test_config_validates_time_limit() -> None:
     # No budget by default: the run does every configured iteration.
     assert TrainingPipelineConfig().time_limit_s is None

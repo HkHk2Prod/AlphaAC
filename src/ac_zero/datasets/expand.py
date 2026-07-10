@@ -41,7 +41,7 @@ def _init_expand_worker(rank: int, total_length_cap: int) -> None:
 def expand_group(presentation: BalancedPresentation) -> list[NeighbourRecord]:
     """Apply every universal move to one group, hashing each neighbour in-worker.
 
-    Returns every non-identity neighbour within the length cap, keyed by universal
+    Returns every non-identity neighbour within the length cap (0 = no cap), keyed by universal
     move ID -- the complete local adjacency. All the expensive per-neighbour work
     (applying the move, freely reducing, hashing) happens here in the worker, so
     the main process only records precomputed edges and adds new nodes.
@@ -52,7 +52,7 @@ def expand_group(presentation: BalancedPresentation) -> list[NeighbourRecord]:
     for move_id, move in enumerate(_WORKER_CATALOG.moves):
         child = move.apply(presentation)
         child_hash = child.content_hash
-        if child_hash == base or child.total_length > _WORKER_CAP:
+        if child_hash == base or (_WORKER_CAP > 0 and child.total_length > _WORKER_CAP):
             continue
         letters = tuple(relator.letters for relator in child.relators)
         records.append(NeighbourRecord(move_id, child_hash, letters, child.total_length))

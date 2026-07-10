@@ -38,6 +38,7 @@ from ac_zero.search.puct import PUCTMCTS
 from ac_zero.system.reporting import CliReporter
 from ac_zero.training.callbacks import CallbackManager, default_training_callbacks
 from ac_zero.training.checkpoint_name import derive_checkpoint_name
+from ac_zero.training.events import Verbosity
 from ac_zero.training.hub_checkpoints import PeriodicCheckpointUploader, download_best_checkpoint
 from ac_zero.training.pipeline import run_training_pipeline
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
@@ -89,8 +90,12 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="`upload`/`download`: bucket file name (default: the local basename)",
     )
-    ds.add_argument("--total-length-cap", type=int, default=48, help="`grow`: relator length cap")
-    ds.add_argument("--max-depth", type=int, default=32, help="`annotate`: max moves per search")
+    ds.add_argument(
+        "--total-length-cap", type=int, default=48, help="`grow`: relator length cap (0 = no cap)"
+    )
+    ds.add_argument(
+        "--max-depth", type=int, default=32, help="`annotate`: max moves per search (0 = unbounded)"
+    )
     ds.add_argument(
         "--moveset",
         choices=list(MOVE_SET_NAMES),
@@ -199,6 +204,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="re-pull the dataset groups and annotations from the bucket even if present locally",
     )
+    train.add_argument(
+        "--verbosity",
+        choices=["quiet", "summary", "verbose"],
+        default=None,
+        help="terminal detail: 'verbose' (per-event lines + live graphs), 'summary' (one line "
+        "per iteration + final graph, the default), or 'quiet' (start/stop + warnings); "
+        "overrides the config. The JSONL log and graph files always record everything",
+    )
     bench = sub.add_parser("benchmark")
     bench.add_argument("--config", default="configs/experiments/benchmark_rank2.yaml")
     solve = sub.add_parser("solve")
@@ -274,6 +287,7 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             upload_every_hours=args.upload_every_hours,
             self_generated=args.self_generated,
             force_download_dataset=args.force_download_dataset,
+            verbosity=args.verbosity,
         )
     if args.cmd == "benchmark":
         return _benchmark(reporter)
@@ -348,11 +362,14 @@ def _train(
     upload_every_hours: float = 3.0,
     self_generated: bool = False,
     force_download_dataset: bool = False,
+    verbosity: str | None = None,
 ) -> int:
     """Run the config-driven replay and policy/value training pipeline."""
     config = TrainingPipelineConfig.from_mapping(_load_config(config_path))
     if workers is not None:
         config = replace(config, workers=workers)
+    if verbosity is not None:
+        config = replace(config, verbosity=Verbosity.parse(verbosity))
     if minutes > 0:
         config = replace(config, time_limit_s=minutes * 60)
     if checkpoint_name:
@@ -473,7 +490,9 @@ def _training_callbacks(
         bucket=bucket,
         every_hours=upload_every_hours,
     )
-    return default_training_callbacks(config.run_directory, extra=(uploader,))
+    return default_training_callbacks(
+        config.run_directory, verbosity=config.verbosity, extra=(uploader,)
+    )
 
 
 def _present_plots(plot_paths: Sequence[str], reporter: CliReporter) -> None:

@@ -25,7 +25,20 @@ from dataclasses import dataclass
 #   bonus is added on the goal step. Undiscounted the potential telescopes to the
 #   start potential regardless of path length, so shorter paths are preferred only
 #   once the return is discounted (see `TrainingPipelineConfig.gamma`).
-REWARD_MODES = ("length_reduction", "sparse_goal", "length_reduction_and_goal", "potential")
+# "navigation": adaptive distance-shaping toward the destination, scored by the
+#   stateful `ac_zero.environment.navigation_reward` subsystem rather than the
+#   pure `step_reward` below. A terminal bonus proportional to the start-to-goal
+#   distance, an alpha-weighted distance-reduction shaping term (alpha retuned
+#   between episodes), a flat move fee, and a per-episode revisit fee. Because it
+#   carries within-episode state (the visited set, the running minimum distance),
+#   the environment drives a `RewardComputer` directly for this mode.
+REWARD_MODES = (
+    "length_reduction",
+    "sparse_goal",
+    "length_reduction_and_goal",
+    "potential",
+    "navigation",
+)
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ac_zero.algebra.presentation import BalancedPresentation
+from ac_zero.datasets.expand import _init_expand_worker, expand_group
 from ac_zero.datasets.groups import MOVE_CATALOG, SCHEMA_VERSION
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
 
@@ -60,6 +61,18 @@ def test_grow_only_ever_grows_on_resume(tmp_path: Path) -> None:
     # Still exactly one trivial root after resuming.
     data = json.loads(path.read_text())
     assert sum(1 for e in data["groups"] if e["source"] == "trivial") == 1
+
+
+def test_length_cap_zero_admits_neighbours_a_tight_cap_drops() -> None:
+    """total_length_cap=0 disables the cap: length-increasing neighbours survive."""
+    root = BalancedPresentation.standard(2)
+    _init_expand_worker(2, 0)  # 0 = no cap
+    uncapped = expand_group(root)
+    _init_expand_worker(2, root.total_length)  # cap at the root's own length
+    capped = expand_group(root)
+    assert any(n.total_length > root.total_length for n in uncapped)
+    assert all(n.total_length <= root.total_length for n in capped)
+    assert len(uncapped) > len(capped)
 
 
 def test_grow_stops_at_time_limit_before_target(tmp_path: Path, monkeypatch) -> None:
