@@ -29,15 +29,20 @@ def _episode_stats(episodes: Sequence[EpisodeMetrics]) -> list[EpisodeStats]:
     return [episode.nav for episode in episodes if episode.nav is not None]
 
 
-def _curriculum_episodes(episodes: Sequence[EpisodeMetrics]) -> list[EpisodeMetrics]:
-    """Episodes the distance curriculum folds over: those with a known distance ``L``.
+def _curriculum_episodes(episodes: Sequence[EpisodeMetrics]) -> list[tuple[int, bool]]:
+    """``(distance L, success)`` for each episode the distance curriculum folds over.
 
     Keyed on ``start_distance`` rather than the navigation ``nav`` stats, so the
     curriculum advances for every dataset-seeded run (``potential`` included), not
     only the navigation reward. Scrambles and off-graph groups carry no distance
     and are skipped.
     """
-    return [episode for episode in episodes if episode.start_distance is not None]
+    folded: list[tuple[int, bool]] = []
+    for episode in episodes:
+        L = episode.start_distance
+        if L is not None:
+            folded.append((L, episode.success))
+    return folded
 
 
 def fold_alpha(updater: AlphaUpdater, episodes: Sequence[EpisodeMetrics]) -> list[dict[str, float]]:
@@ -140,10 +145,8 @@ def fold_curriculum(
     change the fold itself triggers partway through.
     """
     return [
-        curriculum.update(
-            L=episode.start_distance, success=episode.success, L_max_episode=L_max_episode
-        )
-        for episode in _curriculum_episodes(episodes)
+        curriculum.update(L=L, success=success, L_max_episode=L_max_episode)
+        for L, success in _curriculum_episodes(episodes)
     ]
 
 
@@ -180,7 +183,7 @@ def curriculum_aggregate(
     if not updates or not eligible:
         return {}
     count = len(updates)
-    successes = [1.0 if episode.success else 0.0 for episode in eligible]
+    successes = [1.0 if success else 0.0 for _, success in eligible]
     distances = [u.L for u in updates]
     histogram = Counter(distances)
     return {
