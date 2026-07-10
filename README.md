@@ -379,7 +379,7 @@ limits:
 The seed queue ships an active generation + annotation task and three
 **deactivated** training tasks (`active: false`) you flip on when a dataset
 exists — AlphaZero, PPO, and a greedy-RL baseline — all on the `strict-ac`
-(AC-primitive) move set. The two learners use the `potential` reward, so they
+(AC-primitive) move set. The two learners use the `navigation` reward, so they
 seed self-play from the grown dataset and its `strict-ac` annotations (pulled
 from the bucket by the notebook at startup); the greedy task is a non-learning
 solve. A training task's `config` **is** the training config: the notebook writes

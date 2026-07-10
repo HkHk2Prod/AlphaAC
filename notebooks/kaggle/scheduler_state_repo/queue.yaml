@@ -53,11 +53,12 @@ tasks:
       workers: 0
 
   # --- Training methods -------------------------------------------------------
-  # ac_primitive moves = the strict-ac move set; reward = potential (needs the
-  # per-group distance-to-origin, so these seed self-play from the grown dataset +
-  # its strict-ac annotations, pulled from the bucket by the notebook at startup).
+  # ac_primitive moves = the strict-ac move set; reward = navigation (adaptive
+  # distance-shaping toward the trivial group; needs the per-group distance
+  # annotations, so these seed self-play from the grown dataset + its strict-ac
+  # annotations, pulled from the bucket by the notebook at startup).
 
-  - id: train-alphazero-strict-potential
+  - id: train-alphazero-strict-navigation
     active: true
     remaining_runs: null
     mode: training
@@ -78,7 +79,7 @@ tasks:
         bucket: HkHk2Prod/alphaac-data
         max_difficulty: null      # cap groups by distance-to-origin; null = all
       training:
-        reward_mode: potential    # potential-based shaping from distance-to-origin
+        reward_mode: navigation   # adaptive distance-shaping toward the trivial group
         gamma: 0.99
         # Effectively uncapped: the notebook passes --minutes, so the soft runtime
         # deadline (not this cap) ends the run and it fills the whole budget.
@@ -94,7 +95,7 @@ tasks:
         checkpoint_every: 1
         workers: 0
 
-  - id: train-ppo-strict-potential
+  - id: train-ppo-strict-navigation
     active: true
     remaining_runs: null
     mode: training
@@ -115,7 +116,7 @@ tasks:
         bucket: HkHk2Prod/alphaac-data
         max_difficulty: null
       training:
-        reward_mode: potential
+        reward_mode: navigation
         gamma: 0.99
         # Effectively uncapped: --minutes ends the run (see the AlphaZero task).
         iterations: 100000000
@@ -130,8 +131,8 @@ tasks:
         checkpoint_every: 1
         workers: 0
 
-  # greedy-RL is a non-learning search baseline: no training, so reward/potential
-  # do not apply. It solves the grown strict-ac dataset with the greedy agent.
+  # greedy-RL is a non-learning search baseline: no training, so the reward mode
+  # does not apply. It solves the grown strict-ac dataset with the greedy agent.
   - id: solve-greedy-strict
     active: true
     remaining_runs: null
