@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, cast
 
 from ac_zero.environment.navigation_reward import RewardConfig
@@ -27,7 +27,6 @@ class TrainingPipelineConfig:
     dataset_annotations_path: str | None = None
     dataset_max_difficulty: int | None = None
     dataset_bucket: str | None = None
-    max_moves: int = 8
     total_length_cap: int = 128
     max_word_length: int = 32
     goal_mode: str = "exact_standard"
@@ -77,7 +76,7 @@ class TrainingPipelineConfig:
     # step); the steps in between are logged at DEBUG so the JSONL event log and
     # ASCII graphs still receive every point while the terminal stays readable on
     # long Kaggle/PC runs.
-    progress_every: int = 100
+    progress_every: int = 10
     # How much of the event stream reaches the terminal: "verbose" (per-event
     # lines + live graphs), "summary" (one bundled line per logged iteration +
     # the final graph, the default), or "quiet" (start/stop + warnings only). The
@@ -117,7 +116,6 @@ class TrainingPipelineConfig:
             dataset_annotations_path=_optional_str(dataset.get("annotations")),
             dataset_max_difficulty=_optional_int(dataset.get("max_difficulty")),
             dataset_bucket=_optional_str(dataset.get("bucket")),
-            max_moves=int(data.get("max_moves", data.get("horizon", defaults.max_moves))),
             total_length_cap=int(data.get("total_length_cap", defaults.total_length_cap)),
             max_word_length=int(data.get("max_word_length", defaults.max_word_length)),
             goal_mode=str(data.get("goal_mode", defaults.goal_mode)),
@@ -218,8 +216,6 @@ class TrainingPipelineConfig:
             raise ValueError("scramble_depth must be non-negative")
         if self.dataset_max_difficulty is not None and self.dataset_max_difficulty < 0:
             raise ValueError("dataset_max_difficulty must be non-negative")
-        if self.max_moves <= 0:
-            raise ValueError("max_moves must be positive")
         if self.total_length_cap <= 0:
             raise ValueError("total_length_cap must be positive")
         if self.max_word_length <= 0:
@@ -295,30 +291,76 @@ def _dict_value(data: dict[str, Any], key: str) -> dict[str, Any]:
 
 
 def run_description(
-    config: TrainingPipelineConfig, seed: int, training_model: str
+    config: TrainingPipelineConfig,
+    seed: int,
+    training_model: str,
+    *,
+    distance_curriculum_active: bool = False,
 ) -> dict[str, float | int | bool | str]:
     """Every parameter that shapes the trained model, for the opening run log.
 
-    Named up front so a run is reproducible from its first event alone.
+    Named up front so a run is reproducible from its first event alone: the core
+    knobs, the active agent's backend hyperparameters, the dataset/instance
+    source, the distance-curriculum constants when it runs
+    (``distance_curriculum_active``, any dataset-seeded run), and -- under the
+    navigation reward -- the reward-shaping constants. Only the keys that actually
+    apply to this run are emitted.
     """
-    return {
+    report: dict[str, float | int | bool | str] = {
         "seed": seed,
         "rank": config.rank,
         "agent": config.agent,
         "requested_model": config.model,
         "training_model": training_model,
+        "moveset": config.moveset,
+        "goal_mode": config.goal_mode,
+        "reward_mode": config.reward_mode,
+        "goal_reward": config.goal_reward,
+        "gamma": config.gamma,
         "scramble_depth": config.scramble_depth,
+        "total_length_cap": config.total_length_cap,
+        "max_word_length": config.max_word_length,
         "iterations": config.iterations,
         "episodes_per_iteration": config.episodes_per_iteration,
-        "mcts_simulations": config.mcts_simulations,
-        "c_puct": config.c_puct,
         "optimizer_updates": config.optimizer_updates,
         "batch_size": config.batch_size,
         "replay_capacity": config.replay_capacity,
         "learning_rate": config.learning_rate,
         "value_loss_weight": config.value_loss_weight,
+        "checkpoint_every": config.checkpoint_every,
+        "progress_every": config.progress_every,
+        "verbosity": config.verbosity.name.lower(),
+        "workers": config.workers,
         "run_directory": config.run_directory,
     }
+    if config.agent == "ppo":
+        report.update(
+            ppo_lambda=config.ppo_lambda,
+            ppo_clip=config.ppo_clip,
+            ppo_epochs=config.ppo_epochs,
+            entropy_coef=config.entropy_coef,
+        )
+    else:
+        report.update(mcts_simulations=config.mcts_simulations, c_puct=config.c_puct)
+    if config.time_limit_s is not None:
+        report["time_limit_s"] = config.time_limit_s
+    if config.warm_start is not None:
+        report["warm_start"] = config.warm_start
+    for key, value in (
+        ("dataset_path", config.dataset_path),
+        ("dataset_annotations_path", config.dataset_annotations_path),
+        ("dataset_bucket", config.dataset_bucket),
+        ("dataset_max_difficulty", config.dataset_max_difficulty),
+    ):
+        if value is not None:
+            report[key] = value
+    if distance_curriculum_active:
+        for name, field_value in asdict(config.curriculum_config).items():
+            report[f"curriculum.{name}"] = field_value
+    if config.reward_mode == "navigation":
+        for name, field_value in asdict(config.reward_config).items():
+            report[f"reward.{name}"] = field_value
+    return report
 
 
 def _reward_config(value: Any) -> RewardConfig:

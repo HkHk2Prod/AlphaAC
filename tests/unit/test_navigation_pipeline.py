@@ -7,8 +7,13 @@ from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.groups import MOVE_CATALOG, SCHEMA_VERSION, group_entry
 from ac_zero.environment.navigation_reward import AlphaUpdater, EpisodeStats, RewardConfig
 from ac_zero.training.callbacks import CallbackManager
-from ac_zero.training.events import TrainingEvent
-from ac_zero.training.navigation_metrics import fold_alpha, navigation_eval_metrics
+from ac_zero.training.events import LogLevel, TrainingEvent
+from ac_zero.training.navigation_curriculum import DistanceCurriculum, DistanceCurriculumConfig
+from ac_zero.training.navigation_metrics import (
+    fold_alpha,
+    log_curriculum,
+    navigation_eval_metrics,
+)
 from ac_zero.training.pipeline import TrainingPipelineConfig, run_training_pipeline
 from ac_zero.training.pipeline_episodes import EpisodeMetrics
 
@@ -146,10 +151,52 @@ def test_navigation_eval_metrics_empty_without_nav_episodes() -> None:
     assert navigation_eval_metrics([plain]) == {}
 
 
+def test_log_curriculum_emits_info_length_cap_event_on_lmax_change() -> None:
+    # Two frontier successes at L_max = 2 are enough to trip the increase rule.
+    curriculum = DistanceCurriculum(
+        DistanceCurriculumConfig(
+            min_frontier_episodes_before_update=2, frontier_success_ema_rate=1.0
+        )
+    )
+    sink = _CapturingSink()
+    episodes = [_episode(1.0, True, start=2), _episode(1.0, True, start=2)]
+    log_curriculum(
+        CallbackManager((sink,)),
+        100,
+        iteration=4,
+        curriculum=curriculum,
+        episodes=episodes,
+        L_max_episode=2,
+        level=LogLevel.DEBUG,
+    )
+    cap_events = [e for e in sink.events if e.phase == "length_cap"]
+    assert len(cap_events) == 1
+    event = cap_events[0]
+    # Reported at INFO even though the batch's other events ran at DEBUG.
+    assert event.level is LogLevel.INFO
+    assert event.metrics["L_max"] == 3
+    assert event.metrics["direction"] == "increase"
+    assert event.metrics["max_moves"] == 3 * 3 + 6
+
+
+def test_log_curriculum_emits_no_length_cap_event_when_lmax_holds() -> None:
+    curriculum = DistanceCurriculum(DistanceCurriculumConfig())
+    sink = _CapturingSink()
+    log_curriculum(
+        CallbackManager((sink,)),
+        100,
+        iteration=1,
+        curriculum=curriculum,
+        episodes=[_episode(0.1, False, start=2)],
+        L_max_episode=2,
+        level=LogLevel.INFO,
+    )
+    assert not [e for e in sink.events if e.phase == "length_cap"]
+
+
 def _navigation_config(tmp_path: Path, agent: str) -> TrainingPipelineConfig:
     dataset_path, annotations_path = _annotated_dataset(tmp_path)
     return TrainingPipelineConfig(
-        max_moves=4,
         model="residual_mlp",
         agent=agent,
         mcts_simulations=4,
@@ -181,6 +228,46 @@ def test_navigation_pipeline_emits_alpha_and_eval_metrics(tmp_path: Path, agent:
     # Per-episode alpha logging (item 1 of the reward spec).
     episode_events = [e for e in sink.events if e.phase == "navigation_episode"]
     assert episode_events
+
+
+def test_distance_curriculum_is_on_by_default_for_any_dataset_run(tmp_path: Path) -> None:
+    from ac_zero.training.pipeline import _TrainingRun
+
+    dataset_path, annotations_path = _annotated_dataset(tmp_path)
+    # A non-navigation reward (here potential) seeded from an annotated dataset
+    # still gets the easy-to-hard distance curriculum: it caps sampling, not the
+    # shaping weight, so every reward mode benefits.
+    dataset_run = _TrainingRun(
+        TrainingPipelineConfig(
+            iterations=1,
+            episodes_per_iteration=1,
+            optimizer_updates=1,
+            batch_size=1,
+            workers=1,
+            reward_mode="potential",
+            dataset_path=dataset_path,
+            dataset_annotations_path=annotations_path,
+            run_directory=str(tmp_path / "dataset-run"),
+        ),
+        seed=0,
+        callbacks=None,
+    )
+    assert dataset_run.distance_curriculum is not None
+    assert dataset_run.alpha_updater is None  # alpha shaping stays navigation-only
+    # A scramble-seeded run carries no distances, so the curriculum stays off.
+    scramble_run = _TrainingRun(
+        TrainingPipelineConfig(
+            iterations=1,
+            episodes_per_iteration=1,
+            optimizer_updates=1,
+            batch_size=1,
+            workers=1,
+            run_directory=str(tmp_path / "scramble-run"),
+        ),
+        seed=0,
+        callbacks=None,
+    )
+    assert scramble_run.distance_curriculum is None
 
 
 def test_config_parses_reward_block_and_validates_navigation() -> None:

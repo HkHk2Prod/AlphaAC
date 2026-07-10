@@ -88,11 +88,9 @@ def _collect_rollout(
     """Play one episode by sampling the current policy and record every step."""
     rng = random.Random(seed)
     presentation = source.sample(seed, max_distance)
-    max_moves = None
-    if max_distance is not None:
-        _, max_moves = episode_distance_and_moves(
-            source, presentation, config.curriculum_config.unknown_distance_max_moves
-        )
+    _, max_moves = episode_distance_and_moves(
+        source, presentation, config.curriculum_config.unknown_distance_max_moves
+    )
     env = build_env(config, presentation, source, alpha, max_moves)
     scale = 1.0 / max(1.0, float(env.initial.total_length))
     action_count = len(env.catalog)

@@ -30,7 +30,6 @@ _HASHED_FIELDS = (
     "goal_mode",
     "goal_reward",
     "gamma",
-    "max_moves",
     "total_length_cap",
     "max_word_length",
     "scramble_depth",

@@ -20,7 +20,7 @@ from ac_zero.environment.env import ACEnvironment
 from ac_zero.training.callbacks import CallbackManager
 from ac_zero.training.events import LogLevel
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
-from ac_zero.training.pipeline_episodes import build_env_config
+from ac_zero.training.pipeline_episodes import build_env_config, moves_for_distance
 from ac_zero.training.plots import PlotsUnavailable, render_training_plots
 
 
@@ -28,8 +28,14 @@ def write_fixture_certificate(
     config: TrainingPipelineConfig, seed: int, certificate_path: Path
 ) -> bool:
     """Solve a small fixture, write its certificate, and report whether it verifies."""
-    fixture = generate_solvable(config.rank, min(config.scramble_depth, 2), seed)
-    solve_env = ACEnvironment(fixture.presentation, build_env_config(config))
+    depth = min(config.scramble_depth, 2)
+    fixture = generate_solvable(config.rank, depth, seed)
+    # The fixture is a depth-``depth`` scramble, so its distance to the trivial
+    # group is at most ``depth``; the ``3 * L + 6`` horizon at that bound gives the
+    # greedy self-check ample room without a pathological deep search.
+    solve_env = ACEnvironment(
+        fixture.presentation, build_env_config(config, None, moves_for_distance(depth))
+    )
     result = GreedySolver().solve(
         solve_env, certificate_path=certificate_path, experiment_id="training", seed=seed
     )

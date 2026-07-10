@@ -97,10 +97,13 @@ class _TrainingRun:
             AlphaUpdater(config.reward_config) if config.reward_mode == "navigation" else None
         )
         # Separate from the alpha updater (it caps which problems are sampled, not
-        # the shaping weight); only meaningful when the source carries distances.
+        # the shaping weight): on by default for any dataset-seeded run, since an
+        # easy-to-hard sampling schedule helps every reward mode, not just
+        # navigation. Meaningful only when the source carries per-group distances,
+        # so a scramble-seeded run (no potentials) leaves it off.
         self.distance_curriculum = (
             DistanceCurriculum(config.curriculum_config)
-            if config.reward_mode == "navigation" and bool(self._instance_source.potentials)
+            if bool(self._instance_source.potentials)
             else None
         )
         self.ppo = (
@@ -204,7 +207,12 @@ class _TrainingRun:
 
     def execute(self) -> TrainingPipelineSummary:
         try:
-            description = run_description(self.config, self.seed, self.model.architecture)
+            description = run_description(
+                self.config,
+                self.seed,
+                self.model.architecture,
+                distance_curriculum_active=self.distance_curriculum is not None,
+            )
             self.manager.emit(0, "start", "starting training pipeline", description)
             self.manager.emit(
                 1, "dataset", "self-play instance source", dict(self._instance_source.describe())

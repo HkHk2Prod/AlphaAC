@@ -9,7 +9,6 @@
 rank: 2
 agent: alphazero
 model: residual_mlp
-max_moves: 16
 total_length_cap: 128
 dataset:
   count: 8

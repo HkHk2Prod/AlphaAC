@@ -88,11 +88,66 @@ def test_console_summary_bundles_iteration_and_drops_per_episode_events() -> Non
     assert "replay=4096" in printed
 
 
+def test_console_summary_start_prints_every_parameter() -> None:
+    stream = io.StringIO()
+    logger = ConsoleSummaryLogger(stream=stream)
+    logger.on_event(_event("start", {"seed": 7, "learning_rate": 0.05, "agent": "alphazero"}))
+    printed = stream.getvalue()
+    # The banner plus one indented line per run parameter (sorted).
+    assert "start: start message" in printed
+    assert "  agent = alphazero" in printed
+    assert "  learning_rate = 0.05" in printed
+    assert "  seed = 7" in printed
+
+
+def test_console_summary_dataset_line_names_the_instance_source() -> None:
+    stream = io.StringIO()
+    logger = ConsoleSummaryLogger(stream=stream)
+    # A grown-dataset run must visibly report `source=dataset` (plus how many
+    # groups seed self-play) so it is not mistaken for random-scramble self-play.
+    logger.on_event(
+        _event(
+            "dataset",
+            {"source": "dataset", "groups_used": 2089615, "annotated": 2089615, "rank": 2},
+        )
+    )
+    printed = stream.getvalue()
+    assert "dataset: dataset message" in printed
+    assert "source=dataset" in printed
+    assert "groups_used=2089615" in printed
+    # A scramble run reports its source too, without the dataset-only fields.
+    scramble = io.StringIO()
+    ConsoleSummaryLogger(stream=scramble).on_event(
+        _event("dataset", {"source": "scramble", "rank": 2, "depth": 3})
+    )
+    assert "source=scramble" in scramble.getvalue()
+    assert "groups_used" not in scramble.getvalue()
+
+
+def test_console_summary_drops_checkpoint_but_keeps_length_cap() -> None:
+    stream = io.StringIO()
+    logger = ConsoleSummaryLogger(stream=stream)
+    # Checkpoint saves are recorded to JSONL but no longer clutter the console.
+    logger.on_event(_event("checkpoint", {"iteration": 3, "optimizer_step": 12}))
+    # A distance-curriculum length-cap change is a milestone worth surfacing.
+    logger.on_event(
+        _event("length_cap", {"iteration": 3, "L_max": 4, "direction": "increase", "max_moves": 18})
+    )
+    printed = stream.getvalue()
+    assert "checkpoint" not in printed
+    assert "length_cap:" in printed
+    assert "L_max=4" in printed
+    assert "direction=increase" in printed
+    assert "max_moves=18" in printed
+
+
 def test_console_summary_quiet_keeps_only_milestones_and_diagnostics() -> None:
     stream = io.StringIO()
     logger = ConsoleSummaryLogger(stream=stream, iterations=False)
     logger.on_event(_event("start", {"seed": 0}))
     logger.on_event(_event("self_play", {"iteration": 2, "mean_return": 0.1}))
+    logger.on_event(_event("length_cap", {"L_max": 3, "direction": "increase", "max_moves": 15}))
+    logger.on_event(_event("checkpoint", {"iteration": 2}))
     logger.on_event(_event("completed", {"optimizer_updates": 9, "replay_size": 8}))
     logger.on_event(_event("dataset", {"errors": 1}, level=LogLevel.WARNING))
     printed = stream.getvalue()
@@ -100,7 +155,10 @@ def test_console_summary_quiet_keeps_only_milestones_and_diagnostics() -> None:
     assert "start:" in printed
     assert "completed:" in printed
     assert "dataset WARNING:" in printed
-    # No per-iteration line in quiet mode.
+    # Length-cap changes surface even in quiet mode; checkpoints and iteration
+    # lines do not.
+    assert "length_cap:" in printed
+    assert "checkpoint" not in printed
     assert "iter " not in printed
 
 

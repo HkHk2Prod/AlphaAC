@@ -14,6 +14,7 @@ from ac_zero.models.registry import create_trainable_model
 from ac_zero.training.checkpointing import CheckpointManager
 from ac_zero.training.instance_source import build_instance_source
 from ac_zero.training.losses import masked_softmax
+from ac_zero.training.navigation_curriculum import DistanceCurriculumConfig
 from ac_zero.training.pipeline import run_training_pipeline
 from ac_zero.training.pipeline_config import TrainingPipelineConfig
 from ac_zero.training.pipeline_episodes import EpisodeMetrics
@@ -51,7 +52,9 @@ def _ppo_config(**overrides: object) -> TrainingPipelineConfig:
     base = dict(
         agent="ppo",
         scramble_depth=2,
-        max_moves=6,
+        # Scrambles carry no distance, so self-play uses the unknown-distance
+        # fallback horizon; cap it small here to keep the test's episodes short.
+        curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=6),
         model="residual_mlp",
         iterations=1,
         episodes_per_iteration=4,
@@ -213,11 +216,12 @@ def test_cli_train_selects_the_ppo_backend(monkeypatch, tmp_path: Path) -> None:
                 "rank: 2",
                 "agent: ppo",
                 "model: residual_mlp",
-                "horizon: 6",
                 "dataset:",
                 "  count: 3",
                 "  depth: 2",
                 "training:",
+                "  curriculum:",
+                "    unknown_distance_max_moves: 6",
                 "  iterations: 1",
                 "  episodes_per_iteration: 3",
                 "  batch_size: 3",
@@ -234,7 +238,6 @@ def test_cli_train_selects_the_ppo_backend(monkeypatch, tmp_path: Path) -> None:
     assert main(argv) == 0
     checkpoint = CheckpointManager(tmp_path / "runs/ppo/checkpoints").load_json("latest")
     assert checkpoint["config"]["agent"] == "ppo"
-    assert checkpoint["config"]["max_moves"] == 6  # the `horizon` alias fed max_moves
     assert checkpoint["optimizer_state"]["step"] > 0
 
 
