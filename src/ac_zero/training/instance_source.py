@@ -39,8 +39,13 @@ Summary = Mapping[str, float | int | bool | str]
 class InstanceSource(Protocol):
     """Supplies the starting presentation for one episode, given its seed."""
 
-    def sample(self, seed: int) -> BalancedPresentation:
-        """Return the presentation to start the episode seeded by ``seed``."""
+    def sample(self, seed: int, max_distance: int | None = None) -> BalancedPresentation:
+        """Return the presentation to start the episode seeded by ``seed``.
+
+        ``max_distance`` restricts the draw to problems whose shortest-path
+        distance ``L`` satisfies ``0 < L <= max_distance`` (the distance
+        curriculum's ceiling); ``None`` draws from the unrestricted distribution.
+        """
         ...
 
     @property
@@ -60,7 +65,12 @@ class ScrambleSource:
     rank: int
     depth: int
 
-    def sample(self, seed: int) -> BalancedPresentation:
+    def sample(self, seed: int, max_distance: int | None = None) -> BalancedPresentation:
+        if max_distance is not None:
+            raise ValueError(
+                "the scramble source carries no distances; the distance curriculum "
+                "needs a distance-annotated dataset (reward_mode 'navigation')"
+            )
         return generate_solvable(self.rank, self.depth, seed).presentation
 
     @property
@@ -88,6 +98,10 @@ class DatasetSource:
         self._selected = selected
         self._count = store.count if selected is None else int(selected.size)
         self._summary: dict[str, float | int | bool | str] = dict(summary)
+        # Eligible index arrays are keyed by ``max_distance``; the curriculum uses
+        # only a handful of distinct ceilings over a run, so this stays tiny while
+        # sparing every episode an O(groups) rescan of the distance column.
+        self._eligible_cache: dict[int, NDArray[np.int64]] = {}
 
     @classmethod
     def from_file(
@@ -115,13 +129,46 @@ class DatasetSource:
             raise ValueError(f"group dataset at {groups} has no groups{constraint}")
         return cls(store, selected, _summarize(groups, store, selected, max_difficulty))
 
-    def sample(self, seed: int) -> BalancedPresentation:
+    def sample(self, seed: int, max_distance: int | None = None) -> BalancedPresentation:
         # `Random.choice` over a sequence draws exactly this index, so seeding is
         # unchanged from when the selection was a materialized list of presentations.
+        if max_distance is not None:
+            eligible = self._eligible(max_distance)
+            index = int(eligible[random.Random(seed).randrange(int(eligible.size))])
+            return self._store.presentation(index)
         index = random.Random(seed).randrange(self._count)
         if self._selected is not None:
             index = int(self._selected[index])
         return self._store.presentation(index)
+
+    def _eligible(self, max_distance: int) -> NDArray[np.int64]:
+        """Group indices with a known ``0 < distance_to_origin <= max_distance``.
+
+        Only the *lower* bound is fixed (at zero, excluding the trivial group and
+        unreachable/unannotated groups); ``max_distance`` is the curriculum's sole
+        upper cap. Raises when no group qualifies so a mis-set ceiling fails loudly
+        rather than starving self-play.
+        """
+        cached = self._eligible_cache.get(max_distance)
+        if cached is not None:
+            return cached
+        distances = self._store.distances
+        if distances is None:
+            raise ValueError("distance-curriculum sampling needs a distance-annotated dataset")
+        base = (
+            self._selected
+            if self._selected is not None
+            else np.arange(self._store.count, dtype=np.int64)
+        )
+        base_distances = distances[base]
+        eligible = base[(base_distances > 0) & (base_distances <= max_distance)]
+        if not eligible.size:
+            raise ValueError(
+                f"group dataset at {self._store.path} has no reachable groups with "
+                f"0 < distance_to_origin <= {max_distance}"
+            )
+        self._eligible_cache[max_distance] = eligible
+        return eligible
 
     @property
     def potentials(self) -> Mapping[str, int]:
@@ -206,6 +253,6 @@ def build_instance_source(config: TrainingPipelineConfig) -> InstanceSource:
             config.dataset_path,
             config.dataset_annotations_path,
             config.dataset_max_difficulty,
-            require_potential=config.reward_mode == "potential",
+            require_potential=config.reward_mode in ("potential", "navigation"),
         )
     return ScrambleSource(config.rank, config.scramble_depth)

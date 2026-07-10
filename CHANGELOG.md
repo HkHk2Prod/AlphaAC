@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+- The `grow` length cap and `annotate` search depth can now be **disabled with a
+  `0` sentinel**: `total_length_cap=0` admits neighbours of any relator length, and
+  `max_depth=0` runs the shorter-distance search unbounded. The Kaggle generation
+  and annotation notebooks set both to `0`, so a run is bounded only by its time
+  budget rather than discarding long presentations or leaving deep shortenings
+  unproven. The `--total-length-cap` / `--max-depth` CLI flags accept the same
+  sentinel.
+
+- Training now has a console **verbosity** knob so a run no longer floods the
+  terminal. `TrainingPipelineConfig.verbosity` (YAML `training.verbosity`, or
+  `aczero train --verbosity`) takes `verbose` (the historical per-event lines plus
+  an ASCII graph re-rendered on every event), `summary` (the new default: one
+  compact line per logged iteration that bundles the batch's episodes into
+  return/success/loss, plus run milestones and the final graph printed once), or
+  `quiet` (only start/stop milestones and warnings). Every level still writes the
+  full `training_events.jsonl` and the live/final graph files, so nothing is lost
+  on disk. The new `ConsoleSummaryLogger` provides the summary output;
+  `TerminalProgressLogger`/`AsciiGraphLogger` gained `console` flags so the file
+  mirror is kept without printing. `default_training_callbacks` maps the level to
+  the right sinks. The Kaggle training notebook (`03_train.ipynb`) exposes the same
+  knob as `VERBOSITY` and builds its callbacks through `default_training_callbacks`
+  instead of hand-muting the sinks to `devnull`.
+
+- The Kaggle generation and annotation notebooks now publish a Markdown summary to
+  the Hugging Face bucket. Summaries live in their own `datasets_summaries/` folder,
+  named after the dataset (`train_rank2.groups.summary.md`,
+  `train_rank2.groups.strict-ac.annotations.summary.md`), so they are browsable on
+  HF without downloading the dataset. Generation reuses the shared
+  `write_dataset_summary` (its inline copy and the unused histogram plots are gone);
+  annotation gains a new `write_annotation_summary` that reports distance-to-origin
+  and descent-distance distributions plus the proven-vs-unresolved split per move
+  set. Both go through `summary_remote_name`, the single source of the folder name.
+
+- Added a `"navigation"` reward mode: an adaptive distance-shaping reward for the
+  start-to-goal search. Each transition scores a terminal destination bonus
+  proportional to the start-to-goal distance `L0`, an `alpha`-weighted
+  distance-reduction shaping term, a flat move fee, and a per-episode revisit fee,
+  all from a config-driven `RewardConfig` (no hard-coded constants). A stateful
+  `RewardComputer` (in `ac_zero.environment.navigation_reward`) owns the
+  within-episode state (visited set, running minimum distance). Distance is the
+  group's exact `distance_to_origin` annotation; a presentation off the annotated
+  graph has no distance, so — like the `potential` reward — the environment holds
+  the last known distance as an anchor and defers an off-graph excursion's shaping
+  credit until the search re-enters a known node (the goal counts as distance 0),
+  never inventing a length proxy. The mode therefore requires a distance-annotated
+  dataset (rejected at config validation otherwise), so the start distance `L0` and
+  every credited descent are exact. `alpha` is constant within an episode and retuned between
+  episodes by an `AlphaUpdater` from success/progress EMAs. The training pipeline
+  holds one updater per run, keeps `alpha` constant across each iteration's batch,
+  advances it in deterministic collection order (so parallel workers stay
+  reproducible), logs per-episode alpha and the evaluation metrics
+  (`success_rate`, `progress_rate`, `average_*_reward`, distances, revisits), and
+  — for this mode — selects the best checkpoint by success rate rather than shaped
+  return. Replay/PPO transitions retain the separated reward components so a buffer
+  entry can be re-scored later. Configure via a `reward:` YAML block.
+
 - Fixed scheduled Kaggle training runs, which ended after `training.iterations`
   (40) instead of filling their runtime budget, and never touched Hugging Face.
   `aczero train` gains `--minutes`, a soft wall-clock budget (mirroring `dataset

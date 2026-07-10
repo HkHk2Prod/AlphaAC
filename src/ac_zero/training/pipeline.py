@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 import random
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
 
-import numpy as np
-
 from ac_zero.encoding.padded import StateEncoder
+from ac_zero.environment.navigation_reward import AlphaUpdater
 from ac_zero.models.registry import create_trainable_model, model_from_json
 from ac_zero.system.manifests import ReproducibilityManifest
 from ac_zero.system.parallel import describe_worker_pool
@@ -18,64 +17,19 @@ from ac_zero.training.checkpoint_writer import RunCheckpointer
 from ac_zero.training.events import LogLevel
 from ac_zero.training.instance_source import build_instance_source
 from ac_zero.training.losses import PolicyValueLoss
+from ac_zero.training.navigation_curriculum import DistanceCurriculum
+from ac_zero.training.navigation_metrics import log_curriculum, log_navigation
 from ac_zero.training.pipeline_artifacts import render_plots, write_fixture_certificate
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
-from ac_zero.training.pipeline_episodes import EpisodeMetrics, ReplayExample, collect_episodes
+from ac_zero.training.pipeline_config import TrainingPipelineConfig, run_description
+from ac_zero.training.pipeline_episodes import (
+    EpisodeMetrics,
+    ReplayExample,
+    batch_return_and_success,
+    collect_episodes,
+)
+from ac_zero.training.pipeline_summary import MetricsRow, TrainingPipelineSummary, _RunDirectories
 from ac_zero.training.ppo import PPOTrainer
 from ac_zero.training.replay_buffer import ReplayBuffer
-
-MetricsRow = dict[str, float | int | bool | str]
-
-
-@dataclass(frozen=True, slots=True)
-class TrainingPipelineSummary:
-    """High-level result of the config-driven training pipeline."""
-
-    run_directory: str
-    checkpoint_path: str
-    certificate_path: str
-    model_name: str
-    checkpoint_name: str
-    checkpoint_bundle_dir: str
-    run_id: str
-    best_return: float | None
-    iterations: int
-    episodes: int
-    replay_size: int
-    optimizer_updates: int
-    final_total_loss: float
-    checkpoint_restored: bool
-    certificate_verified: bool
-    event_log_path: str
-    progress_log_path: str
-    live_graph_path: str
-    final_graph_path: str
-    plot_paths: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class _RunDirectories:
-    """The output subdirectories of a single training run."""
-
-    run: Path
-    checkpoints: Path
-    certificates: Path
-    artifacts: Path
-    logs: Path
-
-    @classmethod
-    def create(cls, run_directory: str) -> _RunDirectories:
-        run = Path(run_directory)
-        dirs = cls(
-            run=run,
-            checkpoints=run / "checkpoints",
-            certificates=run / "certificates",
-            artifacts=run / "artifacts",
-            logs=run / "logs",
-        )
-        for directory in (dirs.checkpoints, dirs.certificates, dirs.artifacts, dirs.logs):
-            directory.mkdir(parents=True, exist_ok=True)
-        return dirs
 
 
 def run_training_pipeline(
@@ -102,7 +56,9 @@ class _TrainingRun:
         self.config = config
         self.seed = seed
         self.dirs = _RunDirectories.create(config.run_directory)
-        self.manager = callbacks or default_training_callbacks(self.dirs.run)
+        self.manager = callbacks or default_training_callbacks(
+            self.dirs.run, verbosity=config.verbosity
+        )
         self.replay = ReplayBuffer[ReplayExample](config.replay_capacity)
         self.encoder = StateEncoder(config.max_word_length)
         # Built once up front so the run can log what it trains on, and so the
@@ -134,6 +90,19 @@ class _TrainingRun:
         self.return_ema: float | None = None
         self.last_mean_return = 0.0
         self.last_success_rate = 0.0
+        # Navigation selects the best model by success rate, not shaped return
+        # (which a long, never-solving shaping path can inflate).
+        self.success_ema: float | None = None
+        self.alpha_updater = (
+            AlphaUpdater(config.reward_config) if config.reward_mode == "navigation" else None
+        )
+        # Separate from the alpha updater (it caps which problems are sampled, not
+        # the shaping weight); only meaningful when the source carries distances.
+        self.distance_curriculum = (
+            DistanceCurriculum(config.curriculum_config)
+            if config.reward_mode == "navigation" and bool(self._instance_source.potentials)
+            else None
+        )
         self.ppo = (
             PPOTrainer(config, self.encoder, self._instance_source)
             if config.agent == "ppo"
@@ -161,16 +130,82 @@ class _TrainingRun:
         return self.config.warm_start
 
     def _record_iteration_stats(self, mean_return: float, success_rate: float) -> None:
-        """Track the latest self-play stats and the return EMA used to pick best."""
+        """Track the latest self-play stats and the EMAs used to pick the best model."""
         self.last_mean_return = mean_return
         self.last_success_rate = success_rate
         self.return_ema = (
             mean_return if self.return_ema is None else 0.7 * self.return_ema + 0.3 * mean_return
         )
+        self.success_ema = (
+            success_rate
+            if self.success_ema is None
+            else 0.7 * self.success_ema + 0.3 * success_rate
+        )
+
+    def _current_alpha(self) -> float | None:
+        """The navigation shaping weight this iteration's episodes run at."""
+        return None if self.alpha_updater is None else self.alpha_updater.alpha
+
+    def _current_max_distance(self) -> int | None:
+        """The distance ceiling ``L_max`` this iteration's problems are sampled under."""
+        if self.distance_curriculum is None:
+            return None
+        return self.distance_curriculum.current_L_max()
+
+    def _checkpoint_metric(self) -> float | None:
+        """Best-model metric, favoring success rate over shaped return.
+
+        Under the distance curriculum it is the success rate at the *current*
+        frontier once estimated; that resets on each ``L_max`` change, so it falls
+        back to the batch success EMA in the gap, and to the return EMA off
+        navigation.
+        """
+        if self.alpha_updater is None:
+            return self.return_ema
+        if (
+            self.distance_curriculum is not None
+            and self.distance_curriculum.frontier_success_ema is not None
+        ):
+            return self.distance_curriculum.frontier_success_ema
+        return self.success_ema
+
+    def _finalize_navigation(self, iteration: int, episodes: list[EpisodeMetrics]) -> None:
+        """Advance alpha from the batch and log per-episode + aggregate nav metrics."""
+        if self.alpha_updater is None:
+            return
+        log_navigation(
+            self.manager,
+            iteration * 100 + 50,
+            iteration,
+            self.alpha_updater,
+            episodes,
+            self._progress_level(iteration),
+        )
+
+    def _finalize_curriculum(
+        self, iteration: int, episodes: list[EpisodeMetrics], L_max_episode: int | None
+    ) -> None:
+        """Advance the distance curriculum from the batch and log its metrics.
+
+        Separate from :meth:`_finalize_navigation` so ``L_max`` and alpha never
+        touch each other's state (they only share the episode batch).
+        """
+        if self.distance_curriculum is None or L_max_episode is None:
+            return
+        log_curriculum(
+            self.manager,
+            iteration * 100 + 70,
+            iteration,
+            self.distance_curriculum,
+            episodes,
+            L_max_episode,
+            self._progress_level(iteration),
+        )
 
     def execute(self) -> TrainingPipelineSummary:
         try:
-            self.manager.emit(0, "start", "starting training pipeline", self._run_description())
+            description = run_description(self.config, self.seed, self.model.architecture)
+            self.manager.emit(0, "start", "starting training pipeline", description)
             self.manager.emit(
                 1, "dataset", "self-play instance source", dict(self._instance_source.describe())
             )
@@ -253,10 +288,15 @@ class _TrainingRun:
         if self.ppo is not None:
             self._train_iteration_ppo(iteration)
             return
-        episodes = self._collect_iteration(iteration)
+        # Read the ceiling before sampling so a mid-batch L_max change (folded in
+        # after collection) cannot alter which problems this batch was drawn from.
+        L_max_episode = self._current_max_distance()
+        episodes = self._collect_iteration(iteration, L_max_episode)
         self.total_episodes += len(episodes)
-        mean_return, success_rate = _episode_stats(episodes)
+        mean_return, success_rate = batch_return_and_success(episodes)
         self._record_iteration_stats(mean_return, success_rate)
+        self._finalize_navigation(iteration, episodes)
+        self._finalize_curriculum(iteration, episodes, L_max_episode)
         self.manager.emit(
             iteration * 100,
             "self_play",
@@ -283,10 +323,15 @@ class _TrainingRun:
     def _train_iteration_ppo(self, iteration: int) -> None:
         """Run one PPO iteration: on-policy rollouts, clipped updates, checkpoint."""
         assert self.ppo is not None
-        result = self.ppo.run_iteration(self.model, self.seed, iteration, self.rng)
+        L_max_episode = self._current_max_distance()
+        result = self.ppo.run_iteration(
+            self.model, self.seed, iteration, self.rng, self._current_alpha(), L_max_episode
+        )
         self.total_episodes += len(result.episodes)
-        mean_return, success_rate = _episode_stats(result.episodes)
+        mean_return, success_rate = batch_return_and_success(result.episodes)
         self._record_iteration_stats(mean_return, success_rate)
+        self._finalize_navigation(iteration, result.episodes)
+        self._finalize_curriculum(iteration, result.episodes, L_max_episode)
         self.manager.emit(
             iteration * 100,
             "self_play",
@@ -333,11 +378,18 @@ class _TrainingRun:
                 {"iteration": iteration, "optimizer_step": self.optimizer_step},
             )
 
-    def _collect_iteration(self, iteration: int) -> list[EpisodeMetrics]:
+    def _collect_iteration(self, iteration: int, max_distance: int | None) -> list[EpisodeMetrics]:
         """Collect this iteration's self-play episodes into the replay buffer."""
         episodes: list[EpisodeMetrics] = []
         collected = collect_episodes(
-            self.config, self.encoder, self.model, self.seed, iteration, self._instance_source
+            self.config,
+            self.encoder,
+            self.model,
+            self.seed,
+            iteration,
+            self._instance_source,
+            self._current_alpha(),
+            max_distance,
         )
         for examples, episode_metrics in collected:
             self.replay.extend(examples)
@@ -386,7 +438,7 @@ class _TrainingRun:
             optimizer_step=self.optimizer_step,
             loss=self.final_loss,
             replay_size=len(self.replay),
-            metric=self.return_ema,
+            metric=self._checkpoint_metric(),
             mean_return=self.last_mean_return,
             success_rate=self.last_success_rate,
             metrics_rows=self.metrics_rows,
@@ -446,32 +498,3 @@ class _TrainingRun:
     def _late_event_id(self, offset: int) -> int:
         """Monotonic event id for the post-loop artifact/certificate/completion events."""
         return self.completed_iterations * 100 + self.optimizer_step + offset
-
-    def _run_description(self) -> MetricsRow:
-        """Full description of the run: every parameter that shapes the trained model,
-        so the run is reproducible from its opening log entry alone."""
-        config = self.config
-        return {
-            "seed": self.seed,
-            "rank": config.rank,
-            "agent": config.agent,
-            "requested_model": config.model,
-            "training_model": self.model.architecture,
-            "scramble_depth": config.scramble_depth,
-            "iterations": config.iterations,
-            "episodes_per_iteration": config.episodes_per_iteration,
-            "mcts_simulations": config.mcts_simulations,
-            "c_puct": config.c_puct,
-            "optimizer_updates": config.optimizer_updates,
-            "batch_size": config.batch_size,
-            "replay_capacity": config.replay_capacity,
-            "learning_rate": config.learning_rate,
-            "value_loss_weight": config.value_loss_weight,
-            "run_directory": config.run_directory,
-        }
-
-
-def _episode_stats(episodes: list[EpisodeMetrics]) -> tuple[float, float]:
-    mean_return = float(np.mean([episode.normalized_return for episode in episodes]))
-    success_rate = float(np.mean([1.0 if episode.success else 0.0 for episode in episodes]))
-    return mean_return, success_rate

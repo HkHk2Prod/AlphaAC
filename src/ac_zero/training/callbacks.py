@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from ac_zero.training.events import LogLevel, TrainingCallback, TrainingEvent
+from ac_zero.training.console_summary import ConsoleSummaryLogger
+from ac_zero.training.events import LogLevel, TrainingCallback, TrainingEvent, Verbosity
 from ac_zero.training.log_sinks import (
     AsciiGraphLogger,
     JsonlEventLogger,
@@ -14,15 +15,28 @@ from ac_zero.training.log_sinks import (
 __all__ = [
     "AsciiGraphLogger",
     "CallbackManager",
+    "ConsoleSummaryLogger",
     "JsonlEventLogger",
     "LogLevel",
     "RotatingFileWriter",
     "TerminalProgressLogger",
     "TrainingCallback",
     "TrainingEvent",
+    "Verbosity",
     "default_smoke_callbacks",
     "default_training_callbacks",
 ]
+
+# Metrics the training graph sink tracks; small enough to render as ASCII bars.
+_TRAINING_GRAPH_METRICS = (
+    "total_loss",
+    "policy_loss",
+    "value_loss",
+    "replay_size",
+    "episodes",
+    "mean_return",
+    "success_rate",
+)
 
 
 class CallbackManager:
@@ -100,34 +114,40 @@ def default_smoke_callbacks(run_directory: str | Path) -> CallbackManager:
 
 
 def default_training_callbacks(
-    run_directory: str | Path, *, extra: Iterable[TrainingCallback] = ()
+    run_directory: str | Path,
+    *,
+    verbosity: Verbosity | str = Verbosity.SUMMARY,
+    extra: Iterable[TrainingCallback] = (),
 ) -> CallbackManager:
     """Create default callbacks for config-driven training pipeline runs.
 
-    ``extra`` callbacks (e.g. a checkpoint uploader) are appended after the
-    default file loggers so callers can add behaviour without rebuilding them.
+    ``verbosity`` picks what reaches the terminal (see
+    :class:`ac_zero.training.events.Verbosity`); every level still writes the full
+    JSONL event log and the live/final graph files. At ``verbose`` the console
+    gets the historical per-event lines and live graphs; at ``summary`` (default)
+    a compact per-iteration summary plus the final graph; at ``quiet`` only the
+    start/stop milestones and diagnostics. ``extra`` callbacks (e.g. a checkpoint
+    uploader) are appended after the default loggers.
     """
 
+    verbosity = Verbosity.parse(verbosity)
+    verbose = verbosity >= Verbosity.VERBOSE
     run = Path(run_directory)
     log_dir = run / "logs"
     graph_dir = run / "artifacts"
-    return CallbackManager(
-        (
-            JsonlEventLogger(log_dir / "training_events.jsonl"),
-            TerminalProgressLogger(log_dir / "progress.log"),
-            AsciiGraphLogger(
-                graph_dir / "live_graphs.txt",
-                graph_dir / "final_graphs.txt",
-                (
-                    "total_loss",
-                    "policy_loss",
-                    "value_loss",
-                    "replay_size",
-                    "episodes",
-                    "mean_return",
-                    "success_rate",
-                ),
-            ),
-            *extra,
-        )
-    )
+    callbacks: list[TrainingCallback] = [
+        JsonlEventLogger(log_dir / "training_events.jsonl"),
+        TerminalProgressLogger(log_dir / "progress.log", console=verbose),
+        AsciiGraphLogger(
+            graph_dir / "live_graphs.txt",
+            graph_dir / "final_graphs.txt",
+            _TRAINING_GRAPH_METRICS,
+            every_n_events=1 if verbose else 50,
+            console_live=verbose,
+            console_final=verbosity >= Verbosity.SUMMARY,
+        ),
+    ]
+    if not verbose:
+        callbacks.append(ConsoleSummaryLogger(iterations=verbosity >= Verbosity.SUMMARY))
+    callbacks.extend(extra)
+    return CallbackManager(callbacks)

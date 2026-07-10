@@ -10,6 +10,11 @@ from typing import Any
 # Markdown reports live beside their dataset by stem: ``train.groups.summary.md``.
 SUMMARY_SUFFIX = ".summary.md"
 
+# Summaries are published to their own folder in the Hugging Face bucket, keyed by
+# the dataset name so they are easy to find: the generation and annotation Kaggle
+# notebooks push ``datasets_summaries/train_rank2.groups.summary.md`` and friends.
+SUMMARIES_PREFIX = "datasets_summaries"
+
 
 @dataclass(frozen=True, slots=True)
 class Distribution:
@@ -161,3 +166,104 @@ def write_dataset_summary(dataset_path: str | Path, summary_dir: str | Path) -> 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(report, encoding="utf-8")
     return target
+
+
+@dataclass(frozen=True, slots=True)
+class AnnotationSummary:
+    """Aggregate statistics over one move-set annotation file."""
+
+    rank: int | None
+    moveset: str
+    move_catalog: str
+    total: int
+    reached_origin: int
+    with_shorter: int
+    proven: int
+    unresolved: int
+    distance_to_origin: Distribution
+    distance_to_shorter: Distribution
+
+
+def summarize_annotations(data: dict[str, Any]) -> AnnotationSummary:
+    """Compute distance distributions from a loaded annotation document.
+
+    Buckets each group's distance to the origin (present only for groups that
+    reach the trivial group) and its length-descent distance (present only where a
+    strictly shorter group was found), and counts how many entries are proven
+    settled versus still unresolved -- an interrupted or depth-capped pass leaves
+    the tail of groups without a proven shorter-distance.
+    """
+    annotations = data.get("annotations", [])
+    to_origin: list[int] = []
+    to_shorter: list[int] = []
+    reached_origin = with_shorter = proven = 0
+    for entry in annotations:
+        d_origin = entry.get("distance_to_origin")
+        if d_origin is not None:
+            reached_origin += 1
+            to_origin.append(int(d_origin))
+        d_shorter = entry.get("distance_to_shorter")
+        if d_shorter is not None:
+            with_shorter += 1
+            to_shorter.append(int(d_shorter))
+        if entry.get("shorter_proven") is True:
+            proven += 1
+    return AnnotationSummary(
+        rank=data.get("rank"),
+        moveset=str(data.get("moveset", "unknown")),
+        move_catalog=str(data.get("move_catalog", "unknown")),
+        total=len(annotations),
+        reached_origin=reached_origin,
+        with_shorter=with_shorter,
+        proven=proven,
+        unresolved=len(annotations) - proven,
+        distance_to_origin=_distribution(to_origin),
+        distance_to_shorter=_distribution(to_shorter),
+    )
+
+
+def render_annotation_markdown(summary: AnnotationSummary, *, name: str) -> str:
+    """Render a human-readable Markdown report for one annotation summary."""
+    header = [
+        f"# Annotation summary: {name}",
+        "",
+        f"- Move set: `{summary.moveset}`",
+        f"- Move catalog: `{summary.move_catalog}`",
+        f"- Rank: {summary.rank}",
+        f"- Total groups: {summary.total}",
+        f"- Reach the origin (optimal): {summary.reached_origin}",
+        f"- With a shorter descent: {summary.with_shorter}",
+        f"- Proven settled: {summary.proven} | unresolved: {summary.unresolved}",
+        "",
+    ]
+    body = _section(
+        "By distance to origin (moves to the trivial group)",
+        "distance",
+        summary.distance_to_origin,
+    ) + _section(
+        "By descent distance (moves to a strictly shorter group)",
+        "distance",
+        summary.distance_to_shorter,
+    )
+    return "\n".join(header + body) + "\n"
+
+
+def write_annotation_summary(annotation_path: str | Path, summary_dir: str | Path) -> Path:
+    """Summarize the annotation file at `annotation_path`, writing Markdown under `summary_dir`.
+
+    Returns the path of the report written. Its name starts with the annotation
+    file's stem (e.g. ``train_rank2.groups.strict-ac.annotations.summary.md``) so
+    it sorts next to the dataset it describes.
+    """
+    annotation_path = Path(annotation_path)
+    data = json.loads(annotation_path.read_text(encoding="utf-8"))
+    report = render_annotation_markdown(summarize_annotations(data), name=annotation_path.name)
+    target = summary_path_for(annotation_path, Path(summary_dir))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(report, encoding="utf-8")
+    return target
+
+
+def summary_remote_name(summary_path: str | Path) -> str:
+    """The Hugging Face bucket object name for a summary: ``datasets_summaries/<file>``."""
+    return f"{SUMMARIES_PREFIX}/{Path(summary_path).name}"
