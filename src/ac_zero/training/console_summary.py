@@ -108,6 +108,8 @@ class ConsoleSummaryLogger:
             parts.append(f"alpha={float(metrics['alpha']):.3f}")
         if "L_max" in metrics:
             parts.append(f"L_max={int(metrics['L_max'])}")
+        if "frontier_success" in metrics:
+            parts.append(f"frontier_success={float(metrics['frontier_success']):.3f}")
         return "  ".join(parts)
 
     def _start_report(self, event: TrainingEvent) -> str:

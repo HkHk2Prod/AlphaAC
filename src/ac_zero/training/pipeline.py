@@ -158,10 +158,16 @@ class _TrainingRun:
     def _dynamic_params(self, L_max_episode: int | None) -> dict[str, float | int]:
         """Current values of the run's dynamic learning parameters for the iteration line.
 
-        Reported every iteration so their live value is visible on the terminal:
-        the navigation shaping weight ``alpha`` (advanced by the alpha updater) and
-        the distance curriculum's ceiling ``L_max``. Each key is present only when
-        its mechanism is active for this run, so a plain run adds nothing.
+        Reported every iteration so their live value is visible on the terminal.
+        Each key is present only when its mechanism is active for this run, so a
+        plain scramble run adds nothing:
+
+        - ``alpha`` -- the navigation reward's shaping weight (navigation runs only;
+          the ``potential``/other modes carry no alpha to advance).
+        - ``L_max`` -- the distance curriculum's ceiling this batch sampled under.
+        - ``frontier_success`` -- the curriculum's rolling frontier-success EMA, the
+          signal that drives ``L_max`` up or down; present for every dataset run once
+          a frontier episode has seeded it, so a ``potential`` run reports it too.
         """
         params: dict[str, float | int] = {}
         alpha = self._current_alpha()
@@ -169,6 +175,10 @@ class _TrainingRun:
             params["alpha"] = alpha
         if L_max_episode is not None:
             params["L_max"] = L_max_episode
+        if self.distance_curriculum is not None:
+            ema = self.distance_curriculum.frontier_success_ema
+            if ema is not None:
+                params["frontier_success"] = ema
         return params
 
     def _checkpoint_metric(self) -> float | None:

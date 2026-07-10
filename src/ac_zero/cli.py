@@ -24,7 +24,8 @@ from ac_zero.datasets.candidates import write_candidates
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
 from ac_zero.datasets.hub import DEFAULT_BUCKET, download_dataset, upload_dataset
-from ac_zero.datasets.summary import write_dataset_summary
+from ac_zero.datasets.publish import publish_to_bucket
+from ac_zero.datasets.summary import write_annotation_summary, write_dataset_summary
 from ac_zero.datasets.validation import validate_dataset
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
@@ -138,12 +139,18 @@ def main(argv: list[str] | None = None) -> int:
     ds.add_argument(
         "--summary-dir",
         default="data/summaries",
-        help="`grow`: directory for the post-generation Markdown summary",
+        help="`grow`/`annotate`: directory for the post-run Markdown summary",
     )
     ds.add_argument(
         "--no-summary",
         action="store_true",
-        help="`grow`: skip writing the dataset summary after generation",
+        help="`grow`/`annotate`: skip writing (and uploading) the Markdown summary",
+    )
+    ds.add_argument(
+        "--no-upload",
+        action="store_true",
+        help="`grow`/`annotate`: skip pushing the dataset/annotation file and its summary "
+        "to the Hugging Face bucket (uploads are on by default)",
     )
     ds.add_argument(
         "--workers",
@@ -790,6 +797,44 @@ def _random_rollout(pres: BalancedPresentation, env: ACEnvironment, cert: Path) 
     )
 
 
+def _publish_dataset_artifact(
+    args: argparse.Namespace,
+    reporter: CliReporter,
+    *,
+    phase: str,
+    data_path: Path,
+    summary_writer: Any,
+    result: dict[str, Any],
+) -> None:
+    """Write the Markdown summary and push the data file and summary to the HF bucket.
+
+    ``summary_writer`` is ``write_dataset_summary`` (grow) or
+    ``write_annotation_summary`` (annotate). ``--no-summary`` skips the report;
+    ``--no-upload`` skips the bucket push. Upload failures (missing
+    ``huggingface_hub``, absent ``HF_TOKEN``, or a hub error) are reported per file
+    as a warning rather than failing the run, so offline runs still succeed.
+    Mutates ``result`` in place.
+    """
+    published = publish_to_bucket(
+        data_path,
+        summary_writer=None if args.no_summary else summary_writer,
+        summary_dir=args.summary_dir,
+        bucket=args.bucket or DEFAULT_BUCKET,
+        upload=not args.no_upload,
+    )
+    if published.summary_path is not None:
+        reporter.progress(phase, "summary written", {"path": str(published.summary_path)})
+        result["summary"] = str(published.summary_path)
+    for outcome in published.outcomes:
+        if not outcome.ok:
+            reporter.warning(
+                phase, "HF upload skipped", {"file": outcome.remote_name, "error": outcome.error}
+            )
+    if published.uploaded_uris:
+        result["uploaded"] = published.uploaded_uris
+        reporter.progress(phase, "uploaded to HF bucket", {"files": len(published.uploaded_uris)})
+
+
 def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
     """Expand the persistent dataset outward from the trivial group by AC moves."""
     path = Path(_resolve_dataset_path(args.output) or _resolve_dataset_path(args.input))
@@ -818,10 +863,14 @@ def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
         "frontier": report.frontier,
         "max_length": report.max_length,
     }
-    if not args.no_summary:
-        summary_path = write_dataset_summary(path, args.summary_dir)
-        reporter.progress("grow", "summary written", {"path": str(summary_path)})
-        result["summary"] = str(summary_path)
+    _publish_dataset_artifact(
+        args,
+        reporter,
+        phase="grow",
+        data_path=path,
+        summary_writer=write_dataset_summary,
+        result=result,
+    )
     reporter.result_json(result, sort_keys=True)
     return 0
 
@@ -858,19 +907,26 @@ def _dataset_annotate(args: argparse.Namespace, reporter: CliReporter) -> int:
         config,
         progress=lambda message, metrics: reporter.progress("annotate", message, metrics),
     )
-    reporter.result_json(
-        {
-            "input": input_path,
-            "output": str(annotation_path(input_path, args.moveset)),
-            "moveset": report.moveset,
-            "total": report.total,
-            "reached_origin": report.reached_origin,
-            "with_shorter": report.with_shorter,
-            "computed": report.computed,
-            "max_distance_to_origin": report.max_distance_to_origin,
-        },
-        sort_keys=True,
+    output_path = annotation_path(input_path, args.moveset)
+    result: dict[str, Any] = {
+        "input": input_path,
+        "output": str(output_path),
+        "moveset": report.moveset,
+        "total": report.total,
+        "reached_origin": report.reached_origin,
+        "with_shorter": report.with_shorter,
+        "computed": report.computed,
+        "max_distance_to_origin": report.max_distance_to_origin,
+    }
+    _publish_dataset_artifact(
+        args,
+        reporter,
+        phase="annotate",
+        data_path=output_path,
+        summary_writer=write_annotation_summary,
+        result=result,
     )
+    reporter.result_json(result, sort_keys=True)
     return 0
 
 

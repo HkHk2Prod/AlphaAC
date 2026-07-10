@@ -78,6 +78,7 @@ def test_console_summary_bundles_iteration_and_drops_per_episode_events() -> Non
                 # Dynamic learning parameters folded onto the iteration line.
                 "alpha": 0.3,
                 "L_max": 4,
+                "frontier_success": 0.8,
             },
         )
     )
@@ -92,6 +93,7 @@ def test_console_summary_bundles_iteration_and_drops_per_episode_events() -> Non
     # Each iteration line shows the current value of the run's dynamic parameters.
     assert "alpha=0.300" in printed
     assert "L_max=4" in printed
+    assert "frontier_success=0.800" in printed
 
 
 def test_console_iteration_line_omits_inactive_dynamic_parameters() -> None:
@@ -103,6 +105,7 @@ def test_console_iteration_line_omits_inactive_dynamic_parameters() -> None:
     assert "iter     1" in printed
     assert "alpha=" not in printed
     assert "L_max=" not in printed
+    assert "frontier_success=" not in printed
 
 
 def test_console_summary_start_prints_every_parameter() -> None:
