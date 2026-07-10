@@ -116,23 +116,26 @@ def test_annotate_notebook_never_uploads_the_group_dataset() -> None:
     source = _code_source(_load("02_annotate_dataset.ipynb"))
     # This notebook runs alongside 01_generate_dataset and must only ever read
     # the group dataset -- it publishes annotation files, never the dataset.
+    assert "publish_to_bucket(dataset_path" not in source
     assert "upload_dataset(dataset_path" not in source
-    assert "upload_dataset(path" in source
+    # Its publish step and periodic safeguard only ever push annotation paths.
+    assert "for apath in annotation_paths" in source
+    assert "publish_to_bucket(" in source
 
 
 def test_generate_notebook_writes_and_publishes_a_summary() -> None:
     source = _code_source(_load("01_generate_dataset.ipynb"))
-    # Uses the shared summary module (not an inline copy) and publishes the report
-    # into the bucket's datasets_summaries/ folder keyed by the dataset name.
+    # Uses the shared summary + publish modules (not an inline copy); publish_to_bucket
+    # writes the report and pushes it into the bucket's datasets_summaries/ folder.
     assert "write_dataset_summary" in source
-    assert "summary_remote_name(summary_path)" in source
+    assert "publish_to_bucket(" in source
 
 
 def test_annotate_notebook_writes_and_publishes_a_summary() -> None:
     source = _code_source(_load("02_annotate_dataset.ipynb"))
-    # One summary per annotation file, published into datasets_summaries/.
+    # One summary per annotation file, published via the shared publish_to_bucket.
     assert "write_annotation_summary" in source
-    assert "summary_remote_name(p)" in source
+    assert "publish_to_bucket(" in source
 
 
 @pytest.mark.parametrize("name", ("01_generate_dataset.ipynb", "02_annotate_dataset.ipynb"))
