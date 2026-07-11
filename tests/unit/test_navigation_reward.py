@@ -237,11 +237,36 @@ def test_alpha_updater_exposes_the_running_emas() -> None:
     assert updater.success_ema == pytest.approx(0.5 * 1.0 + 0.5 * 0.0)
 
 
+def test_alpha_is_capped_at_alpha_max_under_a_persistent_stall() -> None:
+    # A cold-start policy that never makes progress used to ramp alpha as
+    # 0.3 * 1.1^n without bound, blowing up the shaping reward and the PPO loss.
+    config = RewardConfig(alpha_initial=0.3, alpha_max=2.0, progress_low=0.3, increase_factor=1.1)
+    updater = AlphaUpdater(config)
+    for _ in range(500):
+        updater.update(_stats(progress=0.0, success=False))
+    assert updater.alpha == pytest.approx(2.0)
+
+
+def test_alpha_is_floored_at_alpha_min_under_a_persistent_anneal() -> None:
+    config = RewardConfig(alpha_initial=0.3, alpha_min=0.05, success_good=0.7, anneal_factor=0.95)
+    updater = AlphaUpdater(config)
+    for _ in range(500):
+        updater.update(_stats(progress=0.9, success=True))
+    assert updater.alpha == pytest.approx(0.05)
+
+
 def test_reward_config_rejects_bad_thresholds() -> None:
     with pytest.raises(ValueError, match="progress_low"):
         RewardConfig(progress_low=0.9, progress_high=0.2).validate()
     with pytest.raises(ValueError, match="ema_rate"):
         RewardConfig(ema_rate=0.0).validate()
+
+
+def test_reward_config_rejects_bad_alpha_bounds() -> None:
+    with pytest.raises(ValueError, match="alpha_min"):
+        RewardConfig(alpha_min=1.0, alpha_max=0.5).validate()
+    with pytest.raises(ValueError, match="alpha_initial must lie"):
+        RewardConfig(alpha_initial=5.0, alpha_min=0.1, alpha_max=1.0).validate()
 
 
 # --- ACEnvironment integration for the "navigation" reward mode ---
@@ -357,3 +382,39 @@ def test_navigation_env_resets_visited_set_on_reset() -> None:
     assert stats.revisit_count == 0
     _, _, _, _, info = env.step(catalog.action_id(_MOVE_A))
     assert info["reward_components"].reward_revisit_fee == 0.0
+
+
+# --- Cross-run continuity: alpha state survives a checkpoint round-trip ---
+
+
+def test_alpha_state_round_trips_through_state_dict() -> None:
+    updater = AlphaUpdater(RewardConfig(alpha_initial=0.3, increase_factor=1.1))
+    updater.update(_stats(progress=0.1, success=False))  # raises alpha, seeds EMAs
+    snapshot = updater.state_dict()
+
+    resumed = AlphaUpdater(RewardConfig(alpha_initial=0.3, increase_factor=1.1))
+    resumed.load_state_dict(snapshot)
+    assert resumed.alpha == pytest.approx(updater.alpha)
+    assert resumed.progress_ema == pytest.approx(updater.progress_ema)
+    assert resumed.success_ema == pytest.approx(updater.success_ema)
+
+
+def test_resumed_alpha_continues_instead_of_reseeding() -> None:
+    # A fresh updater re-seeds its EMAs from the first episode it sees; a resumed
+    # one must instead blend that episode into the restored EMAs.
+    original = AlphaUpdater(RewardConfig(alpha_initial=0.3))
+    original.update(_stats(progress=0.5, success=True))
+    resumed = AlphaUpdater(RewardConfig(alpha_initial=0.3))
+    resumed.load_state_dict(original.state_dict())
+
+    fresh = AlphaUpdater(RewardConfig(alpha_initial=0.3))
+    resumed.update(_stats(progress=0.9, success=True))
+    fresh.update(_stats(progress=0.9, success=True))
+    assert resumed.progress_ema != pytest.approx(fresh.progress_ema)
+
+
+def test_load_state_dict_clamps_alpha_to_bounds() -> None:
+    updater = AlphaUpdater(RewardConfig(alpha_initial=0.3, alpha_max=0.5))
+    # A snapshot taken under looser bounds must not reintroduce an out-of-range alpha.
+    updater.load_state_dict({"alpha": 2.0, "progress_ema": 0.4, "success_ema": 0.4, "seeded": True})
+    assert updater.alpha == pytest.approx(0.5)

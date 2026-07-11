@@ -41,6 +41,10 @@ class DistanceCurriculumConfig:
     frontier_success_ema_rate: float = 0.05
     frontier_success_high: float = 0.75
     frontier_success_low: float = 0.25
+    # By default ``L_max`` only ever ratchets up: a decreasing ceiling tends to
+    # oscillate and confuses the agent more than it teaches it. Set this True to
+    # re-enable the ``<= frontier_success_low`` decrease branch below.
+    allow_L_max_decrease: bool = False
     # ``L_max`` is frozen until this many frontier episodes have been observed
     # since the last change, so a change rests on a settled estimate.
     min_frontier_episodes_before_update: int = 100
@@ -113,6 +117,32 @@ class DistanceCurriculum:
         """The ceiling the next episode should be sampled under (``L <= L_max``)."""
         return self.L_max
 
+    def state_dict(self) -> dict[str, float | int | None]:
+        """Snapshot the across-episode state so a resumed run continues from it.
+
+        Captures the live ``L_max`` and the rolling frontier estimate so a
+        warm-started run keeps sampling at the difficulty it had reached instead
+        of collapsing back to ``L_max_initial`` and re-climbing the curriculum.
+        """
+        return {
+            "L_max": self.L_max,
+            "frontier_success_ema": self.frontier_success_ema,
+            "frontier_success_count": self.frontier_success_count,
+            "episodes_since_lmax_change": self.episodes_since_lmax_change,
+        }
+
+    def load_state_dict(self, state: dict[str, float | int | None]) -> None:
+        """Restore a snapshot from :meth:`state_dict`, clamping ``L_max`` to its floor.
+
+        ``L_max`` is floored at ``L_max_min`` so a snapshot from a run with a
+        lower floor cannot resume below this run's configured minimum.
+        """
+        self.L_max = max(self.config.L_max_min, int(state["L_max"]))
+        ema = state["frontier_success_ema"]
+        self.frontier_success_ema = None if ema is None else float(ema)
+        self.frontier_success_count = int(state["frontier_success_count"])
+        self.episodes_since_lmax_change = int(state["episodes_since_lmax_change"])
+
     def frontier_lower(self, L_max_episode: int) -> int:
         """Lowest distance still in the frontier band for a given active ``L_max``."""
         return math.ceil(self.config.frontier_fraction * L_max_episode)
@@ -161,7 +191,7 @@ class DistanceCurriculum:
             if self.frontier_success_ema >= cfg.frontier_success_high:
                 self.L_max += cfg.L_max_step
                 changed, direction = True, "increase"
-            elif self.frontier_success_ema <= cfg.frontier_success_low:
+            elif cfg.allow_L_max_decrease and self.frontier_success_ema <= cfg.frontier_success_low:
                 lowered = max(cfg.L_max_min, self.L_max - cfg.L_max_step)
                 if lowered != self.L_max:
                     self.L_max = lowered

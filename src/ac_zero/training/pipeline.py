@@ -66,6 +66,7 @@ class _TrainingRun:
         self._instance_source = build_instance_source(config)
         self.rng = random.Random(seed)
         self.model = create_trainable_model(config.model, seed=seed)
+        self._warm_start_payload: dict | None = None
         self.warm_started_from = self._warm_start()
         self.checkpointer = RunCheckpointer(
             self.dirs.run,
@@ -106,6 +107,10 @@ class _TrainingRun:
             if bool(self._instance_source.potentials)
             else None
         )
+        # Continue the adaptive shaping weight and curriculum ceiling from the
+        # warm-start checkpoint so a resumed lineage does not snap alpha/L_max
+        # back to their config initials mid-training.
+        self._restore_learning_state()
         self.ppo = (
             PPOTrainer(config, self.encoder, self._instance_source)
             if config.agent == "ppo"
@@ -123,6 +128,9 @@ class _TrainingRun:
             print("[warm-start] no checkpoint configured; training a fresh model")
             return None
         data = json.loads(Path(self.config.warm_start).read_text(encoding="utf-8"))
+        # Kept so the adaptive learning state can be restored once the alpha
+        # updater and distance curriculum exist (see _restore_learning_state).
+        self._warm_start_payload = data
         self.model = model_from_json(data.get("model_state", data))
         iteration, metric = data.get("iteration"), data.get("checkpoint_metric")
         provenance = ""
@@ -131,6 +139,42 @@ class _TrainingRun:
             provenance += f", metric {metric:.4f})" if isinstance(metric, (int, float)) else ")"
         print(f"[warm-start] initialized model from {self.config.warm_start}{provenance}")
         return self.config.warm_start
+
+    def _restore_learning_state(self) -> None:
+        """Continue alpha/L_max from the warm-start checkpoint when it carried them.
+
+        Reads the ``learning_state`` block the checkpointer now writes and applies
+        each half to the mechanism it belongs to, but only when both the snapshot
+        and the live run have that mechanism active. A checkpoint from before this
+        field existed (or one that ran without the curriculum) leaves the fresh
+        objects at their config initials -- the pre-existing behavior.
+        """
+        payload = self._warm_start_payload
+        if not payload:
+            return
+        state = payload.get("learning_state") or {}
+        alpha_state = state.get("alpha_updater")
+        if alpha_state is not None and self.alpha_updater is not None:
+            self.alpha_updater.load_state_dict(alpha_state)
+            print(f"[warm-start] resumed shaping alpha at {self.alpha_updater.alpha:.4f}")
+        curriculum_state = state.get("distance_curriculum")
+        if curriculum_state is not None and self.distance_curriculum is not None:
+            self.distance_curriculum.load_state_dict(curriculum_state)
+            print(f"[warm-start] resumed curriculum L_max at {self.distance_curriculum.L_max}")
+
+    def _learning_state(self) -> dict:
+        """The adaptive across-episode state to persist in the next checkpoint.
+
+        Each mechanism contributes its snapshot only while active, so a scramble
+        run (no curriculum) or a non-navigation run (no alpha) writes an empty or
+        partial block that :meth:`_restore_learning_state` restores symmetrically.
+        """
+        state: dict[str, dict] = {}
+        if self.alpha_updater is not None:
+            state["alpha_updater"] = self.alpha_updater.state_dict()
+        if self.distance_curriculum is not None:
+            state["distance_curriculum"] = self.distance_curriculum.state_dict()
+        return state
 
     def _record_iteration_stats(self, mean_return: float, success_rate: float) -> None:
         """Track the latest self-play stats and the EMAs used to pick the best model."""
@@ -478,6 +522,7 @@ class _TrainingRun:
             mean_return=self.last_mean_return,
             success_rate=self.last_success_rate,
             metrics_rows=self.metrics_rows,
+            learning_state=self._learning_state(),
         )
 
     def _write_metrics(self) -> None:

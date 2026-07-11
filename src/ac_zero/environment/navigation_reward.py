@@ -39,8 +39,10 @@ class RewardConfig:
     destination_reward_scale: float = 1.0
     move_fee_scale: float = 0.01
     revisit_fee_scale: float = 0.02
-    # Alpha updater: initial weight and EMA smoothing.
+    # Alpha updater: initial weight, bounds, and EMA smoothing.
     alpha_initial: float = 0.3
+    alpha_min: float = 1e-3
+    alpha_max: float = 1.0
     ema_rate: float = 0.05
     # Alpha update-rule thresholds.
     progress_low: float = 0.3
@@ -62,6 +64,10 @@ class RewardConfig:
             raise ValueError("revisit_fee_scale must be non-negative")
         if self.alpha_initial <= 0.0:
             raise ValueError("alpha_initial must be positive")
+        if not 0.0 < self.alpha_min <= self.alpha_max:
+            raise ValueError("require 0 < alpha_min <= alpha_max")
+        if not self.alpha_min <= self.alpha_initial <= self.alpha_max:
+            raise ValueError("alpha_initial must lie in [alpha_min, alpha_max]")
         if not 0.0 < self.ema_rate <= 1.0:
             raise ValueError("ema_rate must be in (0, 1]")
         if not 0.0 <= self.progress_low <= self.progress_high <= 1.0:
@@ -282,13 +288,43 @@ class AlphaUpdater:
     def success_ema(self) -> float:
         return self._success_ema
 
+    def state_dict(self) -> dict[str, float | bool]:
+        """Snapshot the across-episode state so a resumed run continues from it.
+
+        Captures the live ``alpha`` and both EMAs (plus whether they are seeded)
+        so restoring skips the cold-start re-seed and the shaping weight does not
+        snap back to ``alpha_initial`` when a checkpoint is warm-started.
+        """
+        return {
+            "alpha": self._alpha,
+            "progress_ema": self._progress_ema,
+            "success_ema": self._success_ema,
+            "seeded": self._seeded,
+        }
+
+    def load_state_dict(self, state: dict[str, float | bool]) -> None:
+        """Restore a snapshot from :meth:`state_dict`, clamping ``alpha`` to bounds.
+
+        ``alpha`` is re-clamped to ``[alpha_min, alpha_max]`` so a snapshot taken
+        under looser bounds cannot reintroduce an out-of-range weight after a
+        config change between runs.
+        """
+        cfg = self.config
+        self._alpha = min(max(float(state["alpha"]), cfg.alpha_min), cfg.alpha_max)
+        self._progress_ema = float(state["progress_ema"])
+        self._success_ema = float(state["success_ema"])
+        self._seeded = bool(state["seeded"])
+
     def update(self, stats: EpisodeStats) -> float:
         """Fold one finished episode into the EMAs and retune ``alpha``.
 
         Applies the spec's three-way rule against the post-update EMAs: raise
         ``alpha`` when progress is stalling, lower it when the agent makes
         progress but still fails to reach the goal, and anneal it once success is
-        reliably high. No clipping is applied (no ``alpha_min``/``alpha_max``).
+        reliably high. The retuned weight is clamped to
+        ``[alpha_min, alpha_max]`` so a persistent early-training stall cannot
+        ramp ``alpha`` geometrically without bound and blow up the shaping
+        reward (and, through it, the value targets and PPO loss).
         """
         cfg = self.config
         progress_rate = stats.progress_rate
@@ -308,4 +344,5 @@ class AlphaUpdater:
             self._alpha = self._alpha * cfg.decrease_factor
         elif self._success_ema > cfg.success_good:
             self._alpha = self._alpha * cfg.anneal_factor
+        self._alpha = min(max(self._alpha, cfg.alpha_min), cfg.alpha_max)
         return self._alpha

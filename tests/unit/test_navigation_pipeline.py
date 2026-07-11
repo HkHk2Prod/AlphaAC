@@ -260,6 +260,48 @@ def test_navigation_pipeline_emits_alpha_and_eval_metrics(tmp_path: Path, agent:
     assert "L_max" in iteration_events[-1].metrics
 
 
+def test_warm_start_resumes_alpha_and_l_max_from_checkpoint(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from ac_zero.training.pipeline import _TrainingRun
+
+    # Run once to produce a checkpoint, then edit its adaptive state to known
+    # values so we can prove a warm-started run continues from them rather than
+    # resetting alpha/L_max to their config initials.
+    config = _navigation_config(tmp_path, "alphazero")
+    summary = run_training_pipeline(config, seed=5, callbacks=CallbackManager(()))
+    checkpoint = Path(summary.checkpoint_path)
+    payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert "learning_state" in payload
+    payload["learning_state"]["alpha_updater"]["alpha"] = 0.77
+    payload["learning_state"]["distance_curriculum"]["L_max"] = 4
+    warm = tmp_path / "warm_start.json"
+    warm.write_text(json.dumps(payload), encoding="utf-8")
+
+    resumed = _TrainingRun(
+        replace(config, warm_start=str(warm), run_directory=str(tmp_path / "resumed")),
+        seed=5,
+        callbacks=CallbackManager(()),
+    )
+    assert resumed.alpha_updater is not None
+    assert resumed.alpha_updater.alpha == pytest.approx(0.77)
+    assert resumed.distance_curriculum is not None
+    assert resumed.distance_curriculum.current_L_max() == 4
+
+
+def test_fresh_run_without_warm_start_starts_at_config_initials(tmp_path: Path) -> None:
+    # The restore path must be a no-op when nothing was warm-started: a fresh run
+    # keeps the config's alpha_initial / L_max_initial.
+    from ac_zero.training.pipeline import _TrainingRun
+
+    config = _navigation_config(tmp_path, "alphazero")
+    run = _TrainingRun(config, seed=5, callbacks=CallbackManager(()))
+    assert run.alpha_updater is not None
+    assert run.alpha_updater.alpha == pytest.approx(config.reward_config.alpha_initial)
+    assert run.distance_curriculum is not None
+    assert run.distance_curriculum.current_L_max() == config.curriculum_config.L_max_initial
+
+
 def test_distance_curriculum_is_on_by_default_for_any_dataset_run(tmp_path: Path) -> None:
     from ac_zero.training.pipeline import _TrainingRun
 

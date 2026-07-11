@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -196,7 +197,12 @@ class AsciiGraphLogger:
                 continue
             if isinstance(value, str) or value is None:
                 continue
-            self._series[name].append(float(value))
+            numeric = float(value)
+            # A diverged metric (NaN/inf) must not reach the sparkline renderer,
+            # where ``int(NaN)`` would abort the whole run at render/close time.
+            if not math.isfinite(numeric):
+                continue
+            self._series[name].append(numeric)
             updated = True
         if updated and self._seen_events % self._every_n_events == 0:
             rendered = self._render(title=f"live graphs after {event.phase}")

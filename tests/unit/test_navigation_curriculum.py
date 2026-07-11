@@ -110,6 +110,7 @@ def test_l_max_decreases_after_enough_low_success_but_not_below_min() -> None:
         L_max_min=2,
         min_frontier_episodes_before_update=3,
         frontier_success_low=0.25,
+        allow_L_max_decrease=True,
     )
     for _ in range(2):
         assert curriculum.update(L=5, success=False, L_max_episode=5).L_max == 5
@@ -117,6 +118,19 @@ def test_l_max_decreases_after_enough_low_success_but_not_below_min() -> None:
     assert final.L_max == 4
     assert final.L_max_change_direction == "decrease"
     assert curriculum.frontier_success_ema is None
+
+
+def test_l_max_never_decreases_by_default() -> None:
+    curriculum = _curriculum(
+        L_max_initial=5,
+        L_max_min=2,
+        min_frontier_episodes_before_update=3,
+        frontier_success_low=0.25,
+    )
+    for _ in range(5):
+        result = curriculum.update(L=5, success=False, L_max_episode=5)
+        assert result.L_max == 5
+        assert result.L_max_change_direction == "none"
 
 
 # --- Sanity check 11: no reset when L_max is unchanged ---
@@ -203,3 +217,33 @@ def test_config_rejects_l_max_min_below_two() -> None:
 def test_config_rejects_inverted_success_band() -> None:
     with pytest.raises(ValueError, match="frontier_success"):
         DistanceCurriculumConfig(frontier_success_low=0.9, frontier_success_high=0.2).validate()
+
+
+# --- Cross-run continuity: L_max state survives a checkpoint round-trip ---
+
+
+def test_curriculum_state_round_trips_through_state_dict() -> None:
+    curriculum = _curriculum(min_frontier_episodes_before_update=1, frontier_success_high=0.75)
+    curriculum.update(L=2, success=True, L_max_episode=2)  # advances L_max, tracks frontier
+    snapshot = curriculum.state_dict()
+
+    resumed = _curriculum(min_frontier_episodes_before_update=1)
+    resumed.load_state_dict(snapshot)
+    assert resumed.current_L_max() == curriculum.current_L_max()
+    assert resumed.frontier_success_ema == curriculum.frontier_success_ema
+    assert resumed.frontier_success_count == curriculum.frontier_success_count
+    assert resumed.episodes_since_lmax_change == curriculum.episodes_since_lmax_change
+
+
+def test_load_state_dict_floors_l_max_at_min() -> None:
+    # A snapshot from a run with a lower floor must not resume below this run's min.
+    curriculum = _curriculum(L_max_initial=5, L_max_min=5)
+    curriculum.load_state_dict(
+        {
+            "L_max": 2,
+            "frontier_success_ema": None,
+            "frontier_success_count": 0,
+            "episodes_since_lmax_change": 0,
+        }
+    )
+    assert curriculum.current_L_max() == 5
