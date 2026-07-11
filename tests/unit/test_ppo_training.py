@@ -11,14 +11,14 @@ from ac_zero.datasets.generator import generate_solvable
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.models.registry import create_trainable_model
-from ac_zero.training.checkpointing import CheckpointManager
-from ac_zero.training.instance_source import build_instance_source
-from ac_zero.training.losses import masked_softmax
-from ac_zero.training.navigation_curriculum import DistanceCurriculumConfig
-from ac_zero.training.pipeline import run_training_pipeline
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
-from ac_zero.training.pipeline_episodes import EpisodeMetrics
-from ac_zero.training.ppo import (
+from ac_zero.training.checkpointing.checkpointing import CheckpointManager
+from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculumConfig
+from ac_zero.training.pipeline.instance_source import build_instance_source
+from ac_zero.training.pipeline.pipeline import run_training_pipeline
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.pipeline.pipeline_episodes import EpisodeMetrics
+from ac_zero.training.ppo.losses import masked_softmax
+from ac_zero.training.ppo.ppo import (
     PPOExample,
     PPOTrainer,
     _generalized_advantages,
@@ -99,7 +99,7 @@ def test_collect_rollouts_normalizes_advantages_and_records_legal_actions() -> N
     config = _ppo_config()
     examples, episodes = collect_rollouts(
         config,
-        StateEncoder(config.max_word_length),
+        StateEncoder(config.max_relator_tokens),
         create_trainable_model("residual_mlp"),
         1,
         0,
@@ -159,7 +159,7 @@ def test_trainer_iteration_updates_the_model_and_reports_finite_stats() -> None:
     model.apply(StateEncoder().encode(env.state), len(env.legal_action_mask()))
     before = model.to_json()["parameters"]
     trainer = PPOTrainer(
-        config, StateEncoder(config.max_word_length), build_instance_source(config)
+        config, StateEncoder(config.max_relator_tokens), build_instance_source(config)
     )
     result = trainer.run_iteration(model, seed=5, iteration=1, rng=random.Random(5))
 

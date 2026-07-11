@@ -31,7 +31,7 @@ from numpy.typing import NDArray
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.instance_store import UNKNOWN, InstanceStore
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
 
 Summary = Mapping[str, float | int | bool | str]
 

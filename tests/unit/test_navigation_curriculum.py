@@ -13,11 +13,11 @@ from types import SimpleNamespace
 import pytest
 
 from ac_zero.environment.navigation_reward import AlphaUpdater, RewardConfig
-from ac_zero.training.navigation_curriculum import (
+from ac_zero.training.navigation.navigation_curriculum import (
     DistanceCurriculum,
     DistanceCurriculumConfig,
 )
-from ac_zero.training.pipeline_episodes import episode_distance_and_moves
+from ac_zero.training.pipeline.pipeline_episodes import episode_distance_and_moves
 
 
 def _curriculum(**overrides: float) -> DistanceCurriculum:

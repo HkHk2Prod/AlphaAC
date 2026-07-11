@@ -19,21 +19,29 @@ _TRAINABLE: dict[str, type[TrainablePolicyValueModel]] = {
 }
 
 
-def create_trainable_model(name: str, *, seed: int = 0) -> TrainablePolicyValueModel:
-    """Construct a trainable policy-value model from a stable configuration name."""
+def create_trainable_model(
+    name: str, *, seed: int = 0, **hyperparameters: int
+) -> TrainablePolicyValueModel:
+    """Construct a trainable policy-value model from a stable configuration name.
+
+    Extra keyword arguments override the architecture's size hyperparameters (e.g.
+    ``embed_dim``, ``hidden_dim``, ``num_layers``); unknown keys for the chosen
+    architecture raise ``TypeError`` from its constructor.
+    """
     normalized = name.lower().replace("-", "_")
     try:
-        return _TRAINABLE[normalized](seed=seed)
+        factory = _TRAINABLE[normalized]
     except KeyError as exc:
         raise KeyError(f"unknown model {name!r}") from exc
+    return factory(seed=seed, **hyperparameters)
 
 
-def create_model(name: str, *, seed: int = 0) -> PolicyValueModel:
+def create_model(name: str, *, seed: int = 0, **hyperparameters: int) -> PolicyValueModel:
     """Construct any registered policy-value model, including the uniform baseline."""
     normalized = name.lower().replace("-", "_")
     if normalized == "uniform":
         return UniformPolicyValueModel()
-    return create_trainable_model(normalized, seed=seed)
+    return create_trainable_model(normalized, seed=seed, **hyperparameters)
 
 
 def model_from_json(data: dict[str, Any]) -> TrainablePolicyValueModel:

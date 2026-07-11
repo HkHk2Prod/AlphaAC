@@ -5,31 +5,36 @@ import random
 import time
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.navigation_reward import AlphaUpdater
 from ac_zero.models.registry import create_trainable_model, model_from_json
 from ac_zero.system.manifests import ReproducibilityManifest
 from ac_zero.system.parallel import describe_worker_pool
-from ac_zero.training.callbacks import CallbackManager, default_training_callbacks
-from ac_zero.training.checkpoint_name import derive_checkpoint_name
-from ac_zero.training.checkpoint_writer import RunCheckpointer
-from ac_zero.training.events import LogLevel
-from ac_zero.training.instance_source import build_instance_source
-from ac_zero.training.losses import PolicyValueLoss
-from ac_zero.training.navigation_curriculum import DistanceCurriculum
-from ac_zero.training.navigation_metrics import log_curriculum, log_navigation
-from ac_zero.training.pipeline_artifacts import render_plots, write_fixture_certificate
-from ac_zero.training.pipeline_config import TrainingPipelineConfig, run_description
-from ac_zero.training.pipeline_episodes import (
+from ac_zero.training.checkpointing.checkpoint_name import derive_checkpoint_name
+from ac_zero.training.checkpointing.checkpoint_writer import RunCheckpointer
+from ac_zero.training.logging.callbacks import CallbackManager, default_training_callbacks
+from ac_zero.training.logging.events import LogLevel
+from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculum
+from ac_zero.training.navigation.navigation_metrics import log_curriculum, log_navigation
+from ac_zero.training.pipeline.instance_source import build_instance_source
+from ac_zero.training.pipeline.pipeline_artifacts import render_plots, write_fixture_certificate
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig, run_description
+from ac_zero.training.pipeline.pipeline_episodes import (
     EpisodeMetrics,
     ReplayExample,
     batch_return_and_success,
     collect_episodes,
 )
-from ac_zero.training.pipeline_summary import MetricsRow, TrainingPipelineSummary, _RunDirectories
-from ac_zero.training.ppo import PPOTrainer
-from ac_zero.training.replay_buffer import ReplayBuffer
+from ac_zero.training.pipeline.pipeline_summary import (
+    MetricsRow,
+    TrainingPipelineSummary,
+    _RunDirectories,
+)
+from ac_zero.training.ppo.losses import PolicyValueLoss
+from ac_zero.training.ppo.ppo import PPOTrainer
+from ac_zero.training.ppo.replay_buffer import ReplayBuffer
 
 
 def run_training_pipeline(
@@ -60,13 +65,13 @@ class _TrainingRun:
             self.dirs.run, verbosity=config.verbosity
         )
         self.replay = ReplayBuffer[ReplayExample](config.replay_capacity)
-        self.encoder = StateEncoder(config.max_word_length)
+        self.encoder = StateEncoder(config.max_relator_tokens)
         # Built once up front so the run can log what it trains on, and so the
         # dataset sidecar is compiled here rather than raced for by every worker.
         self._instance_source = build_instance_source(config)
         self.rng = random.Random(seed)
-        self.model = create_trainable_model(config.model, seed=seed)
-        self._warm_start_payload: dict | None = None
+        self.model = create_trainable_model(config.model, seed=seed, **config.model_config)
+        self._warm_start_payload: dict[str, Any] | None = None
         self.warm_started_from = self._warm_start()
         self.checkpointer = RunCheckpointer(
             self.dirs.run,
@@ -162,14 +167,14 @@ class _TrainingRun:
             self.distance_curriculum.load_state_dict(curriculum_state)
             print(f"[warm-start] resumed curriculum L_max at {self.distance_curriculum.L_max}")
 
-    def _learning_state(self) -> dict:
+    def _learning_state(self) -> dict[str, Any]:
         """The adaptive across-episode state to persist in the next checkpoint.
 
         Each mechanism contributes its snapshot only while active, so a scramble
         run (no curriculum) or a non-navigation run (no alpha) writes an empty or
         partial block that :meth:`_restore_learning_state` restores symmetrically.
         """
-        state: dict[str, dict] = {}
+        state: dict[str, Any] = {}
         if self.alpha_updater is not None:
             state["alpha_updater"] = self.alpha_updater.state_dict()
         if self.distance_curriculum is not None:

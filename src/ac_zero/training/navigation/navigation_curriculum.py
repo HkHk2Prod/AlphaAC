@@ -22,6 +22,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TypedDict
+
+
+class CurriculumState(TypedDict):
+    """Serialized across-episode state of a :class:`DistanceCurriculum`."""
+
+    L_max: int
+    frontier_success_ema: float | None
+    frontier_success_count: int
+    episodes_since_lmax_change: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +127,7 @@ class DistanceCurriculum:
         """The ceiling the next episode should be sampled under (``L <= L_max``)."""
         return self.L_max
 
-    def state_dict(self) -> dict[str, float | int | None]:
+    def state_dict(self) -> CurriculumState:
         """Snapshot the across-episode state so a resumed run continues from it.
 
         Captures the live ``L_max`` and the rolling frontier estimate so a
@@ -131,7 +141,7 @@ class DistanceCurriculum:
             "episodes_since_lmax_change": self.episodes_since_lmax_change,
         }
 
-    def load_state_dict(self, state: dict[str, float | int | None]) -> None:
+    def load_state_dict(self, state: CurriculumState) -> None:
         """Restore a snapshot from :meth:`state_dict`, clamping ``L_max`` to its floor.
 
         ``L_max`` is floored at ``L_max_min`` so a snapshot from a run with a

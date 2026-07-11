@@ -16,10 +16,10 @@ from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.models.registry import create_model
 from ac_zero.search.mcts import UniformMCTS
 from ac_zero.system.manifests import ReproducibilityManifest
-from ac_zero.training.callbacks import CallbackManager, default_smoke_callbacks
-from ac_zero.training.checkpointing import CheckpointManager
-from ac_zero.training.losses import return_to_go
-from ac_zero.training.replay_buffer import ReplayBuffer
+from ac_zero.training.checkpointing.checkpointing import CheckpointManager
+from ac_zero.training.logging.callbacks import CallbackManager, default_smoke_callbacks
+from ac_zero.training.ppo.losses import return_to_go
+from ac_zero.training.ppo.replay_buffer import ReplayBuffer
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +80,7 @@ def run_smoke_training(
             },
         )
 
-        encoder = StateEncoder(max_word_length=8)
+        encoder = StateEncoder(max_relator_tokens=8)
         encoding = encoder.encode(env.state)
         action_count = len(env.catalog)
         mask = env.legal_action_mask()

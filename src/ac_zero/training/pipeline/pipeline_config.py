@@ -6,8 +6,8 @@ from typing import Any, cast
 from ac_zero.environment.navigation_reward import RewardConfig
 from ac_zero.environment.rewards import REWARD_MODES
 from ac_zero.moves.universal import MOVE_SET_NAMES
-from ac_zero.training.events import Verbosity
-from ac_zero.training.navigation_curriculum import DistanceCurriculumConfig
+from ac_zero.training.logging.events import Verbosity
+from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculumConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +28,7 @@ class TrainingPipelineConfig:
     dataset_max_difficulty: int | None = None
     dataset_bucket: str | None = None
     total_length_cap: int = 128
-    max_word_length: int = 32
+    max_relator_tokens: int = 32
     goal_mode: str = "exact_standard"
     reward_mode: str = "length_reduction_and_goal"
     # Named move set (`ac_zero.moves.universal.MOVE_SET_NAMES`) self-play actually
@@ -52,6 +52,11 @@ class TrainingPipelineConfig:
     # undiscounted) mildly prefer shorter descents to the trivial group.
     gamma: float = 0.99
     model: str = "linear_policy_value"
+    # Optional size overrides for the chosen architecture, parsed from a
+    # `model_config:` mapping in the experiment YAML (e.g. `embed_dim`,
+    # `hidden_dim`, `num_layers`, `ff_dim`, `max_tokens`). Empty uses the
+    # architecture's defaults; keys unknown to the architecture raise at build.
+    model_config: dict[str, int] = field(default_factory=dict)
     # Training backend: "alphazero" (PUCT self-play) or "ppo" (on-policy PPO).
     agent: str = "alphazero"
     mcts_simulations: int = 16
@@ -117,7 +122,7 @@ class TrainingPipelineConfig:
             dataset_max_difficulty=_optional_int(dataset.get("max_difficulty")),
             dataset_bucket=_optional_str(dataset.get("bucket")),
             total_length_cap=int(data.get("total_length_cap", defaults.total_length_cap)),
-            max_word_length=int(data.get("max_word_length", defaults.max_word_length)),
+            max_relator_tokens=int(data.get("max_relator_tokens", defaults.max_relator_tokens)),
             goal_mode=str(data.get("goal_mode", defaults.goal_mode)),
             reward_mode=str(
                 training.get("reward_mode", data.get("reward_mode", defaults.reward_mode))
@@ -132,6 +137,7 @@ class TrainingPipelineConfig:
             ),
             gamma=float(training.get("gamma", data.get("gamma", defaults.gamma))),
             model=str(data.get("model", defaults.model)),
+            model_config=_model_config(data.get("model_config")),
             agent=str(data.get("agent", defaults.agent)),
             mcts_simulations=int(
                 training.get(
@@ -218,8 +224,8 @@ class TrainingPipelineConfig:
             raise ValueError("dataset_max_difficulty must be non-negative")
         if self.total_length_cap <= 0:
             raise ValueError("total_length_cap must be positive")
-        if self.max_word_length <= 0:
-            raise ValueError("max_word_length must be positive")
+        if self.max_relator_tokens <= 0:
+            raise ValueError("max_relator_tokens must be positive")
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
         if self.reward_mode == "navigation":
@@ -247,6 +253,8 @@ class TrainingPipelineConfig:
             )
         if self.goal_reward < 0.0:
             raise ValueError("goal_reward must be non-negative")
+        if any(size <= 0 for size in self.model_config.values()):
+            raise ValueError("model_config sizes must be positive")
         if self.agent not in ("alphazero", "ppo"):
             raise ValueError("agent must be 'alphazero' or 'ppo'")
         if self.mcts_simulations <= 0:
@@ -319,7 +327,7 @@ def run_description(
         "gamma": config.gamma,
         "scramble_depth": config.scramble_depth,
         "total_length_cap": config.total_length_cap,
-        "max_word_length": config.max_word_length,
+        "max_relator_tokens": config.max_relator_tokens,
         "iterations": config.iterations,
         "episodes_per_iteration": config.episodes_per_iteration,
         "optimizer_updates": config.optimizer_updates,
@@ -360,7 +368,16 @@ def run_description(
     if config.reward_mode == "navigation":
         for name, field_value in asdict(config.reward_config).items():
             report[f"reward.{name}"] = field_value
+    for name, size in config.model_config.items():
+        report[f"model.{name}"] = size
     return report
+
+
+def _model_config(value: Any) -> dict[str, int]:
+    """Coerce a `model_config:` YAML mapping to positive integer size overrides."""
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): int(size) for key, size in value.items()}
 
 
 def _reward_config(value: Any) -> RewardConfig:

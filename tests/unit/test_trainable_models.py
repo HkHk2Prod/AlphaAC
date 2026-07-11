@@ -13,7 +13,7 @@ from ac_zero.models.registry import (
     create_trainable_model,
     model_from_json,
 )
-from ac_zero.training.losses import visit_count_policy
+from ac_zero.training.ppo.losses import visit_count_policy
 
 ARCHITECTURES = ["linear_policy_value", "residual_mlp", "deepsets", "gru", "transformer"]
 
@@ -29,7 +29,7 @@ class _Example:
 def _fixture(seed: int = 1, depth: int = 2) -> tuple[PaddedEncoding, tuple[bool, ...], int, Any]:
     instance = generate_solvable(rank=2, depth=depth, seed=seed)
     env = ACEnvironment(instance.presentation, ACEnvironmentConfig(max_moves=4))
-    encoding = StateEncoder(max_word_length=16).encode(env.state)
+    encoding = StateEncoder(max_relator_tokens=16).encode(env.state)
     mask = env.legal_action_mask()
     counts = tuple(3 if ok else 0 for ok in mask)
     target = visit_count_policy(counts, mask)
@@ -77,7 +77,7 @@ def test_deepsets_is_permutation_invariant() -> None:
         rank=presentation.rank,
         provenance=presentation.provenance,
     )
-    encoder = StateEncoder(max_word_length=16)
+    encoder = StateEncoder(max_relator_tokens=16)
     model = create_trainable_model("deepsets", seed=0)
     config = ACEnvironmentConfig(max_moves=4)
     base = ACEnvironment(presentation, config)

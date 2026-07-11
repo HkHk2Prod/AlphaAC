@@ -16,9 +16,9 @@ from ac_zero.models.registry import model_from_json
 from ac_zero.models.trainable import TrainablePolicyValueModel
 from ac_zero.search.puct import PUCTMCTS, PUCTConfig
 from ac_zero.system.parallel import parallel_map, resolve_worker_count
-from ac_zero.training.instance_source import InstanceSource, build_instance_source
-from ac_zero.training.losses import return_to_go, visit_count_policy
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.pipeline.instance_source import InstanceSource, build_instance_source
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.ppo.losses import return_to_go, visit_count_policy
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,7 +189,7 @@ def _init_episode_worker(
     global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL, _WORKER_SOURCE
     global _WORKER_ALPHA, _WORKER_MAX_DISTANCE
     _WORKER_CONFIG = config
-    _WORKER_ENCODER = StateEncoder(config.max_word_length)
+    _WORKER_ENCODER = StateEncoder(config.max_relator_tokens)
     _WORKER_MODEL = model_from_json(model_state)
     _WORKER_SOURCE = build_instance_source(config)
     _WORKER_ALPHA = alpha

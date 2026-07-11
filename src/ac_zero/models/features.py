@@ -68,14 +68,6 @@ def relator_features(encoding: PaddedEncoding) -> NDArray[np.float64]:
     return np.asarray(rows, dtype=np.float64)
 
 
-def token_sequence(encoding: PaddedEncoding, max_steps: int) -> NDArray[np.int64]:
-    """Flatten real (unpadded) token IDs in relator order, capped at ``max_steps``."""
-    flat = encoding.tokens[encoding.mask].astype(np.int64)
-    if flat.size == 0:
-        return np.zeros(1, dtype=np.int64)
-    return flat[:max_steps]
-
-
 def vocabulary_size(encoding: PaddedEncoding) -> int:
     """Embedding table size: padding slot plus signed generators for the rank.
 

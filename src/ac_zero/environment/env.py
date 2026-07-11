@@ -99,7 +99,7 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
     def _build_observation_space(self) -> spaces.Dict:
         rank = self.initial.rank
         relators = len(self.initial.relators)
-        width = self.encoder.max_word_length
+        width = self.encoder.max_relator_tokens
         return spaces.Dict(
             {
                 "tokens": spaces.Box(0, 2 * rank + 1, (relators, width), dtype=np.int64),

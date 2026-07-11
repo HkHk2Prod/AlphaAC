@@ -1,11 +1,11 @@
 """Compact console sink that folds a run's episodes into per-iteration summaries.
 
-Split out of :mod:`ac_zero.training.log_sinks` because it is a different kind of
+Split out of :mod:`ac_zero.training.logging.log_sinks` because it is a different kind of
 sink: rather than mirroring every event, it suppresses the per-episode and
 per-optimizer-step stream (still recorded to the JSONL log and the graph files)
 and prints one bundled line per logged iteration plus the run's milestones. It is
 what the ``summary``/``quiet`` verbosity levels put on the terminal in place of
-the historical per-event flood (see :class:`ac_zero.training.events.Verbosity`).
+the historical per-event flood (see :class:`ac_zero.training.logging.events.Verbosity`).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 from typing import TextIO
 
-from ac_zero.training.events import LogLevel, TrainingEvent
+from ac_zero.training.logging.events import LogLevel, TrainingEvent
 
 # Loss keys carried on optimizer events; the newest value is folded into the next
 # iteration line so a bundled summary reports return, success, and loss together.

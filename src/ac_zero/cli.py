@@ -37,12 +37,15 @@ from ac_zero.search.iterative_deepening import IterativeDeepeningConfig, Iterati
 from ac_zero.search.mcts import UniformMCTS
 from ac_zero.search.puct import PUCTMCTS
 from ac_zero.system.reporting import CliReporter
-from ac_zero.training.callbacks import CallbackManager, default_training_callbacks
-from ac_zero.training.checkpoint_name import derive_checkpoint_name
-from ac_zero.training.events import Verbosity
-from ac_zero.training.hub_checkpoints import PeriodicCheckpointUploader, download_best_checkpoint
-from ac_zero.training.pipeline import run_training_pipeline
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.checkpointing.checkpoint_name import derive_checkpoint_name
+from ac_zero.training.checkpointing.hub_checkpoints import (
+    PeriodicCheckpointUploader,
+    download_best_checkpoint,
+)
+from ac_zero.training.logging.callbacks import CallbackManager, default_training_callbacks
+from ac_zero.training.logging.events import Verbosity
+from ac_zero.training.pipeline.pipeline import run_training_pipeline
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
 from ac_zero.training.smoke import run_smoke_training
 
 # Bare dataset filenames (no directory component) resolve under here, so

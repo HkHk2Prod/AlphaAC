@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any
 
 from ac_zero.models.trainable import TrainablePolicyValueModel
-from ac_zero.training.checkpoint_bundle import CheckpointBundle
-from ac_zero.training.checkpointing import CheckpointManager
-from ac_zero.training.losses import PolicyValueLoss
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.checkpointing.checkpoint_bundle import CheckpointBundle
+from ac_zero.training.checkpointing.checkpointing import CheckpointManager
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.ppo.losses import PolicyValueLoss
 
 _SCHEMA_VERSION = "aczero-training-checkpoint-v1"
 

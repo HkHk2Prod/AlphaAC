@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 
 from ac_zero.system.reporting import CliReporter
-from ac_zero.training.callbacks import CallbackManager
-from ac_zero.training.events import LogLevel, TrainingEvent
-from ac_zero.training.log_sinks import (
+from ac_zero.training.logging.callbacks import CallbackManager
+from ac_zero.training.logging.events import LogLevel, TrainingEvent
+from ac_zero.training.logging.log_sinks import (
     AsciiGraphLogger,
     JsonlEventLogger,
     RotatingFileWriter,
@@ -177,8 +177,8 @@ def test_smoke_training_emits_error_event_on_failure(tmp_path: Path, monkeypatch
 
 
 def test_training_pipeline_emits_error_event_on_failure(tmp_path: Path, monkeypatch) -> None:
-    import ac_zero.training.pipeline as pipeline
-    import ac_zero.training.pipeline_episodes as pipeline_episodes
+    import ac_zero.training.pipeline.pipeline as pipeline
+    import ac_zero.training.pipeline.pipeline_episodes as pipeline_episodes
 
     captured: list[TrainingEvent] = []
 

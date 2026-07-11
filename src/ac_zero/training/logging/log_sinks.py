@@ -8,7 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import TextIO
 
-from ac_zero.training.events import LogLevel, TrainingEvent
+from ac_zero.training.logging.events import LogLevel, TrainingEvent
 
 DEFAULT_MAX_BYTES = 5_000_000
 DEFAULT_BACKUP_COUNT = 3

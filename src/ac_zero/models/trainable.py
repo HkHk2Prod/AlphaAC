@@ -9,7 +9,7 @@ from torch import nn
 
 from ac_zero.encoding.padded import PaddedEncoding
 from ac_zero.models.base import PolicyValueOutput
-from ac_zero.training.losses import PolicyValueLoss, PPOBatchStats, policy_value_loss
+from ac_zero.training.ppo.losses import PolicyValueLoss, PPOBatchStats, policy_value_loss
 
 # A replay example is duck-typed; only these attributes are read during training.
 TrainingExample = Any

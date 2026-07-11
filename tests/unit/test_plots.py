@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from ac_zero.training.plots import PlotSpec, render_training_plots
+from ac_zero.training.logging.plots import PlotSpec, render_training_plots
 
 _ROWS = [
     {
@@ -70,7 +70,7 @@ def test_render_training_plots_raises_when_matplotlib_missing(
 ) -> None:
     import builtins
 
-    from ac_zero.training.plots import PlotsUnavailable
+    from ac_zero.training.logging.plots import PlotsUnavailable
 
     real_import = builtins.__import__
 

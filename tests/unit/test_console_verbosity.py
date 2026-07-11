@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from ac_zero.training.callbacks import (
+from ac_zero.training.logging.callbacks import (
     AsciiGraphLogger,
     ConsoleSummaryLogger,
     TerminalProgressLogger,
     default_training_callbacks,
 )
-from ac_zero.training.events import LogLevel, TrainingEvent, Verbosity
+from ac_zero.training.logging.events import LogLevel, TrainingEvent, Verbosity
 
 
 def _event(

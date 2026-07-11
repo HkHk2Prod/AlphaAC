@@ -10,12 +10,12 @@ import pytest
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.groups import MOVE_CATALOG, SCHEMA_VERSION, group_entry
-from ac_zero.training.instance_source import (
+from ac_zero.training.pipeline.instance_source import (
     DatasetSource,
     ScrambleSource,
     build_instance_source,
 )
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
 
 _ANNOTATIONS_SCHEMA = "aczero-annotations-v1"
 
