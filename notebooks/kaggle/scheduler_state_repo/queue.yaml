@@ -1,150 +1,189 @@
-# Seed queue.yaml for the scheduler state, stored in the SAME private HF bucket
-# as the training dataset (HkHk2Prod/alphaac-data). Bootstrap it once with:
-#   python -c "from ac_zero.datasets.hub import upload_files; \
-#     upload_files([('queue.yaml','queue.yaml'), \
-#                   ('scheduler_state.json','scheduler_state.json')], \
-#                  bucket='HkHk2Prod/alphaac-data')"
-# (Set HF_TOKEN first.) Thereafter the scheduler and manual edits keep it current.
 version: 1
-
 limits:
   max_total_active: 5
   max_cpu_active: 5
   max_gpu_active: 1
-  max_launches_per_tick: 5   # start several tasks per tick (each has its own slug)
+  max_launches_per_tick: 5
   stale_heartbeat_minutes: 180
-
-# Each task has its OWN notebook_slug so they run as independent Kaggle kernels
-# concurrently. They share one notebook_dir / code_file; the scheduler patches the
-# kernel id per task, so pushing to distinct slugs creates distinct kernels.
 tasks:
-  - id: generation-main
-    active: true
-    remaining_runs: null        # null == infinite
-    mode: generation
-    accelerator: cpu
-    priority: 100
-    notebook_slug: hkhk2prod/alphaac-generation
-    notebook_dir: notebooks/kaggle
-    max_runtime_minutes: 705
-    stop_after_current_iteration: false
-    config:
-      rank: 2
-      # Effectively uncapped: the notebook passes --minutes so the soft runtime
-      # deadline (not the target) ends the run and it fills the whole budget.
-      target: 100000000
-      total_length_cap: 0        # 0 = no relator-length cap (unbounded)
+- id: generation-main
+  mode: generation
+  notebook_slug: hkhk2prod/alphaac-generation
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 100
+  max_runtime_minutes: 705
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    target: 100000000
+    total_length_cap: 0
+    workers: 0
+    output: /kaggle/working/train_rank2.groups.json
+- id: annotation-main
+  mode: annotation
+  notebook_slug: hkhk2prod/alphaac-annotation
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 90
+  max_runtime_minutes: 705
+  stop_after_current_iteration: false
+  config:
+    moveset: strict-ac
+    max_depth: 0
+    workers: 0
+- id: train-alphazero-strict-navigation
+  mode: training
+  notebook_slug: hkhk2prod/alphaac-train-alphazero
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 50
+  max_runtime_minutes: 705
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    agent: alphazero
+    model: residual_mlp
+    moveset: strict-ac
+    total_length_cap: 128
+    seed: 0
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
+      max_difficulty: null
+    training:
+      reward_mode: navigation
+      gamma: 0.99
+      iterations: 100000000
+      episodes_per_iteration: 24
+      optimizer_updates: 8
+      batch_size: 64
+      replay_capacity: 4096
+      learning_rate: 0.02
+      value_loss_weight: 1.0
+      mcts_simulations: 128
+      c_puct: 1.5
+      checkpoint_every: 1
       workers: 0
-      output: /kaggle/working/train_rank2.groups.json
-
-  - id: annotation-main
-    active: true
-    remaining_runs: 10
-    mode: annotation
-    accelerator: cpu
-    priority: 90
-    notebook_slug: hkhk2prod/alphaac-annotation
-    notebook_dir: notebooks/kaggle
-    max_runtime_minutes: 705
-    stop_after_current_iteration: false
-    config:
-      moveset: strict-ac
-      max_depth: 0                # 0 = unbounded search depth
+- id: train-ppo-strict-navigation
+  mode: training
+  notebook_slug: hkhk2prod/alphaac-train-ppo
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 50
+  max_runtime_minutes: 705
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    agent: ppo
+    model: residual_mlp
+    moveset: strict-ac
+    total_length_cap: 128
+    seed: 0
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
+      max_difficulty: null
+    training:
+      reward_mode: navigation
+      gamma: 0.99
+      iterations: 100000000
+      episodes_per_iteration: 32
+      batch_size: 64
+      ppo_epochs: 4
+      ppo_lambda: 0.95
+      ppo_clip: 0.2
+      entropy_coef: 0.01
+      value_loss_weight: 0.5
+      learning_rate: 0.02
+      checkpoint_every: 1
       workers: 0
-
-  # --- Training methods -------------------------------------------------------
-  # ac_primitive moves = the strict-ac move set; reward = navigation (adaptive
-  # distance-shaping toward the trivial group; needs the per-group distance
-  # annotations, so these seed self-play from the grown dataset + its strict-ac
-  # annotations, pulled from the bucket by the notebook at startup).
-
-  - id: train-alphazero-strict-navigation
-    active: true
-    remaining_runs: null
-    mode: training
-    accelerator: cpu
-    priority: 50
-    notebook_slug: hkhk2prod/alphaac-train-alphazero
-    notebook_dir: notebooks/kaggle
-    max_runtime_minutes: 705
-    stop_after_current_iteration: false
-    config:
-      rank: 2
-      agent: alphazero
-      model: residual_mlp
-      moveset: strict-ac          # ac_primitive moves
-      total_length_cap: 128
-      seed: 0
-      dataset:
-        bucket: HkHk2Prod/alphaac-data
-        max_difficulty: null      # cap groups by distance-to-origin; null = all
-      training:
-        reward_mode: navigation   # adaptive distance-shaping toward the trivial group
-        gamma: 0.99
-        # Effectively uncapped: the notebook passes --minutes, so the soft runtime
-        # deadline (not this cap) ends the run and it fills the whole budget.
-        iterations: 100000000
-        episodes_per_iteration: 24
-        optimizer_updates: 8
-        batch_size: 64
-        replay_capacity: 4096
-        learning_rate: 0.02
-        value_loss_weight: 1.0
-        mcts_simulations: 128
-        c_puct: 1.5
-        checkpoint_every: 1
-        workers: 0
-
-  - id: train-ppo-strict-navigation
-    active: true
-    remaining_runs: null
-    mode: training
-    accelerator: cpu
-    priority: 50
-    notebook_slug: hkhk2prod/alphaac-train-ppo
-    notebook_dir: notebooks/kaggle
-    max_runtime_minutes: 705
-    stop_after_current_iteration: false
-    config:
-      rank: 2
-      agent: ppo
-      model: residual_mlp
-      moveset: strict-ac          # ac_primitive moves
-      total_length_cap: 128
-      seed: 0
-      dataset:
-        bucket: HkHk2Prod/alphaac-data
-        max_difficulty: null
-      training:
-        reward_mode: navigation
-        gamma: 0.99
-        # Effectively uncapped: --minutes ends the run (see the AlphaZero task).
-        iterations: 100000000
-        episodes_per_iteration: 32
-        batch_size: 64
-        ppo_epochs: 4
-        ppo_lambda: 0.95
-        ppo_clip: 0.2
-        entropy_coef: 0.01
-        value_loss_weight: 0.5
-        learning_rate: 0.02
-        checkpoint_every: 1
-        workers: 0
-
-  # greedy-RL is a non-learning search baseline: no training, so the reward mode
-  # does not apply. It solves the grown strict-ac dataset with the greedy agent.
-  - id: solve-greedy-strict
-    active: true
-    remaining_runs: null
-    mode: solve
-    accelerator: cpu
-    priority: 40
-    notebook_slug: hkhk2prod/alphaac-solve-greedy
-    notebook_dir: notebooks/kaggle
-    max_runtime_minutes: 705
-    stop_after_current_iteration: false
-    config:
-      rank: 2
-      agent: greedy
-      dataset:
-        bucket: HkHk2Prod/alphaac-data
+- id: train-alphazero-strict-navigation-transformer
+  mode: training
+  notebook_slug: hkhk2prod/alphaac-train-alphazero-transformer
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 50
+  max_runtime_minutes: 705
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    agent: alphazero
+    model: transformer
+    moveset: strict-ac
+    total_length_cap: 128
+    seed: 0
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
+      max_difficulty: null
+    training:
+      reward_mode: navigation
+      gamma: 0.99
+      iterations: 100000000
+      episodes_per_iteration: 24
+      optimizer_updates: 8
+      batch_size: 64
+      replay_capacity: 4096
+      learning_rate: 0.02
+      value_loss_weight: 1.0
+      mcts_simulations: 128
+      c_puct: 1.5
+      checkpoint_every: 1
+      workers: 0
+- id: train-ppo-strict-navigation-transformer
+  mode: training
+  notebook_slug: hkhk2prod/alphaac-train-ppo-transformer
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 50
+  max_runtime_minutes: 705
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    agent: ppo
+    model: transformer
+    moveset: strict-ac
+    total_length_cap: 128
+    seed: 0
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
+      max_difficulty: null
+    training:
+      reward_mode: navigation
+      gamma: 0.99
+      iterations: 100000000
+      episodes_per_iteration: 32
+      batch_size: 64
+      ppo_epochs: 4
+      ppo_lambda: 0.95
+      ppo_clip: 0.2
+      entropy_coef: 0.01
+      value_loss_weight: 0.5
+      learning_rate: 0.02
+      checkpoint_every: 1
+      workers: 0
+- id: solve-greedy-strict
+  mode: solve
+  notebook_slug: hkhk2prod/alphaac-solve-greedy
+  notebook_dir: notebooks/kaggle
+  active: false
+  remaining_runs: null
+  accelerator: cpu
+  priority: 40
+  max_runtime_minutes: 705
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    agent: greedy
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
