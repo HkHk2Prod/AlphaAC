@@ -24,6 +24,8 @@ class _RotaryEncoding(nn.Module):
     tokens rather than absolute positions. ``dim`` must be even.
     """
 
+    inv_freq: torch.Tensor
+
     def __init__(self, dim: int) -> None:
         super().__init__()
         if dim % 2:
@@ -55,7 +57,8 @@ class _RotaryAttention(nn.Module):
         scores = (q @ k.transpose(-2, -1)) * self.scale
         scores = scores.masked_fill(~key_mask.unsqueeze(0), float("-inf"))
         attention = torch.softmax(scores, dim=-1)
-        return self.out(attention @ self.value(x))
+        attended: torch.Tensor = self.out(attention @ self.value(x))
+        return attended
 
 
 class _EncoderBlock(nn.Module):
@@ -70,7 +73,8 @@ class _EncoderBlock(nn.Module):
 
     def forward(self, x: torch.Tensor, key_mask: torch.Tensor) -> torch.Tensor:
         x = self.norm1(x + self.attention(x, key_mask))
-        return self.norm2(x + self.feed_forward(x))
+        out: torch.Tensor = self.norm2(x + self.feed_forward(x))
+        return out
 
 
 class _TransformerTrunk(nn.Module):
@@ -95,7 +99,8 @@ class _TransformerTrunk(nn.Module):
         x = self.embedding(tokens)
         for block in self.blocks:
             x = block(x, mask)
-        return x[mask].mean(dim=0, keepdim=True)
+        pooled: torch.Tensor = x[mask].mean(dim=0, keepdim=True)
+        return pooled
 
 
 class TransformerPolicyValueModel(TrainablePolicyValueModel):
