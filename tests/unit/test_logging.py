@@ -5,9 +5,10 @@ from pathlib import Path
 import pytest
 
 from ac_zero.system.reporting import CliReporter
-from ac_zero.training.callbacks import CallbackManager
-from ac_zero.training.events import LogLevel, TrainingEvent
-from ac_zero.training.log_sinks import (
+from ac_zero.training.logging.callbacks import CallbackManager
+from ac_zero.training.logging.events import LogLevel, TrainingEvent
+from ac_zero.training.logging.log_sinks import (
+    AsciiGraphLogger,
     JsonlEventLogger,
     RotatingFileWriter,
     TerminalProgressLogger,
@@ -66,6 +67,25 @@ def test_jsonl_logger_filters_below_min_level_and_records_level_name(tmp_path: P
     assert len(rows) == 1
     assert rows[0]["level"] == "INFO"
     assert rows[0]["phase"] == "info"
+
+
+def test_ascii_graph_logger_skips_non_finite_metrics(tmp_path: Path) -> None:
+    # A diverged metric (NaN/inf) must not crash the sparkline renderer at
+    # render or close time, where int(NaN) would abort the whole run.
+    stream = io.StringIO()
+    logger = AsciiGraphLogger(
+        tmp_path / "live.txt", tmp_path / "final.txt", ["loss"], stream=stream
+    )
+    logger.on_event(TrainingEvent(0, "iter", "ok", {"loss": 1.0}, LogLevel.INFO))
+    logger.on_event(TrainingEvent(1, "iter", "nan", {"loss": float("nan")}, LogLevel.INFO))
+    logger.on_event(TrainingEvent(2, "iter", "inf", {"loss": float("inf")}, LogLevel.INFO))
+    logger.on_event(TrainingEvent(3, "iter", "ok", {"loss": 2.0}, LogLevel.INFO))
+    logger.close()  # must not raise
+
+    final = (tmp_path / "final.txt").read_text(encoding="utf-8")
+    assert "loss" in final
+    # Only the two finite values were recorded; the last shown value is 2.
+    assert final.rstrip().endswith("2")
 
 
 def test_event_to_dict_uses_readable_level() -> None:
@@ -157,8 +177,8 @@ def test_smoke_training_emits_error_event_on_failure(tmp_path: Path, monkeypatch
 
 
 def test_training_pipeline_emits_error_event_on_failure(tmp_path: Path, monkeypatch) -> None:
-    import ac_zero.training.pipeline as pipeline
-    import ac_zero.training.pipeline_episodes as pipeline_episodes
+    import ac_zero.training.pipeline.pipeline as pipeline
+    import ac_zero.training.pipeline.pipeline_episodes as pipeline_episodes
 
     captured: list[TrainingEvent] = []
 

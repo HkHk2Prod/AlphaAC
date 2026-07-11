@@ -14,7 +14,11 @@
 # for the navigation reward's start-to-goal distance and the distance curriculum).
 rank: 2
 agent: alphazero
-model: residual_mlp
+model: transformer
+model_config:
+  embed_dim: 16
+  ff_dim: 64
+  num_layers: 3
 total_length_cap: 128
 moveset: strict-ac
 dataset:

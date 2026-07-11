@@ -1,6 +1,6 @@
 """Artifacts a training run writes once its iteration loop has ended.
 
-Kept out of :mod:`ac_zero.training.pipeline` so that module stays about the
+Kept out of :mod:`ac_zero.training.pipeline.pipeline` so that module stays about the
 training loop. Two things happen here: the run solves a small fixture with the
 greedy solver and checks the resulting certificate verifies (a self-check that
 the environment and verifier still agree), and it renders the progress plots,
@@ -17,11 +17,11 @@ from ac_zero.agents.greedy import GreedySolver
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.environment.env import ACEnvironment
-from ac_zero.training.callbacks import CallbackManager
-from ac_zero.training.events import LogLevel
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
-from ac_zero.training.pipeline_episodes import build_env_config, moves_for_distance
-from ac_zero.training.plots import PlotsUnavailable, render_training_plots
+from ac_zero.training.logging.callbacks import CallbackManager
+from ac_zero.training.logging.events import LogLevel
+from ac_zero.training.logging.plots import PlotsUnavailable, render_training_plots
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.pipeline.pipeline_episodes import build_env_config, moves_for_distance
 
 
 def write_fixture_certificate(

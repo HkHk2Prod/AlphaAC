@@ -1,6 +1,6 @@
 """Output scaffolding for a training run: its metrics rows, directory layout, and summary.
 
-Split out of :mod:`ac_zero.training.pipeline` so the run orchestrator stays focused
+Split out of :mod:`ac_zero.training.pipeline.pipeline` so the run orchestrator stays focused
 on control flow rather than the shapes of what it writes.
 """
 

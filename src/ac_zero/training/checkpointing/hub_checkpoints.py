@@ -27,13 +27,13 @@ from pathlib import Path
 from typing import Any, cast
 
 from ac_zero.datasets.hub import DEFAULT_BUCKET, download_file, list_remote, upload_files
-from ac_zero.training.checkpoint_bundle import (
+from ac_zero.training.checkpointing.checkpoint_bundle import (
     BEST_FILE,
     LATEST_FILE,
     META_FILE,
     METRICS_FILE,
 )
-from ac_zero.training.plots import PlotsUnavailable, render_training_plots
+from ac_zero.training.logging.plots import PlotsUnavailable, render_training_plots
 
 INDEX_FILE = "index.json"
 _METRICS_SUFFIX = ".metrics.jsonl"

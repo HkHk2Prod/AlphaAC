@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ac_zero.training.checkpoint_bundle import CheckpointBundle
+from ac_zero.training.checkpointing.checkpoint_bundle import CheckpointBundle
 
 
 def _payload(metric: float) -> dict:

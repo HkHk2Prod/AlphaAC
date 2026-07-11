@@ -6,17 +6,20 @@ import pytest
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.groups import MOVE_CATALOG, SCHEMA_VERSION, group_entry
 from ac_zero.environment.navigation_reward import AlphaUpdater, EpisodeStats, RewardConfig
-from ac_zero.training.callbacks import CallbackManager
-from ac_zero.training.events import LogLevel, TrainingEvent
-from ac_zero.training.navigation_curriculum import DistanceCurriculum, DistanceCurriculumConfig
-from ac_zero.training.navigation_metrics import (
+from ac_zero.training.logging.callbacks import CallbackManager
+from ac_zero.training.logging.events import LogLevel, TrainingEvent
+from ac_zero.training.navigation.navigation_curriculum import (
+    DistanceCurriculum,
+    DistanceCurriculumConfig,
+)
+from ac_zero.training.navigation.navigation_metrics import (
     fold_alpha,
     fold_curriculum,
     log_curriculum,
     navigation_eval_metrics,
 )
-from ac_zero.training.pipeline import TrainingPipelineConfig, run_training_pipeline
-from ac_zero.training.pipeline_episodes import EpisodeMetrics
+from ac_zero.training.pipeline.pipeline import TrainingPipelineConfig, run_training_pipeline
+from ac_zero.training.pipeline.pipeline_episodes import EpisodeMetrics
 
 _ANNOTATIONS_SCHEMA = "aczero-annotations-v1"
 
@@ -260,8 +263,50 @@ def test_navigation_pipeline_emits_alpha_and_eval_metrics(tmp_path: Path, agent:
     assert "L_max" in iteration_events[-1].metrics
 
 
+def test_warm_start_resumes_alpha_and_l_max_from_checkpoint(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from ac_zero.training.pipeline.pipeline import _TrainingRun
+
+    # Run once to produce a checkpoint, then edit its adaptive state to known
+    # values so we can prove a warm-started run continues from them rather than
+    # resetting alpha/L_max to their config initials.
+    config = _navigation_config(tmp_path, "alphazero")
+    summary = run_training_pipeline(config, seed=5, callbacks=CallbackManager(()))
+    checkpoint = Path(summary.checkpoint_path)
+    payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert "learning_state" in payload
+    payload["learning_state"]["alpha_updater"]["alpha"] = 0.77
+    payload["learning_state"]["distance_curriculum"]["L_max"] = 4
+    warm = tmp_path / "warm_start.json"
+    warm.write_text(json.dumps(payload), encoding="utf-8")
+
+    resumed = _TrainingRun(
+        replace(config, warm_start=str(warm), run_directory=str(tmp_path / "resumed")),
+        seed=5,
+        callbacks=CallbackManager(()),
+    )
+    assert resumed.alpha_updater is not None
+    assert resumed.alpha_updater.alpha == pytest.approx(0.77)
+    assert resumed.distance_curriculum is not None
+    assert resumed.distance_curriculum.current_L_max() == 4
+
+
+def test_fresh_run_without_warm_start_starts_at_config_initials(tmp_path: Path) -> None:
+    # The restore path must be a no-op when nothing was warm-started: a fresh run
+    # keeps the config's alpha_initial / L_max_initial.
+    from ac_zero.training.pipeline.pipeline import _TrainingRun
+
+    config = _navigation_config(tmp_path, "alphazero")
+    run = _TrainingRun(config, seed=5, callbacks=CallbackManager(()))
+    assert run.alpha_updater is not None
+    assert run.alpha_updater.alpha == pytest.approx(config.reward_config.alpha_initial)
+    assert run.distance_curriculum is not None
+    assert run.distance_curriculum.current_L_max() == config.curriculum_config.L_max_initial
+
+
 def test_distance_curriculum_is_on_by_default_for_any_dataset_run(tmp_path: Path) -> None:
-    from ac_zero.training.pipeline import _TrainingRun
+    from ac_zero.training.pipeline.pipeline import _TrainingRun
 
     dataset_path, annotations_path = _annotated_dataset(tmp_path)
     # A non-navigation reward (here potential) seeded from an annotated dataset
@@ -331,14 +376,14 @@ def test_navigation_pipeline_stores_reward_components_in_replay(tmp_path: Path) 
     config = _navigation_config(tmp_path, "alphazero")
     from ac_zero.encoding.padded import StateEncoder
     from ac_zero.models.registry import create_trainable_model
-    from ac_zero.training.instance_source import build_instance_source
-    from ac_zero.training.pipeline_episodes import collect_episodes
+    from ac_zero.training.pipeline.instance_source import build_instance_source
+    from ac_zero.training.pipeline.pipeline_episodes import collect_episodes
 
     source = build_instance_source(config)
     model = create_trainable_model(config.model, seed=5)
     collected = collect_episodes(
         config,
-        StateEncoder(config.max_word_length),
+        StateEncoder(config.max_relator_tokens),
         model,
         seed=5,
         iteration=1,

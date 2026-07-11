@@ -6,17 +6,18 @@ import pytest
 
 from ac_zero.cli import main
 from ac_zero.datasets.generator import generate_solvable
-from ac_zero.training.callbacks import CallbackManager
-from ac_zero.training.checkpointing import CheckpointManager
-from ac_zero.training.events import TrainingEvent
-from ac_zero.training.losses import (
+from ac_zero.models.registry import create_trainable_model
+from ac_zero.training.checkpointing.checkpointing import CheckpointManager
+from ac_zero.training.logging.callbacks import CallbackManager
+from ac_zero.training.logging.events import TrainingEvent
+from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculumConfig
+from ac_zero.training.pipeline.pipeline import TrainingPipelineConfig, run_training_pipeline
+from ac_zero.training.ppo.losses import (
     masked_softmax,
     policy_value_loss,
     return_to_go,
     visit_count_policy,
 )
-from ac_zero.training.navigation_curriculum import DistanceCurriculumConfig
-from ac_zero.training.pipeline import TrainingPipelineConfig, run_training_pipeline
 
 
 class _CapturingSink:
@@ -77,6 +78,23 @@ def test_config_exposes_c_puct_for_harder_runs() -> None:
     assert TrainingPipelineConfig().c_puct == 1.5  # default
     with pytest.raises(ValueError, match="c_puct must be positive"):
         TrainingPipelineConfig(c_puct=0.0).validate()
+
+
+def test_config_reads_model_size_overrides_from_mapping() -> None:
+    config = TrainingPipelineConfig.from_mapping(
+        {"model": "transformer", "model_config": {"embed_dim": 16, "num_layers": 3}}
+    )
+    assert config.model == "transformer"
+    assert config.model_config == {"embed_dim": 16, "num_layers": 3}
+    assert TrainingPipelineConfig().model_config == {}  # default: architecture sizes
+    with pytest.raises(ValueError, match="model_config sizes must be positive"):
+        TrainingPipelineConfig(model_config={"embed_dim": 0}).validate()
+
+
+def test_model_size_overrides_reach_the_built_model() -> None:
+    model = create_trainable_model("transformer", seed=0, embed_dim=16, num_layers=3)
+    assert model._hp["embed_dim"] == 16
+    assert model._hp["num_layers"] == 3
 
 
 def test_visit_policy_and_masked_loss_ignore_illegal_actions() -> None:
@@ -216,7 +234,7 @@ def test_config_reads_worker_count_from_mapping() -> None:
 
 
 def test_run_description_reports_core_and_agent_specific_parameters() -> None:
-    from ac_zero.training.pipeline_config import run_description
+    from ac_zero.training.pipeline.pipeline_config import run_description
 
     ppo = run_description(
         TrainingPipelineConfig(agent="ppo"), seed=7, training_model="residual_mlp"
@@ -243,7 +261,7 @@ def test_run_description_reports_core_and_agent_specific_parameters() -> None:
 
 
 def test_run_description_adds_curriculum_when_active_and_reward_only_for_navigation() -> None:
-    from ac_zero.training.pipeline_config import run_description
+    from ac_zero.training.pipeline.pipeline_config import run_description
 
     config = TrainingPipelineConfig(reward_mode="navigation")
     report = run_description(
@@ -277,7 +295,7 @@ def test_config_reads_progress_every_from_mapping() -> None:
 
 
 def test_config_reads_verbosity_from_mapping() -> None:
-    from ac_zero.training.events import Verbosity
+    from ac_zero.training.logging.events import Verbosity
 
     # The pipeline defaults to a compact per-iteration summary, not the flood.
     assert TrainingPipelineConfig().verbosity is Verbosity.SUMMARY
@@ -353,7 +371,7 @@ def test_pipeline_without_a_budget_runs_every_iteration(tmp_path: Path) -> None:
 
 
 def test_progress_every_throttles_recurring_events_to_debug(tmp_path: Path) -> None:
-    from ac_zero.training.events import LogLevel
+    from ac_zero.training.logging.events import LogLevel
 
     config = TrainingPipelineConfig(
         scramble_depth=1,
@@ -515,7 +533,7 @@ def test_ensure_training_dataset_pulls_annotations(monkeypatch, tmp_path: Path) 
 
 def test_training_callbacks_adds_uploader_only_when_requested(tmp_path: Path) -> None:
     from ac_zero.cli import _training_callbacks
-    from ac_zero.training.hub_checkpoints import PeriodicCheckpointUploader
+    from ac_zero.training.checkpointing.hub_checkpoints import PeriodicCheckpointUploader
 
     config = TrainingPipelineConfig(run_directory=str(tmp_path / "run"))
 
@@ -542,7 +560,9 @@ def test_cli_train_uploads_checkpoints_when_flagged(monkeypatch, tmp_path: Path)
         pushed.append((str(bundle_dir), bucket))
         return "prefix"
 
-    monkeypatch.setattr("ac_zero.training.hub_checkpoints.push_checkpoint_bundle", _fake_push)
+    monkeypatch.setattr(
+        "ac_zero.training.checkpointing.hub_checkpoints.push_checkpoint_bundle", _fake_push
+    )
     config_path = tmp_path / "train.yaml"
     config_path.write_text(
         "\n".join(
@@ -588,7 +608,7 @@ def test_cli_train_uploads_checkpoints_when_flagged(monkeypatch, tmp_path: Path)
 def test_warm_start_from_hf_uses_name_and_falls_back(monkeypatch, tmp_path: Path) -> None:
     from ac_zero.cli import _warm_start_from_hf
     from ac_zero.system.reporting import CliReporter
-    from ac_zero.training.checkpoint_name import derive_checkpoint_name
+    from ac_zero.training.checkpointing.checkpoint_name import derive_checkpoint_name
 
     reporter = CliReporter("train", run_directory=str(tmp_path / "logs"))
     calls: list[tuple[str, str, str, bool]] = []

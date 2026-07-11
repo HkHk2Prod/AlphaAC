@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any
 
 from ac_zero.models.trainable import TrainablePolicyValueModel
-from ac_zero.training.checkpoint_bundle import CheckpointBundle
-from ac_zero.training.checkpointing import CheckpointManager
-from ac_zero.training.losses import PolicyValueLoss
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.checkpointing.checkpoint_bundle import CheckpointBundle
+from ac_zero.training.checkpointing.checkpointing import CheckpointManager
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.ppo.losses import PolicyValueLoss
 
 _SCHEMA_VERSION = "aczero-training-checkpoint-v1"
 
@@ -66,10 +66,19 @@ class RunCheckpointer:
         mean_return: float,
         success_rate: float,
         metrics_rows: list[dict[str, Any]],
+        learning_state: dict[str, Any],
     ) -> Path:
         """Write ``latest.json`` and refresh the bundle (best/latest/metrics/meta)."""
         payload = self._payload(
-            model, iteration, optimizer_step, loss, replay_size, metric, mean_return, success_rate
+            model,
+            iteration,
+            optimizer_step,
+            loss,
+            replay_size,
+            metric,
+            mean_return,
+            success_rate,
+            learning_state,
         )
         path = self._legacy.save_json("latest", payload)
         self.bundle.save_checkpoint(payload, metric=metric)
@@ -87,6 +96,7 @@ class RunCheckpointer:
         metric: float | None,
         mean_return: float,
         success_rate: float,
+        learning_state: dict[str, Any],
     ) -> dict[str, Any]:
         return {
             "schema_version": _SCHEMA_VERSION,
@@ -98,6 +108,10 @@ class RunCheckpointer:
                 "step": optimizer_step,
                 "learning_rate": self._config.learning_rate,
             },
+            # Adaptive across-episode state (shaping alpha + distance curriculum)
+            # so a warm-started run resumes them continuously instead of resetting
+            # to config initials. Empty when neither mechanism is active.
+            "learning_state": learning_state,
             "replay_size": replay_size,
             "loss": asdict(loss),
             # Metrics that let a cross-run rollup rank this checkpoint.

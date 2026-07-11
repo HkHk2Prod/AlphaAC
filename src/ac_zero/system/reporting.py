@@ -5,9 +5,9 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
-from ac_zero.training.callbacks import CallbackManager
-from ac_zero.training.events import LogLevel
-from ac_zero.training.log_sinks import (
+from ac_zero.training.logging.callbacks import CallbackManager
+from ac_zero.training.logging.events import LogLevel
+from ac_zero.training.logging.log_sinks import (
     JsonlEventLogger,
     TerminalProgressLogger,
     format_metrics,

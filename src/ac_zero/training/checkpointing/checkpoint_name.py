@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
 
 # Fields that appear verbatim in the readable part of the name (after ``rank``).
 _READABLE_FIELDS = ("agent", "model", "moveset", "reward_mode")
@@ -31,7 +31,7 @@ _HASHED_FIELDS = (
     "goal_reward",
     "gamma",
     "total_length_cap",
-    "max_word_length",
+    "max_relator_tokens",
     "scramble_depth",
     "dataset_max_difficulty",
 )

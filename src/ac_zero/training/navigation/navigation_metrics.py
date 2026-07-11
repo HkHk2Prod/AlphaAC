@@ -15,10 +15,10 @@ from collections import Counter
 from collections.abc import Sequence
 
 from ac_zero.environment.navigation_reward import AlphaUpdater, EpisodeStats
-from ac_zero.training.callbacks import CallbackManager
-from ac_zero.training.events import LogLevel
-from ac_zero.training.navigation_curriculum import CurriculumUpdate, DistanceCurriculum
-from ac_zero.training.pipeline_episodes import EpisodeMetrics
+from ac_zero.training.logging.callbacks import CallbackManager
+from ac_zero.training.logging.events import LogLevel
+from ac_zero.training.navigation.navigation_curriculum import CurriculumUpdate, DistanceCurriculum
+from ac_zero.training.pipeline.pipeline_episodes import EpisodeMetrics
 
 # Out-of-range sentinel for the frontier success EMA before any frontier episode
 # has seeded it (the real value is always in [0, 1]).

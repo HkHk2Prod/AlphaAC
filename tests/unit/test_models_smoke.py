@@ -8,14 +8,14 @@ from ac_zero.models.gru import GRUPolicyValueModel
 from ac_zero.models.registry import create_model
 from ac_zero.models.residual_mlp import ResidualMLPPolicyValueModel
 from ac_zero.models.transformer import TransformerPolicyValueModel
-from ac_zero.training.checkpointing import CheckpointManager
+from ac_zero.training.checkpointing.checkpointing import CheckpointManager
 from ac_zero.training.smoke import run_smoke_training
 
 
 def test_registered_smoke_models_have_finite_outputs() -> None:
     instance = generate_solvable(rank=2, depth=1, seed=0)
     env = ACEnvironment(instance.presentation, ACEnvironmentConfig(max_moves=4))
-    encoding = StateEncoder(max_word_length=8).encode(env.state)
+    encoding = StateEncoder(max_relator_tokens=8).encode(env.state)
     action_count = len(env.catalog)
     expected_types = {
         "deepsets": DeepSetsPolicyValueModel,

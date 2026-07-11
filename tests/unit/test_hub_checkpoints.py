@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from ac_zero.training import hub_checkpoints as hc
-from ac_zero.training.checkpoint_bundle import CheckpointBundle
+from ac_zero.training.checkpointing import hub_checkpoints as hc
+from ac_zero.training.checkpointing.checkpoint_bundle import CheckpointBundle
 
 
 class _Item:

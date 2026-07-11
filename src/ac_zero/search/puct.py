@@ -8,7 +8,7 @@ from ac_zero.environment.env import ACEnvironment
 from ac_zero.environment.state import ACSearchState
 from ac_zero.models.base import PolicyValueModel
 from ac_zero.search.mcts import MCTSStats
-from ac_zero.training.losses import masked_softmax
+from ac_zero.training.ppo.losses import masked_softmax
 
 
 @dataclass(frozen=True, slots=True)

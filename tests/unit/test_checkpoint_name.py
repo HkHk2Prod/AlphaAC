@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from ac_zero.training.checkpoint_name import derive_checkpoint_name
-from ac_zero.training.pipeline_config import TrainingPipelineConfig
+from ac_zero.training.checkpointing.checkpoint_name import derive_checkpoint_name
+from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
 
 
 def test_readable_slug_reflects_task_and_model() -> None:

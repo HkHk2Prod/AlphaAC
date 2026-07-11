@@ -38,9 +38,9 @@ class StateEncoder:
     over-capacity states instead of silently losing mathematical data.
     """
 
-    def __init__(self, max_word_length: int = 32) -> None:
+    def __init__(self, max_relator_tokens: int = 32) -> None:
         """Create an encoder with a per-relator token capacity."""
-        self.max_word_length = max_word_length
+        self.max_relator_tokens = max_relator_tokens
 
     def encode(self, state: ACSearchState) -> PaddedEncoding:
         """Convert one immutable search state into padded token arrays."""
@@ -48,8 +48,8 @@ class StateEncoder:
         rows = []
         masks = []
         for relator in state.presentation.relators:
-            row = [letter + rank + 1 for letter in relator.letters[: self.max_word_length]]
-            pad = self.max_word_length - len(row)
+            row = [letter + rank + 1 for letter in relator.letters[: self.max_relator_tokens]]
+            pad = self.max_relator_tokens - len(row)
             rows.append(row + [0] * pad)
             masks.append([True] * len(row) + [False] * pad)
         scalars = np.asarray(

@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from ac_zero.training.console_summary import ConsoleSummaryLogger
-from ac_zero.training.events import LogLevel, TrainingCallback, TrainingEvent, Verbosity
-from ac_zero.training.log_sinks import (
+from ac_zero.training.logging.console_summary import ConsoleSummaryLogger
+from ac_zero.training.logging.events import LogLevel, TrainingCallback, TrainingEvent, Verbosity
+from ac_zero.training.logging.log_sinks import (
     AsciiGraphLogger,
     JsonlEventLogger,
     RotatingFileWriter,
@@ -122,7 +122,7 @@ def default_training_callbacks(
     """Create default callbacks for config-driven training pipeline runs.
 
     ``verbosity`` picks what reaches the terminal (see
-    :class:`ac_zero.training.events.Verbosity`); every level still writes the full
+    :class:`ac_zero.training.logging.events.Verbosity`); every level still writes the full
     JSONL event log and the live/final graph files. At ``verbose`` the console
     gets the historical per-event lines and live graphs; at ``summary`` (default)
     a compact per-iteration summary plus the final graph; at ``quiet`` only the

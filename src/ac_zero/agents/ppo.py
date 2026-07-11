@@ -5,7 +5,7 @@ import random
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment
 from ac_zero.models.base import PolicyValueModel
-from ac_zero.training.losses import masked_softmax, sample_from_policy
+from ac_zero.training.ppo.losses import masked_softmax, sample_from_policy
 
 
 class PPOAgent:

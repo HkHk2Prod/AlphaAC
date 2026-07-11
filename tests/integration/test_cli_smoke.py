@@ -2,7 +2,7 @@ from pathlib import Path
 
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.cli import main
-from ac_zero.training.checkpointing import CheckpointManager
+from ac_zero.training.checkpointing.checkpointing import CheckpointManager
 
 
 def test_cli_smoke_writes_verified_certificate(monkeypatch, tmp_path: Path) -> None:
