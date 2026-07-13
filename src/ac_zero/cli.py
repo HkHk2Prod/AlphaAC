@@ -204,6 +204,13 @@ def main(argv: list[str] | None = None) -> int:
         help="hours between checkpoint uploads; the final best model is always pushed",
     )
     train.add_argument(
+        "--showcase-every-hours",
+        type=float,
+        default=None,
+        help="hours between self-play showcases: one episode played with the current weights "
+        "and printed move by move (default 3, matching the upload cadence; 0 disables)",
+    )
+    train.add_argument(
         "--self-generated",
         action="store_true",
         help="seed self-play from random scrambles instead of the HF group dataset (the default); "
@@ -295,6 +302,7 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             checkpoint_name=args.checkpoint_name,
             checkpoint_bucket=args.checkpoint_bucket,
             upload_every_hours=args.upload_every_hours,
+            showcase_every_hours=args.showcase_every_hours,
             self_generated=args.self_generated,
             force_download_dataset=args.force_download_dataset,
             verbosity=args.verbosity,
@@ -370,6 +378,7 @@ def _train(
     checkpoint_name: str | None = None,
     checkpoint_bucket: str | None = None,
     upload_every_hours: float = 3.0,
+    showcase_every_hours: float | None = None,
     self_generated: bool = False,
     force_download_dataset: bool = False,
     verbosity: str | None = None,
@@ -380,6 +389,8 @@ def _train(
         config = replace(config, workers=workers)
     if verbosity is not None:
         config = replace(config, verbosity=Verbosity.parse(verbosity))
+    if showcase_every_hours is not None:
+        config = replace(config, showcase_every_hours=showcase_every_hours)
     if minutes > 0:
         config = replace(config, time_limit_s=minutes * 60)
     if checkpoint_name:

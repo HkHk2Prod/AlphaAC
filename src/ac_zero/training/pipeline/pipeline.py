@@ -16,7 +16,7 @@ from ac_zero.system.parallel import describe_worker_pool
 from ac_zero.training.checkpointing.checkpoint_name import derive_checkpoint_name
 from ac_zero.training.checkpointing.checkpoint_writer import RunCheckpointer
 from ac_zero.training.logging.callbacks import CallbackManager, default_training_callbacks
-from ac_zero.training.logging.events import LogLevel
+from ac_zero.training.logging.events import LogLevel, Verbosity
 from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculum
 from ac_zero.training.navigation.navigation_metrics import log_curriculum, log_navigation
 from ac_zero.training.pipeline.instance_source import build_instance_source
@@ -28,6 +28,7 @@ from ac_zero.training.pipeline.pipeline_episodes import (
     batch_return_and_success,
     collect_episodes,
 )
+from ac_zero.training.pipeline.pipeline_showcase import EpisodeShowcase
 from ac_zero.training.pipeline.pipeline_summary import (
     MetricsRow,
     TrainingPipelineSummary,
@@ -121,6 +122,18 @@ class _TrainingRun:
         self.ppo = (
             PPOTrainer(config, self.encoder, self._instance_source)
             if config.agent == "ppo"
+            else None
+        )
+        # Prints one played-out episode every few hours (see `_checkpoint`). Off at
+        # `quiet`, whose contract is milestones and diagnostics only.
+        self.showcase = (
+            EpisodeShowcase(
+                config,
+                self.encoder,
+                self._instance_source,
+                every_hours=config.showcase_every_hours,
+            )
+            if config.showcase_every_hours > 0 and config.verbosity >= Verbosity.SUMMARY
             else None
         )
 
@@ -397,14 +410,7 @@ class _TrainingRun:
             level=self._progress_level(iteration),
         )
         self._run_optimizer_updates(iteration, mean_return, success_rate)
-        if iteration % self.config.checkpoint_every == 0:
-            self._save_checkpoint(iteration)
-            self.manager.emit(
-                iteration * 100 + self.optimizer_step + 1,
-                "checkpoint",
-                "saved training checkpoint",
-                {"iteration": iteration, "optimizer_step": self.optimizer_step},
-            )
+        self._checkpoint(iteration, L_max_episode)
 
     def _train_iteration_ppo(self, iteration: int) -> None:
         """Run one PPO iteration: on-policy rollouts, clipped updates, checkpoint."""
@@ -456,14 +462,37 @@ class _TrainingRun:
                 row,
                 level=self._progress_level(self.optimizer_step),
             )
-        if iteration % self.config.checkpoint_every == 0:
-            self._save_checkpoint(iteration)
-            self.manager.emit(
-                iteration * 100 + self.optimizer_step + 1,
-                "checkpoint",
-                "saved training checkpoint",
-                {"iteration": iteration, "optimizer_step": self.optimizer_step},
-            )
+        self._checkpoint(iteration, L_max_episode)
+
+    def _checkpoint(self, iteration: int, L_max_episode: int | None) -> None:
+        """Save this iteration's checkpoint, then show an episode when one is due.
+
+        The checkpoint event is what the HF uploader listens on, so the showcase
+        runs on the same boundary and at the same default cadence: a played-out
+        episode lands in the log next to every push (see `EpisodeShowcase`). Its
+        seed continues the iteration's own episode-seed block, so the problem it
+        draws is a fresh one and no training episode's seed is reused.
+        """
+        if iteration % self.config.checkpoint_every != 0:
+            return
+        self._save_checkpoint(iteration)
+        self.manager.emit(
+            iteration * 100 + self.optimizer_step + 1,
+            "checkpoint",
+            "saved training checkpoint",
+            {"iteration": iteration, "optimizer_step": self.optimizer_step},
+        )
+        if self.showcase is None or not self.showcase.due():
+            return
+        self.showcase.show(
+            self.manager,
+            self.model,
+            event_id=iteration * 100 + self.optimizer_step + 2,
+            iteration=iteration,
+            seed=self.seed + iteration * 10_000 + self.config.episodes_per_iteration,
+            alpha=self._current_alpha(),
+            max_distance=L_max_episode,
+        )
 
     def _collect_iteration(self, iteration: int, max_distance: int | None) -> list[EpisodeMetrics]:
         """Collect this iteration's self-play episodes into the replay buffer."""

@@ -82,6 +82,11 @@ class TrainingPipelineConfig:
     # ASCII graphs still receive every point while the terminal stays readable on
     # long Kaggle/PC runs.
     progress_every: int = 10
+    # Hours between self-play showcases: one extra episode played with the current
+    # weights and printed move by move, so the logs show what the policy actually
+    # does and not just how it scores. Matches the checkpoint upload cadence by
+    # default; 0 turns it off, as does the `quiet` verbosity below.
+    showcase_every_hours: float = 3.0
     # How much of the event stream reaches the terminal: "verbose" (per-event
     # lines + live graphs), "summary" (one bundled line per logged iteration +
     # the final graph, the default), or "quiet" (start/stop + warnings only). The
@@ -201,6 +206,12 @@ class TrainingPipelineConfig:
                     data.get("progress_every", defaults.progress_every),
                 )
             ),
+            showcase_every_hours=float(
+                training.get(
+                    "showcase_every_hours",
+                    data.get("showcase_every_hours", defaults.showcase_every_hours),
+                )
+            ),
             verbosity=Verbosity.parse(
                 training.get("verbosity", data.get("verbosity", defaults.verbosity))
             ),
@@ -287,6 +298,8 @@ class TrainingPipelineConfig:
             raise ValueError("checkpoint_every must be positive")
         if self.progress_every <= 0:
             raise ValueError("progress_every must be positive")
+        if self.showcase_every_hours < 0.0:
+            raise ValueError("showcase_every_hours must be non-negative")
         if self.time_limit_s is not None and self.time_limit_s <= 0:
             raise ValueError("time_limit_s must be positive when set")
 
