@@ -141,11 +141,15 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
     def legal_action_mask(self, state: ACSearchState | None = None) -> tuple[bool, ...]:
         """Compute which strict primitive actions are currently allowed."""
         st = state or self.state
+        current = st.presentation.relators
         mask: list[bool] = []
         for move in self.catalog.moves:
             nxt = move.apply(st.presentation)
             legal = nxt.total_length <= self.config.total_length_cap
-            if self.config.mask_noops and nxt.content_hash == st.presentation.content_hash:
+            # Moves only ever rewrite relators, leaving rank and generator names
+            # intact, so an unchanged relator tuple is the same no-op test as an
+            # unchanged content hash -- without a SHA-256 of a JSON dump per move.
+            if self.config.mask_noops and nxt.relators == current:
                 legal = False
             mask.append(legal)
         return tuple(mask)
@@ -185,6 +189,10 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         )
         truncated = False
         reason = "running"
+        # The mask is the dominant cost of a step (it applies every catalog move), so
+        # the one computed for the no-legal-action check is handed to `_info` rather
+        # than recomputed there.
+        mask: tuple[bool, ...] | None = None
         if terminated:
             reason = "goal"
         elif nxt.safety_truncated:
@@ -193,18 +201,28 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         elif remaining == 0:
             truncated = True
             reason = "horizon"
-        elif not any(self.legal_action_mask(nxt)):
-            truncated = True
-            reason = "no_legal_action"
+        else:
+            mask = self.legal_action_mask(nxt)
+            if not any(mask):
+                truncated = True
+                reason = "no_legal_action"
         self.state = nxt
-        info = self._info(nxt, reason, terminated)
+        info = self._info(nxt, reason, terminated, mask)
         return self._observation(), reward, terminated, truncated, info
 
-    def _info(self, state: ACSearchState, reason: str, success: bool) -> dict[str, Any]:
+    def _info(
+        self,
+        state: ACSearchState,
+        reason: str,
+        success: bool,
+        mask: tuple[bool, ...] | None = None,
+    ) -> dict[str, Any]:
         pres = state.presentation
+        if mask is None:
+            mask = self.legal_action_mask(state)
         info: dict[str, Any] = {
             "state": state,
-            "action_mask": np.asarray(self.legal_action_mask(state), dtype=np.int8),
+            "action_mask": np.asarray(mask, dtype=np.int8),
             "current_total_length": pres.total_length,
             "best_total_length": state.best_length,
             "raw_episode_reduction": state.initial_length - state.best_length,
@@ -213,7 +231,6 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
             "move_count": state.moves_used,
             "success": success,
             "termination_reason": reason,
-            "presentation_hash": pres.content_hash,
         }
         if self._last_components is not None:
             info["reward_components"] = self._last_components

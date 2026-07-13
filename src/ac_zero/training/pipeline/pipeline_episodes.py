@@ -13,6 +13,7 @@ from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.environment.navigation_reward import EpisodeStats, RewardComponents
 from ac_zero.models.base import PolicyValueModel
 from ac_zero.models.registry import model_from_json
+from ac_zero.models.torch_utils import use_single_torch_thread
 from ac_zero.models.trainable import TrainablePolicyValueModel
 from ac_zero.search.puct import PUCTMCTS, PUCTConfig
 from ac_zero.system.parallel import parallel_map, resolve_worker_count
@@ -188,6 +189,7 @@ def _init_episode_worker(
 ) -> None:
     global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL, _WORKER_SOURCE
     global _WORKER_ALPHA, _WORKER_MAX_DISTANCE
+    use_single_torch_thread()
     _WORKER_CONFIG = config
     _WORKER_ENCODER = StateEncoder(config.max_relator_tokens)
     _WORKER_MODEL = model_from_json(model_state)
