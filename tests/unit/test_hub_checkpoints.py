@@ -90,6 +90,22 @@ def test_download_best_missing_returns_none(
     assert result is None
 
 
+def test_push_prints_one_summary_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = _install_bucket(monkeypatch)
+    _write_bundle(tmp_path / "bundle", name="name-a", run_id="100-0", metric=0.3)
+
+    hc.push_checkpoint_bundle(tmp_path / "bundle", bucket="ns/b")
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 1
+    assert lines[0] == (
+        f"[checkpoint-upload] pushed {len(store)} files "
+        f"({sum(len(b) for b in store.values()) / 1e6:.2f} MB) to ns/b/model_checkpoints/name-a"
+    )
+
+
 def test_push_uploads_bundle_index_and_plots(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
