@@ -36,7 +36,20 @@ def _hub() -> Any:
         import huggingface_hub
     except ImportError as exc:
         raise RuntimeError(_INSTALL_HINT) from exc
+    _disable_progress_bars(huggingface_hub)
     return huggingface_hub
+
+
+def _disable_progress_bars(hub: Any) -> None:
+    """Turn off the hub's per-file transfer bars.
+
+    Kaggle's training log is not a terminal, so each bar redraw is appended as a
+    fresh line -- hundreds of them per upload. Callers print one summary line
+    instead. Set ``HF_HUB_DISABLE_PROGRESS_BARS=0`` to keep the bars.
+    """
+    disable = getattr(getattr(hub, "utils", None), "disable_progress_bars", None)
+    if disable is not None:
+        disable()
 
 
 def remote_exists(remote_name: str, *, bucket: str = DEFAULT_BUCKET) -> bool:

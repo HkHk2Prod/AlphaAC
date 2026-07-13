@@ -160,7 +160,11 @@ def push_checkpoint_bundle(bundle_dir: str | Path, *, bucket: str = DEFAULT_BUCK
         index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         pairs.append((index_path, f"{prefix}/{INDEX_FILE}"))
 
+        megabytes = sum(Path(local).stat().st_size for local, _ in pairs) / 1e6
         upload_files(pairs, bucket=bucket)
+    print(
+        f"[checkpoint-upload] pushed {len(pairs)} files ({megabytes:.2f} MB) to {bucket}/{prefix}"
+    )
     return prefix
 
 

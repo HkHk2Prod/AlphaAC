@@ -43,9 +43,15 @@ def _install_fake(monkeypatch: pytest.MonkeyPatch, tree: list[_Item]) -> dict:
         for _remote, local in files or []:
             Path(local).write_text("{}", encoding="utf-8")
 
+    def disable_progress_bars() -> None:
+        record["progress_disabled"] = True
+
     module.list_bucket_tree = list_bucket_tree  # type: ignore[attr-defined]
     module.batch_bucket_files = batch_bucket_files  # type: ignore[attr-defined]
     module.download_bucket_files = download_bucket_files  # type: ignore[attr-defined]
+    module.utils = types.SimpleNamespace(  # type: ignore[attr-defined]
+        disable_progress_bars=disable_progress_bars
+    )
     monkeypatch.setitem(sys.modules, "huggingface_hub", module)
     return record
 
@@ -75,6 +81,27 @@ def test_upload_uses_default_bucket_and_custom_remote_name(
     assert uri == f"hf://buckets/{hub.DEFAULT_BUCKET}/train_rank2.json"
     assert record["add"]["bucket"] == hub.DEFAULT_BUCKET
     assert record["add"]["add"] == [(str(local), "train_rank2.json")]
+
+
+def test_upload_disables_hub_progress_bars(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    record = _install_fake(monkeypatch, [])
+    local = tmp_path / "train_rank2.json"
+    local.write_text("{}", encoding="utf-8")
+
+    hub.upload_dataset(local, bucket="ns/bucket")
+
+    assert record["progress_disabled"] is True
+
+
+def test_upload_tolerates_hub_without_progress_bar_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_fake(monkeypatch, [])
+    del sys.modules["huggingface_hub"].utils  # type: ignore[attr-defined]
+    local = tmp_path / "train_rank2.json"
+    local.write_text("{}", encoding="utf-8")
+
+    assert hub.upload_dataset(local, bucket="ns/bucket").endswith("train_rank2.json")
 
 
 def test_upload_missing_file_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
