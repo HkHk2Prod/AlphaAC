@@ -10,6 +10,7 @@ from typing import Any
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.navigation_reward import AlphaUpdater
 from ac_zero.models.registry import create_trainable_model, model_from_json
+from ac_zero.models.torch_utils import use_single_torch_thread
 from ac_zero.system.manifests import ReproducibilityManifest
 from ac_zero.system.parallel import describe_worker_pool
 from ac_zero.training.checkpointing.checkpoint_name import derive_checkpoint_name
@@ -58,6 +59,7 @@ class _TrainingRun:
         self, config: TrainingPipelineConfig, seed: int, callbacks: CallbackManager | None
     ) -> None:
         config.validate()
+        use_single_torch_thread()
         self.config = config
         self.seed = seed
         self.dirs = _RunDirectories.create(config.run_directory)
