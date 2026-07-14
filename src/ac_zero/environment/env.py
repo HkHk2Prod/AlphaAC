@@ -139,13 +139,23 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         return self.encoder.encode(self.state).as_observation()
 
     def legal_action_mask(self, state: ACSearchState | None = None) -> tuple[bool, ...]:
-        """Compute which strict primitive actions are currently allowed."""
+        """Compute which strict primitive actions are currently allowed.
+
+        A move is legal when the presentation it produces stays inside the total
+        length cap *and* inside the encoder's per-relator capacity. The second bound
+        keeps the episode within the states the model can actually represent: the
+        encoder refuses to truncate an over-long relator, so a move that would make
+        one is masked out here rather than left to fail at the next observation.
+        """
         st = state or self.state
         current = st.presentation.relators
+        capacity = self.encoder.max_relator_tokens
         mask: list[bool] = []
         for move in self.catalog.moves:
             nxt = move.apply(st.presentation)
-            legal = nxt.total_length <= self.config.total_length_cap
+            legal = nxt.total_length <= self.config.total_length_cap and all(
+                len(relator.letters) <= capacity for relator in nxt.relators
+            )
             # Moves only ever rewrite relators, leaving rank and generator names
             # intact, so an unchanged relator tuple is the same no-op test as an
             # unchanged content hash -- without a SHA-256 of a JSON dump per move.

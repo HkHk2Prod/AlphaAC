@@ -9,6 +9,9 @@ from ac_zero.moves.universal import MOVE_SET_NAMES
 from ac_zero.training.logging.events import Verbosity
 from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculumConfig
 
+# The training backends `agent:` selects between.
+AGENTS = ("alphazero", "ppo", "supervised")
+
 
 @dataclass(frozen=True, slots=True)
 class TrainingPipelineConfig:
@@ -25,9 +28,16 @@ class TrainingPipelineConfig:
     # `dataset_bucket` names the Hugging Face bucket the CLI/notebook pulls from.
     dataset_path: str | None = None
     dataset_annotations_path: str | None = None
+    # Companion ``<name>.split.json`` assigning every group to train/val/test. Only
+    # the supervised stage reads it; the RL backends train on whatever they self-play.
+    dataset_split_path: str | None = None
     dataset_max_difficulty: int | None = None
     dataset_bucket: str | None = None
     total_length_cap: int = 128
+    # Per-relator token capacity of the encoder. A relator too long to fit raises
+    # rather than being truncated, and the environment masks out any move that would
+    # make one. `0` derives the capacity from the dataset's longest relator, so a
+    # supervised run always fits its data (see `agent: supervised` below).
     max_relator_tokens: int = 32
     goal_mode: str = "exact_standard"
     reward_mode: str = "length_reduction_and_goal"
@@ -57,8 +67,30 @@ class TrainingPipelineConfig:
     # `hidden_dim`, `num_layers`, `ff_dim`, `max_tokens`). Empty uses the
     # architecture's defaults; keys unknown to the architecture raise at build.
     model_config: dict[str, int] = field(default_factory=dict)
-    # Training backend: "alphazero" (PUCT self-play) or "ppo" (on-policy PPO).
+    # Training backend: "alphazero" (PUCT self-play), "ppo" (on-policy PPO), or
+    # "supervised" (imitate the dataset's known descent directions -- no self-play).
     agent: str = "alphazero"
+    # Where the network's parameters live: "cpu", "cuda", or "auto" (a GPU when the
+    # machine has one). Self-play is a batch-of-one workload and stays on the CPU;
+    # supervised pretraining pushes large minibatches and wants the accelerator.
+    device: str = "cpu"
+    # Supervised stage (ignored by the RL backends). `iterations` counts epochs,
+    # `optimizer_updates` the minibatches per epoch, and `batch_size`/`learning_rate`/
+    # `value_loss_weight`/`gamma` carry their usual meanings; the Adam optimizer is
+    # used rather than the RL backends' plain SGD.
+    # The policy target for a group is `softmax(-delta_distance / target_temperature)`
+    # over the moves whose neighbour has a known distance to the origin: a move that
+    # descends (delta = -1) gets the most mass, one that stalls (0) less, one that
+    # climbs (+1 or worse) least. A lower temperature sharpens that toward a uniform
+    # distribution over the co-optimal descent moves alone.
+    target_temperature: float = 1.0
+    # Global gradient-norm clip for the supervised optimizer; 0 disables it. A deep
+    # transformer trained on a hard, noisy target needs it and the tiny CPU nets do not.
+    grad_clip: float = 1.0
+    # Validation minibatches drawn per epoch to score the model (and to pick the best
+    # checkpoint, by descent accuracy). The held-out test split is scored once, at the
+    # end of the run, and never steers training.
+    eval_batches: int = 32
     mcts_simulations: int = 16
     c_puct: float = 1.5
     # PPO backend hyperparameters (ignored by the AlphaZero backend). Rollout
@@ -124,6 +156,7 @@ class TrainingPipelineConfig:
             ),
             dataset_path=_optional_str(dataset.get("path", data.get("dataset_path"))),
             dataset_annotations_path=_optional_str(dataset.get("annotations")),
+            dataset_split_path=_optional_str(dataset.get("split")),
             dataset_max_difficulty=_optional_int(dataset.get("max_difficulty")),
             dataset_bucket=_optional_str(dataset.get("bucket")),
             total_length_cap=int(data.get("total_length_cap", defaults.total_length_cap)),
@@ -144,6 +177,17 @@ class TrainingPipelineConfig:
             model=str(data.get("model", defaults.model)),
             model_config=_model_config(data.get("model_config")),
             agent=str(data.get("agent", defaults.agent)),
+            device=str(training.get("device", data.get("device", defaults.device))),
+            target_temperature=float(
+                training.get(
+                    "target_temperature",
+                    data.get("target_temperature", defaults.target_temperature),
+                )
+            ),
+            grad_clip=float(training.get("grad_clip", data.get("grad_clip", defaults.grad_clip))),
+            eval_batches=int(
+                training.get("eval_batches", data.get("eval_batches", defaults.eval_batches))
+            ),
             mcts_simulations=int(
                 training.get(
                     "mcts_simulations",
@@ -235,8 +279,14 @@ class TrainingPipelineConfig:
             raise ValueError("dataset_max_difficulty must be non-negative")
         if self.total_length_cap <= 0:
             raise ValueError("total_length_cap must be positive")
-        if self.max_relator_tokens <= 0:
-            raise ValueError("max_relator_tokens must be positive")
+        if self.max_relator_tokens < 0:
+            raise ValueError("max_relator_tokens must be non-negative")
+        if self.max_relator_tokens == 0 and self.agent != "supervised":
+            raise ValueError(
+                "max_relator_tokens 0 (derive the encoder capacity from the dataset) is "
+                "only supported by the supervised stage; the RL backends visit states "
+                "the dataset does not contain, so their capacity must be set explicitly"
+            )
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
         if self.reward_mode == "navigation":
@@ -266,8 +316,10 @@ class TrainingPipelineConfig:
             raise ValueError("goal_reward must be non-negative")
         if any(size <= 0 for size in self.model_config.values()):
             raise ValueError("model_config sizes must be positive")
-        if self.agent not in ("alphazero", "ppo"):
-            raise ValueError("agent must be 'alphazero' or 'ppo'")
+        if self.agent not in AGENTS:
+            raise ValueError(f"agent must be one of {AGENTS}")
+        if self.agent == "supervised":
+            self._validate_supervised()
         if self.mcts_simulations <= 0:
             raise ValueError("mcts_simulations must be positive")
         if self.c_puct <= 0.0:
@@ -302,6 +354,27 @@ class TrainingPipelineConfig:
             raise ValueError("showcase_every_hours must be non-negative")
         if self.time_limit_s is not None and self.time_limit_s <= 0:
             raise ValueError("time_limit_s must be positive when set")
+
+    def _validate_supervised(self) -> None:
+        """Reject supervised settings the labelled dataset could not satisfy."""
+        if not self.dataset_path:
+            raise ValueError("agent 'supervised' trains on a grown dataset; set dataset.path")
+        if not self.dataset_annotations_path:
+            raise ValueError(
+                "agent 'supervised' learns the move that reduces the distance to the origin, "
+                "so it needs dataset.annotations -- the file that records those distances"
+            )
+        if self.dataset_max_difficulty is not None:
+            raise ValueError(
+                "agent 'supervised' trains on every distance the dataset contains; "
+                "remove dataset.max_difficulty"
+            )
+        if self.target_temperature <= 0.0:
+            raise ValueError("target_temperature must be positive")
+        if self.grad_clip < 0.0:
+            raise ValueError("grad_clip must be non-negative (0 disables clipping)")
+        if self.eval_batches <= 0:
+            raise ValueError("eval_batches must be positive")
 
 
 def _dict_value(data: dict[str, Any], key: str) -> dict[str, Any]:
@@ -361,6 +434,13 @@ def run_description(
             ppo_epochs=config.ppo_epochs,
             entropy_coef=config.entropy_coef,
         )
+    elif config.agent == "supervised":
+        report.update(
+            device=config.device,
+            target_temperature=config.target_temperature,
+            grad_clip=config.grad_clip,
+            eval_batches=config.eval_batches,
+        )
     else:
         report.update(mcts_simulations=config.mcts_simulations, c_puct=config.c_puct)
     if config.time_limit_s is not None:
@@ -370,6 +450,7 @@ def run_description(
     for key, value in (
         ("dataset_path", config.dataset_path),
         ("dataset_annotations_path", config.dataset_annotations_path),
+        ("dataset_split_path", config.dataset_split_path),
         ("dataset_bucket", config.dataset_bucket),
         ("dataset_max_difficulty", config.dataset_max_difficulty),
     ):

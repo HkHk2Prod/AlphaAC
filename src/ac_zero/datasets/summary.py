@@ -92,6 +92,11 @@ def summarize(data: dict[str, Any]) -> DatasetSummary:
             ac_trivial += 1
         elif entry.get("ac_trivial") is None:
             ac_unknown += 1
+    # A ball stores no adjacency to read expansion off -- expanding a group there means
+    # recording its distances, not its edges -- so it states the expanded count instead.
+    if "expanded" in provenance:
+        exhausted = int(provenance["expanded"])
+        frontier = len(groups) - exhausted
     return DatasetSummary(
         rank=data.get("rank"),
         generator=str(provenance.get("generator", "unknown")),
@@ -180,8 +185,16 @@ class AnnotationSummary:
     with_shorter: int
     proven: int
     unresolved: int
+    # Every group within this distance of the origin is present, so its distances are
+    # complete as well as optimal. Only a closest-first `dataset ball` can claim it.
+    complete_depth: int | None
     distance_to_origin: Distribution
     distance_to_shorter: Distribution
+
+    @property
+    def has_descent(self) -> bool:
+        """Whether a descent pass ever ran over this file."""
+        return bool(self.with_shorter or self.proven)
 
 
 def summarize_annotations(data: dict[str, Any]) -> AnnotationSummary:
@@ -208,6 +221,7 @@ def summarize_annotations(data: dict[str, Any]) -> AnnotationSummary:
             to_shorter.append(int(d_shorter))
         if entry.get("shorter_proven") is True:
             proven += 1
+    depth = data.get("provenance", {}).get("complete_depth")
     return AnnotationSummary(
         rank=data.get("rank"),
         moveset=str(data.get("moveset", "unknown")),
@@ -217,6 +231,7 @@ def summarize_annotations(data: dict[str, Any]) -> AnnotationSummary:
         with_shorter=with_shorter,
         proven=proven,
         unresolved=len(annotations) - proven,
+        complete_depth=None if depth is None else int(depth),
         distance_to_origin=_distribution(to_origin),
         distance_to_shorter=_distribution(to_shorter),
     )
@@ -232,19 +247,29 @@ def render_annotation_markdown(summary: AnnotationSummary, *, name: str) -> str:
         f"- Rank: {summary.rank}",
         f"- Total groups: {summary.total}",
         f"- Reach the origin (optimal): {summary.reached_origin}",
-        f"- With a shorter descent: {summary.with_shorter}",
-        f"- Proven settled: {summary.proven} | unresolved: {summary.unresolved}",
-        "",
     ]
+    if summary.complete_depth is not None:
+        header.append(
+            f"- Complete through distance {summary.complete_depth}: every group that "
+            f"close to the origin is in the dataset"
+        )
+    if summary.has_descent:
+        header += [
+            f"- With a shorter descent: {summary.with_shorter}",
+            f"- Proven settled: {summary.proven} | unresolved: {summary.unresolved}",
+        ]
+    header.append("")
     body = _section(
         "By distance to origin (moves to the trivial group)",
         "distance",
         summary.distance_to_origin,
-    ) + _section(
-        "By descent distance (moves to a strictly shorter group)",
-        "distance",
-        summary.distance_to_shorter,
     )
+    if summary.has_descent:
+        body += _section(
+            "By descent distance (moves to a strictly shorter group)",
+            "distance",
+            summary.distance_to_shorter,
+        )
     return "\n".join(header + body) + "\n"
 
 

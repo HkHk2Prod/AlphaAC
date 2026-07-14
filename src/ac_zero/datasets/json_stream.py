@@ -99,6 +99,30 @@ class _Scanner:
             return value
 
 
+def read_members_before(path: Path, key: str) -> dict[str, Any]:
+    """Return the top-level members that precede the ``key`` array, without reading it.
+
+    Documents are written with sorted keys, so a member named to sort before the
+    large array (``expanded`` before ``groups``) can be read back for the price of
+    the members ahead of it -- which is how a multi-gigabyte ball is resumed
+    without materializing a single group.
+    """
+    members: dict[str, Any] = {}
+    with path.open(encoding="utf-8") as handle:
+        scanner = _Scanner(handle)
+        scanner.expect("{")
+        if scanner.accept("}"):
+            return members
+        while True:
+            name = scanner.value()
+            scanner.expect(":")
+            if name == key:
+                return members
+            members[str(name)] = scanner.value()
+            if not scanner.accept(","):
+                return members
+
+
 def iter_json_array(path: Path, key: str) -> Iterator[Any]:
     """Yield each element of the top-level ``key`` array in the JSON object at ``path``.
 

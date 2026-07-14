@@ -110,6 +110,7 @@ class DatasetSource:
         annotations_path: str | Path | None = None,
         max_difficulty: int | None = None,
         require_potential: bool = False,
+        max_relator_tokens: int = 0,
     ) -> DatasetSource:
         """Map a grown group dataset, filtered by its companion annotations file.
 
@@ -117,13 +118,15 @@ class DatasetSource:
         distances live in the separate ``annotations_path`` file: ``max_difficulty``
         caps ``distance_to_origin`` (a coarse curriculum knob, ``None`` = all), and
         ``require_potential`` keeps only groups whose ``distance_to_origin`` is known
-        (the potential reward's start states). The known distances are also exposed
+        (the potential reward's start states). ``max_relator_tokens`` drops the groups
+        the run's encoder could not hold (0 = no capacity limit), which a ball carries
+        because it is grown without a length cap. The known distances are also exposed
         via :attr:`potentials` so the environment can score potential-based shaping.
         """
         groups = Path(path)
         annotations = None if annotations_path is None else Path(annotations_path)
         store = InstanceStore.open(groups, annotations)
-        selected = _select(store, max_difficulty, require_potential)
+        selected = _select(store, max_difficulty, require_potential, max_relator_tokens)
         if selected is not None and not selected.size:
             constraint = _constraint(max_difficulty, require_potential)
             raise ValueError(f"group dataset at {groups} has no groups{constraint}")
@@ -179,19 +182,29 @@ class DatasetSource:
 
 
 def _select(
-    store: InstanceStore, max_difficulty: int | None, require_potential: bool
+    store: InstanceStore,
+    max_difficulty: int | None,
+    require_potential: bool,
+    max_relator_tokens: int,
 ) -> NDArray[np.int64] | None:
     """Return the indices of the groups an episode may start from, `None` for all.
 
-    Both filters are stated in terms of a group's distance to origin, so without
-    an annotations file neither can be satisfied by any group.
+    The distance filters are stated in terms of a group's distance to origin, so
+    without an annotations file neither can be satisfied by any group. The capacity
+    filter needs no annotations: it drops the groups whose relators the encoder could
+    not present to the model, which would otherwise fail the episode at its first step.
     """
-    if max_difficulty is None and not require_potential:
+    if max_difficulty is None and not require_potential and not max_relator_tokens:
         return None
+    keep = np.ones(store.count, dtype=np.bool_)
+    if max_relator_tokens:
+        keep &= store.longest <= max_relator_tokens
+    if max_difficulty is None and not require_potential:
+        return np.flatnonzero(keep)
     distances = store.distances
     if distances is None:
         return np.empty(0, dtype=np.int64)
-    keep = distances != UNKNOWN
+    keep &= distances != UNKNOWN
     if max_difficulty is not None:
         keep &= distances <= max_difficulty
     return np.flatnonzero(keep)
@@ -254,5 +267,6 @@ def build_instance_source(config: TrainingPipelineConfig) -> InstanceSource:
             config.dataset_annotations_path,
             config.dataset_max_difficulty,
             require_potential=config.reward_mode in ("potential", "navigation"),
+            max_relator_tokens=config.max_relator_tokens,
         )
     return ScrambleSource(config.rank, config.scramble_depth)

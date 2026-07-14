@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import numpy as np
 import torch
 from torch import nn
 
-from ac_zero.encoding.padded import PaddedEncoding
+from ac_zero.models.batch import EncodedBatch
 from ac_zero.models.features import vocabulary_size
-from ac_zero.models.torch_utils import long_tensor
 from ac_zero.models.trainable import TrainablePolicyValueModel
 
 
@@ -17,7 +15,7 @@ def _rotate_half(x: torch.Tensor) -> torch.Tensor:
 
 
 class _RotaryEncoding(nn.Module):
-    """Rotary positional encoding (RoPE) over a ``(seq, dim)`` tensor.
+    """Rotary positional encoding (RoPE) over the last two dims of a ``(..., seq, dim)`` tensor.
 
     Position is injected by rotating query/key feature pairs by an angle that grows
     with sequence index, so attention depends only on relative offsets between
@@ -34,39 +32,57 @@ class _RotaryEncoding(nn.Module):
         self.register_buffer("inv_freq", inv_freq)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        angles = torch.outer(torch.arange(x.shape[0]).float(), self.inv_freq)
+        positions = torch.arange(x.shape[-2], device=x.device, dtype=self.inv_freq.dtype)
+        angles = torch.outer(positions, self.inv_freq)
         emb = torch.cat([angles, angles], dim=-1)
         return x * emb.cos() + _rotate_half(x) * emb.sin()
 
 
 class _RotaryAttention(nn.Module):
-    """Single-head self-attention with RoPE on queries/keys and a padding mask."""
+    """Multi-head self-attention with RoPE on queries/keys and a padding mask.
 
-    def __init__(self, dim: int) -> None:
+    Heads split the model dimension, so ``num_heads = 1`` is exactly the original
+    single-head layer -- same parameter shapes, same arithmetic -- and a wide model
+    gets the head count it needs without a new checkpoint format.
+    """
+
+    def __init__(self, dim: int, num_heads: int) -> None:
         super().__init__()
+        if dim % num_heads:
+            raise ValueError(f"embed_dim {dim} is not divisible by num_heads {num_heads}")
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
         self.query = nn.Linear(dim, dim)
         self.key = nn.Linear(dim, dim)
         self.value = nn.Linear(dim, dim)
         self.out = nn.Linear(dim, dim)
-        self.rotary = _RotaryEncoding(dim)
-        self.scale = dim**-0.5
+        self.rotary = _RotaryEncoding(self.head_dim)
+        self.scale = self.head_dim**-0.5
+
+    def _heads(self, x: torch.Tensor) -> torch.Tensor:
+        """Reshape ``(batch, seq, dim)`` into ``(batch, heads, seq, head_dim)``."""
+        batch, seq, _ = x.shape
+        return x.reshape(batch, seq, self.num_heads, self.head_dim).transpose(1, 2)
 
     def forward(self, x: torch.Tensor, key_mask: torch.Tensor) -> torch.Tensor:
-        q = self.rotary(self.query(x))
-        k = self.rotary(self.key(x))
+        batch, seq, dim = x.shape
+        q = self.rotary(self._heads(self.query(x)))
+        k = self.rotary(self._heads(self.key(x)))
+        v = self._heads(self.value(x))
         scores = (q @ k.transpose(-2, -1)) * self.scale
-        scores = scores.masked_fill(~key_mask.unsqueeze(0), float("-inf"))
-        attention = torch.softmax(scores, dim=-1)
-        attended: torch.Tensor = self.out(attention @ self.value(x))
-        return attended
+        scores = scores.masked_fill(~key_mask[:, None, None, :], float("-inf"))
+        attended = torch.softmax(scores, dim=-1) @ v
+        merged = attended.transpose(1, 2).reshape(batch, seq, dim)
+        out: torch.Tensor = self.out(merged)
+        return out
 
 
 class _EncoderBlock(nn.Module):
     """Pre-residual self-attention and feed-forward sublayers with layer norm."""
 
-    def __init__(self, dim: int, ff_dim: int) -> None:
+    def __init__(self, dim: int, ff_dim: int, num_heads: int) -> None:
         super().__init__()
-        self.attention = _RotaryAttention(dim)
+        self.attention = _RotaryAttention(dim, num_heads)
         self.norm1 = nn.LayerNorm(dim)
         self.feed_forward = nn.Sequential(nn.Linear(dim, ff_dim), nn.ReLU(), nn.Linear(ff_dim, dim))
         self.norm2 = nn.LayerNorm(dim)
@@ -83,23 +99,25 @@ class _TransformerTrunk(nn.Module):
     Each relator occupies a reserved ``max_relator_tokens`` slot, so the flattened
     sequence places relator ``i`` at a deterministic position block and RoPE encodes
     the boundary as a fixed offset. Padding slots (token 0) embed to zero and are
-    masked out of attention and the mean pool so only real letters contribute.
+    masked out of attention and the mean pool so only real letters contribute; a
+    fully reduced presentation has no real letters at all, so it attends uniformly
+    rather than softmaxing a row of ``-inf``.
     """
 
-    def __init__(self, vocab: int, embed_dim: int, ff_dim: int, layers: int) -> None:
+    def __init__(self, vocab: int, embed_dim: int, ff_dim: int, layers: int, heads: int) -> None:
         super().__init__()
         self.embedding = nn.Embedding(vocab, embed_dim, padding_idx=0)
-        self.blocks = nn.ModuleList(_EncoderBlock(embed_dim, ff_dim) for _ in range(layers))
+        self.blocks = nn.ModuleList(_EncoderBlock(embed_dim, ff_dim, heads) for _ in range(layers))
 
-    def forward(self, encoding: PaddedEncoding) -> torch.Tensor:
-        tokens = long_tensor(encoding.tokens.reshape(-1))
-        mask = torch.from_numpy(np.ascontiguousarray(encoding.mask.reshape(-1)))
-        if not bool(mask.any()):  # fully reduced presentation: attend uniformly
-            mask = torch.ones_like(mask)
-        x = self.embedding(tokens)
+    def forward(self, batch: EncodedBatch) -> torch.Tensor:
+        size = batch.size
+        mask = batch.mask.reshape(size, -1)
+        mask = mask | ~mask.any(dim=1, keepdim=True)
+        x = self.embedding(batch.tokens.reshape(size, -1))
         for block in self.blocks:
             x = block(x, mask)
-        pooled: torch.Tensor = x[mask].mean(dim=0, keepdim=True)
+        weights = mask.unsqueeze(-1).to(x.dtype)
+        pooled: torch.Tensor = (x * weights).sum(dim=1) / weights.sum(dim=1)
         return pooled
 
 
@@ -112,6 +130,11 @@ class TransformerPolicyValueModel(TrainablePolicyValueModel):
     slot instead of being concatenated into one variable-length stream. Real tokens
     are mean-pooled into the feature vector; padding and global Markov features are
     excluded, so the trunk sees only the relators.
+
+    This is the architecture the supervised stage scales up: ``embed_dim``,
+    ``ff_dim``, ``num_layers`` and ``num_heads`` are the knobs that take it from the
+    few-thousand-parameter CPU baseline to the ~100M-parameter model trained
+    directly on the dataset (see ``configs/experiments/supervised_large.yaml``).
     """
 
     architecture = "transformer"
@@ -120,15 +143,28 @@ class TransformerPolicyValueModel(TrainablePolicyValueModel):
         self,
         *,
         seed: int = 0,
+        device: str = "cpu",
         embed_dim: int = 8,
         ff_dim: int = 16,
         num_layers: int = 2,
+        num_heads: int = 1,
     ) -> None:
-        super().__init__(seed=seed, embed_dim=embed_dim, ff_dim=ff_dim, num_layers=num_layers)
+        super().__init__(
+            seed=seed,
+            device=device,
+            embed_dim=embed_dim,
+            ff_dim=ff_dim,
+            num_layers=num_layers,
+            num_heads=num_heads,
+        )
 
-    def _build_trunk(self, encoding: PaddedEncoding) -> tuple[nn.Module, int]:
+    def _build_trunk(self, batch: EncodedBatch) -> tuple[nn.Module, int]:
         embed = self._hp["embed_dim"]
         trunk = _TransformerTrunk(
-            vocabulary_size(encoding), embed, self._hp["ff_dim"], self._hp["num_layers"]
+            vocabulary_size(batch.rank),
+            embed,
+            self._hp["ff_dim"],
+            self._hp["num_layers"],
+            self._hp["num_heads"],
         )
         return trunk, embed

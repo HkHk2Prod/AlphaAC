@@ -33,9 +33,13 @@ class PaddedEncoding:
 class StateEncoder:
     """Encode search states into padded arrays for model consumption.
 
-    This smoke encoder is intentionally simple and NumPy-based. Production JAX
-    encoders should preserve the same information contract and reject or mask
-    over-capacity states instead of silently losing mathematical data.
+    Every state is laid out on the same fixed ``(rank, max_relator_tokens)`` grid, so
+    encodings stack into a minibatch without further alignment. The capacity is a
+    hard contract, not a truncation point: a relator too long to fit raises rather
+    than being silently clipped, since a clipped relator is a different -- and
+    mathematically wrong -- presentation. Size the capacity to the data
+    (``ac_zero.datasets.supervised_store`` reads the longest relator in a dataset)
+    or to the environment's ``total_length_cap``, which no episode can exceed.
     """
 
     def __init__(self, max_relator_tokens: int = 32) -> None:
@@ -43,12 +47,21 @@ class StateEncoder:
         self.max_relator_tokens = max_relator_tokens
 
     def encode(self, state: ACSearchState) -> PaddedEncoding:
-        """Convert one immutable search state into padded token arrays."""
+        """Convert one immutable search state into padded token arrays.
+
+        Raises ``ValueError`` when a relator exceeds the encoder's capacity.
+        """
         rank = state.presentation.rank
         rows = []
         masks = []
         for relator in state.presentation.relators:
-            row = [letter + rank + 1 for letter in relator.letters[: self.max_relator_tokens]]
+            if len(relator.letters) > self.max_relator_tokens:
+                raise ValueError(
+                    f"relator of length {len(relator.letters)} exceeds the encoder capacity "
+                    f"of {self.max_relator_tokens} tokens; raise max_relator_tokens so the "
+                    "presentation fits instead of being truncated"
+                )
+            row = [letter + rank + 1 for letter in relator.letters]
             pad = self.max_relator_tokens - len(row)
             rows.append(row + [0] * pad)
             masks.append([True] * len(row) + [False] * pad)

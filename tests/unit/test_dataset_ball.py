@@ -1,0 +1,156 @@
+"""Tests for closest-first generation: exact distances, complete shells, resume."""
+
+from __future__ import annotations
+
+import json
+from collections import deque
+from pathlib import Path
+
+import pytest
+
+from ac_zero.algebra.presentation import BalancedPresentation
+from ac_zero.datasets.annotate import annotation_path
+from ac_zero.datasets.ball import BallConfig, grow_ball
+from ac_zero.datasets.validation import validate_dataset
+from ac_zero.moves.universal import UniversalCatalog, move_set
+
+MOVESET = "strict-ac"
+
+
+def _grow(tmp_path: Path, target: int = 400, **kwargs: object) -> Path:
+    groups = tmp_path / "ball.groups.json"
+    grow_ball(groups, BallConfig(rank=2, moveset=MOVESET, target=target, workers=1, **kwargs))  # type: ignore[arg-type]
+    return groups
+
+
+def _documents(groups: Path) -> tuple[dict, dict]:
+    annotations = annotation_path(groups, MOVESET)
+    return json.loads(groups.read_text()), json.loads(annotations.read_text())
+
+
+def _true_distances(rank: int, depth: int) -> dict[str, int]:
+    """Breadth-first distances from the origin, computed independently of the store."""
+    catalog = UniversalCatalog(rank)
+    inverses = [catalog.move(i) for i in move_set(MOVESET, catalog).inverse_ids(catalog)]
+    origin = BalancedPresentation.standard(rank)
+    distances = {origin.content_hash: 0}
+    queue = deque([(origin, 0)])
+    while queue:
+        presentation, distance = queue.popleft()
+        if distance >= depth:
+            continue
+        for move in inverses:
+            child = move.apply(presentation)
+            if child.content_hash not in distances:
+                distances[child.content_hash] = distance + 1
+                queue.append((child, distance + 1))
+    return distances
+
+
+def test_the_origin_is_the_whole_ball_of_a_run_that_expands_nothing(tmp_path: Path) -> None:
+    groups = _grow(tmp_path, target=0)
+    document, annotations = _documents(groups)
+
+    assert [entry["hash"] for entry in document["groups"]] == [
+        BalancedPresentation.standard(2).content_hash
+    ]
+    assert annotations["annotations"][0]["distance_to_origin"] == 0
+    assert document["provenance"]["complete_depth"] == 0
+
+
+def test_distances_are_the_true_shortest_paths(tmp_path: Path) -> None:
+    """Every distance the ball writes is the optimum, checked against an independent BFS."""
+    groups = _grow(tmp_path, target=2000)
+    document, annotations = _documents(groups)
+    depth = document["provenance"]["max_distance"]
+    truth = _true_distances(2, depth)
+
+    labels = {entry["hash"]: entry["distance_to_origin"] for entry in annotations["annotations"]}
+    assert labels
+    for content_hash, distance in labels.items():
+        assert distance == truth[content_hash]
+        assert distance <= depth
+
+
+def test_every_shell_up_to_the_complete_depth_is_whole(tmp_path: Path) -> None:
+    """The claim the dataset makes: no group within `complete_depth` of the origin is missing."""
+    groups = _grow(tmp_path, target=2000)
+    document, annotations = _documents(groups)
+    complete = document["provenance"]["complete_depth"]
+    assert complete >= 2  # a run this size gets past the first shells
+
+    present = {entry["hash"] for entry in annotations["annotations"]}
+    expected = {
+        content_hash
+        for content_hash, distance in _true_distances(2, complete).items()
+        if distance <= complete
+    }
+    assert expected <= present
+
+
+def test_the_optimal_moves_step_one_closer_to_the_origin(tmp_path: Path) -> None:
+    """Each co-optimal move listed for a group really lands on a group one closer."""
+    groups = _grow(tmp_path, target=600)
+    document, annotations = _documents(groups)
+    catalog = UniversalCatalog(2)
+    labels = {entry["hash"]: entry for entry in annotations["annotations"]}
+    strict = move_set(MOVESET, catalog).ids
+
+    checked = 0
+    for entry in document["groups"]:
+        label = labels[entry["hash"]]
+        presentation = BalancedPresentation.from_letters(2, entry["relators"])
+        if label["distance_to_origin"] == 0:
+            assert label["optimal_moves_to_origin"] == []
+            continue
+        assert label["optimal_moves_to_origin"], "a group off the origin has a way back"
+        for move_id in label["optimal_moves_to_origin"]:
+            assert move_id in strict  # a forward move of the set, not one of its inverses
+            child = catalog.move(move_id).apply(presentation)
+            assert labels[child.content_hash]["distance_to_origin"] == (
+                label["distance_to_origin"] - 1
+            )
+            checked += 1
+    assert checked > 0
+
+
+def test_a_resumed_run_extends_the_same_ball(tmp_path: Path) -> None:
+    """Stopping and restarting deepens the ball rather than redoing or corrupting it."""
+    groups = _grow(tmp_path, target=200)
+    first, _ = _documents(groups)
+
+    grow_ball(groups, BallConfig(rank=2, moveset=MOVESET, target=800, workers=1))
+    second, annotations = _documents(groups)
+
+    assert second["provenance"]["count"] > first["provenance"]["count"]
+    assert second["provenance"]["complete_depth"] >= first["provenance"]["complete_depth"]
+    # The groups it already had are still there, at the same distances, in the same order.
+    before = [entry["hash"] for entry in first["groups"]]
+    assert [entry["hash"] for entry in second["groups"]][: len(before)] == before
+    labels = {entry["hash"]: entry["distance_to_origin"] for entry in annotations["annotations"]}
+    truth = _true_distances(2, second["provenance"]["max_distance"])
+    assert all(labels[h] == truth[h] for h in before)
+
+
+def test_a_ball_of_another_move_set_is_refused(tmp_path: Path) -> None:
+    groups = _grow(tmp_path, target=50)
+    with pytest.raises(ValueError, match=r"strict-ac.* ball"):
+        grow_ball(groups, BallConfig(rank=2, moveset="universal", target=50, workers=1))
+
+
+def test_both_documents_validate(tmp_path: Path) -> None:
+    groups = _grow(tmp_path, target=300)
+    assert validate_dataset(groups).ok
+    assert validate_dataset(annotation_path(groups, MOVESET)).ok
+
+
+def test_a_checkpoint_leaves_a_resumable_file(tmp_path: Path) -> None:
+    """A run that checkpoints mid-flight records how far it expanded, not just what it found."""
+    groups = _grow(tmp_path, target=500, checkpoint_every=50)
+    document, _ = _documents(groups)
+
+    expanded = document["ball"]["expanded"]
+    assert 0 < expanded <= len(document["groups"])
+    assert document["ball"]["moveset"] == MOVESET
+    # The expanded prefix is exactly the groups closer than the first unexpanded one.
+    assert document["provenance"]["expanded"] == expanded

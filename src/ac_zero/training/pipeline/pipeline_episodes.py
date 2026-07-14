@@ -106,10 +106,18 @@ def build_env(
     at (ignored by other modes); the training loop advances it between iterations.
     ``max_moves`` is this episode's horizon -- ``3 * L + 6`` for its distance ``L``
     (see :func:`episode_distance_and_moves`).
+
+    The env is given the *run's* encoder, not a default one: its legal-move mask is what
+    keeps the episode inside the states the model can represent, so a mask computed
+    against some other capacity would let the episode walk into a presentation the
+    training encoder then refuses.
     """
     potentials = source.potentials if config.reward_mode in ("potential", "navigation") else None
     return ACEnvironment(
-        presentation, build_env_config(config, alpha, max_moves), potentials=potentials
+        presentation,
+        build_env_config(config, alpha, max_moves),
+        StateEncoder(config.max_relator_tokens),
+        potentials=potentials,
     )
 
 

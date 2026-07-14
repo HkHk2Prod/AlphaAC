@@ -58,7 +58,9 @@ def _content_hash_mask(env: ACEnvironment, state: ACSearchState) -> tuple[bool, 
     mask: list[bool] = []
     for move in env.catalog.moves:
         nxt = move.apply(state.presentation)
-        legal = nxt.total_length <= env.config.total_length_cap
+        legal = nxt.total_length <= env.config.total_length_cap and all(
+            len(relator.letters) <= env.encoder.max_relator_tokens for relator in nxt.relators
+        )
         if env.config.mask_noops and nxt.content_hash == state.presentation.content_hash:
             legal = False
         mask.append(legal)

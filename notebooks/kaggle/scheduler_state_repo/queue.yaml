@@ -6,11 +6,38 @@ limits:
   max_launches_per_tick: 5
   stale_heartbeat_minutes: 180
 tasks:
+# Closest-first generation: expands outward from the trivial group by the inverses of the
+# strict-ac moves, breadth-first, so every distance it writes is a proven optimum and each
+# shell is complete before the next begins. It emits the annotation file itself, which is
+# why no annotation task follows it. Resumes from the bucket: the groups file is the queue.
+- id: ball-main
+  mode: ball
+  notebook_slug: hkhk2prod/alphaac-ball
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 100
+  max_runtime_minutes: 705
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    moveset: strict-ac
+    target: 100000000
+    # Each checkpoint rewrites both documents, so keep them rare as the ball grows.
+    checkpoint_every: 250000
+    workers: 0
+    output: /kaggle/working/ball_rank2.groups.json
+# The length-first grow and the annotation pass that gave it distances. Retired in favour
+# of `ball-main`: its distances were only ever upper bounds (a shortest path can run
+# through a group it never expanded) and under strict-ac only 59% of its groups could
+# reach the origin at all. Left here, inactive, because the grown dataset is still what
+# the universal move set and the descent labels are built from.
 - id: generation-main
   mode: generation
   notebook_slug: hkhk2prod/alphaac-generation
   notebook_dir: notebooks/kaggle
-  active: true
+  active: false
   remaining_runs: null
   accelerator: cpu
   priority: 100
@@ -26,7 +53,7 @@ tasks:
   mode: annotation
   notebook_slug: hkhk2prod/alphaac-annotation
   notebook_dir: notebooks/kaggle
-  active: true
+  active: false
   remaining_runs: null
   accelerator: cpu
   priority: 90

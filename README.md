@@ -95,6 +95,44 @@ Re-run the command (or point `--input` at the same file) to expand it further.
 `--select smallest` gives one deterministic canonical frontier; use `--select
 weighted-random --seed N` so independent machines explore divergent regions.
 
+### The ball: closest-first generation
+
+`grow` orders the frontier by relator *length*, which is not the quantity training
+cares about. The distances of what it produces have to be searched for afterwards
+(`dataset annotate`), and even then they are only upper bounds — a group's true
+shortest path to the origin may run through a group the run never expanded. Under
+`strict-ac`, only 59% of the grown rank-2 dataset can reach the origin at all.
+
+`dataset ball` inverts the construction: it walks outward from the trivial group by
+the **inverses** of a move set's moves, breadth-first, so a group is discovered
+exactly when the first inverse-move path reaches it — and that path, reversed, is a
+shortest path of forward moves back to the origin.
+
+```bash
+uv run --frozen aczero dataset ball \
+  --output data/generated/ball_rank2.groups.json \
+  --rank 2 --moveset strict-ac --target 1000000
+```
+
+Two properties follow, and they are the point:
+
+* **Exact distances.** Every `distance_to_origin` is a proven optimum, so no
+  annotation pass follows: the run writes `<name>.<moveset>.annotations.json` itself,
+  with the co-optimal first moves a supervised policy is trained on.
+* **Complete shells.** Groups are expanded in discovery order, so once the last group
+  at distance `d` is expanded, *every* group at distance `d+1` is in the dataset. The
+  deepest such `d` is reported as `complete_depth`.
+
+Shells grow by roughly sevenfold a layer at rank 2 (1, 8, 51, 328, 2128, 14240,
+97668, 683413, …), so a run is bounded by a group budget (`--target`, `--minutes`)
+rather than by a depth, and resumes into the next shell on the next run. Nothing is
+dropped for being long — a length cap would reroute the shortest paths that run
+through a long group — so the groups a model's encoder cannot hold are filtered by
+its `max_relator_tokens` where they are consumed, not where they are made.
+
+This is the default dataset for training runs (`ball_rank{rank}.groups.json`); the
+length-first `grow` dataset remains for the universal move set and descent labels.
+
 The grown dataset outgrows GitHub's 100 MB per-file limit, so it is **not** kept
 in git (`data/generated/` is gitignored) — it lives in a Hugging Face
 [storage bucket](https://huggingface.co/docs/hub/storage-buckets)
@@ -222,6 +260,92 @@ single breadth-first sweep from the trivial root over the *inverse* move set —
 which also makes annotating a non-invertible subset well-defined. Groups are
 processed shortest-first, settled answers are skipped on re-runs, and the file is
 rewritten atomically.
+
+**Split** the dataset into train/validation/test, writing a third companion file,
+`<name>.split.json`, that syncs to the bucket like the others:
+
+```bash
+uv run --frozen aczero dataset split --input data/generated/train.groups.json
+```
+
+A group's split is a deterministic function of its content hash, so re-running
+after a `dataset grow` assigns the newly added groups and **cannot move a group a
+model has already been evaluated on**. The default is 80/10/10
+(`--val-fraction` / `--test-fraction` change it). Note that the split separates
+*groups*, not regions: in a graph grown from a single root, a validation group is
+inevitably a neighbour of training groups, so this measures generalization to
+unseen groups rather than to an unseen part of the graph.
+
+## Supervised Pretraining
+
+The dataset already knows the answer to "which move gets closer to the trivial
+group": the annotation pass records every group's distance to the origin, and the
+group file records which group each move reaches. Joining the two scores every
+move by the quantity the task is defined on —
+
+```
+delta[group, move] = distance(where the move lands) - distance(group)
+```
+
+— so `-1` is a move on a shortest path, `0` stalls, and `+1` or worse retreats.
+`agent: supervised` trains a policy directly on that signal, with no self-play.
+The policy target is `softmax(-delta / target_temperature)` over the moves whose
+neighbour has a known distance (a move that leaves the annotated region gets zero
+target mass but still competes in the softmax, so probability spent there is
+probability taken from the moves that descend). The value head is regressed on
+`2 * gamma**distance - 1` at the same time, so a pretrained critic is worth
+something to an RL run rather than starting from noise.
+
+The two intended uses are the two committed configs:
+
+```bash
+# 1. Pretrain a small model, then fine-tune it with RL
+uv run --frozen aczero train --config configs/experiments/supervised_pretrain.yaml
+
+# 2. Train a ~99M-parameter transformer to be the solver outright (wants a GPU)
+uv run --frozen aczero train --config configs/experiments/supervised_large.yaml
+```
+
+Both need the group file, its annotations, and a split. A run writes the same
+artifacts as an RL run — run directory, `metrics.jsonl`, plots, and the Hugging
+Face checkpoint bundle — so fine-tuning is just pointing an AlphaZero/PPO config
+at the checkpoint it produced:
+
+```yaml
+training:
+  warm_start: runs/train/supervised_pretrain/model_checkpoint/best.json
+```
+
+Each epoch is `training.optimizer_updates` minibatches of Adam, scored afterwards
+on a fixed sample of the validation split. The metrics are stated in terms of the
+distance, not the loss: **`val_descent_accuracy`** is how often the model's
+top-ranked move actually reduces the distance to the origin, and
+**`val_mean_delta`** is the average distance change that move causes. The best
+checkpoint is chosen by descent accuracy. Every trainable group has at least one
+descending move by construction, so a perfect model scores `1.0` and `-1.0`. The
+test split is scored exactly once, after the final epoch, and never steers
+training. Unlike the RL loops, the supervised stage trains on **every distance the
+dataset contains** — there is no difficulty ceiling and no curriculum.
+
+Only **expanded** groups carry a label. An unexpanded frontier group — one
+discovered as a neighbour but never itself expanded — has no recorded transitions,
+so there is no move to score and nothing to learn from it. On the current rank-2
+dataset that is 343k labelled groups out of 3.57M (the rest are frontier), which
+the run reports as `train`/`val`/`test` counts in its opening `dataset` event.
+More `dataset grow` therefore widens the supervised training set only insofar as
+it *expands* groups, not merely discovers them.
+
+### Encoder capacity
+
+The encoder lays every presentation on a fixed `(rank, max_relator_tokens)` grid,
+and a relator too long to fit is now an error rather than a silent truncation — a
+truncated relator is a different, mathematically wrong presentation. The
+environment's legal-move mask enforces the same bound, so an episode can never
+walk into a state the model would have to refuse. `max_relator_tokens: 0` (the
+supervised stage only) derives the capacity from the dataset's longest relator, and
+the resolved number is written into the checkpoint. **A fine-tuning RL config must
+set the same `max_relator_tokens`**, since the capacity fixes the network's input
+shape, and it must seed from a source whose presentations fit it.
 
 Verify a certificate:
 

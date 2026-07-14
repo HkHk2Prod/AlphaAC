@@ -17,6 +17,7 @@ SelectStrategy = Literal["smallest", "weighted-random"]
 # Provenance strings for the ``source`` field.
 SOURCE_TRIVIAL = "trivial"
 SOURCE_EXPANSION = "universal_expansion"
+SOURCE_ORIGIN_BALL = "origin_ball"
 
 
 @dataclass(slots=True)
@@ -186,10 +187,16 @@ def group_entry(
     ac_trivial: bool | None,
     source: str,
     transitions: dict[int, str] | None = None,
+    content_hash: str | None = None,
 ) -> dict[str, Any]:
-    """Build one minimal group-dataset entry (also used for curated candidates)."""
+    """Build one minimal group-dataset entry (also used for curated candidates).
+
+    ``content_hash`` lets a caller that already holds the hash pass it in rather than
+    have the presentation derive (and then cache) its own -- which, over millions of
+    groups rewritten at every checkpoint, is a hash and a string per group.
+    """
     entry: dict[str, Any] = {
-        "hash": presentation.content_hash,
+        "hash": content_hash or presentation.content_hash,
         "rank": presentation.rank,
         "ac_trivial": ac_trivial,
         "source": source,

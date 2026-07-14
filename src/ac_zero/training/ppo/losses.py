@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import random
 from dataclasses import dataclass
 
@@ -100,28 +99,3 @@ def masked_softmax(
     exp = np.exp(shifted)
     probs[legal] = exp / float(np.sum(exp))
     return probs
-
-
-def policy_value_loss(
-    logits: NDArray[np.float64],
-    value: float,
-    policy_target: NDArray[np.float64],
-    value_target: float,
-    legal_mask: tuple[bool, ...],
-    *,
-    value_weight: float = 1.0,
-) -> PolicyValueLoss:
-    """Compute masked cross-entropy plus weighted value mean-squared error."""
-    probs = masked_softmax(logits, legal_mask)
-    if probs.shape != policy_target.shape:
-        raise ValueError("policy_target shape must match logits shape")
-    policy_loss = 0.0
-    for prob, target in zip(probs, policy_target, strict=True):
-        if target > 0.0:
-            policy_loss -= float(target) * math.log(max(float(prob), 1e-12))
-    value_loss = (float(value) - value_target) ** 2
-    return PolicyValueLoss(
-        policy_loss=policy_loss,
-        value_loss=value_loss,
-        total_loss=policy_loss + value_weight * value_loss,
-    )
