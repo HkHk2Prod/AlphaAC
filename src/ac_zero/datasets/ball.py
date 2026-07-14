@@ -83,9 +83,14 @@ class BallConfig:
     max_relator_length: int = 0
     workers: int = 0
     batch_size: int = 256
-    # Rewrite both files every this many newly added groups so an interrupted run keeps
-    # its progress; 0 writes only at the end.
-    checkpoint_every: int = 50_000
+    # Rewrite both files every this many hours so an interrupted run keeps its progress;
+    # 0 writes only at the end. Timed rather than counted in groups because what a
+    # checkpoint buys is a bound on the *work* an interruption can destroy, and the cost
+    # of taking one is a full rewrite of both documents -- which grows with the ball while
+    # a group count does not. Whoever runs the ball pairs this with pushing the checkpoint
+    # somewhere durable (`aczero dataset ball` uploads it), so the interval is really the
+    # answer to "how much progress am I willing to lose?".
+    checkpoint_hours: float = 0.0
     log_every: int = 10_000
     # Soft wall-clock budget in seconds; None runs until `target` is reached.
     time_limit_s: float | None = None
@@ -136,9 +141,11 @@ def grow_ball(
         _, message, metrics = describe_worker_pool(config.workers)
         progress(message, metrics)
 
-    added = expanded = checkpointed = logged = 0
+    added = expanded = logged = 0
     timed_out = False
     deadline = None if config.time_limit_s is None else time.monotonic() + config.time_limit_s
+    checkpoint_s = config.checkpoint_hours * 3600
+    next_checkpoint = time.monotonic() + checkpoint_s if checkpoint_s > 0 else None
     with ExpansionPool(
         config.rank, config.max_relator_length, config.workers, ball.inverse_ids
     ) as pool:
@@ -187,9 +194,11 @@ def grow_ball(
                     },
                 )
                 logged = added
-            if config.checkpoint_every > 0 and added - checkpointed >= config.checkpoint_every:
+            # A checkpoint is taken between merges -- a consistent point, with nothing in
+            # flight unmerged -- so the pair of documents it leaves is always resumable.
+            if next_checkpoint is not None and time.monotonic() >= next_checkpoint:
                 ball.write(groups_path, annotations_path)
-                checkpointed = added
+                next_checkpoint = time.monotonic() + checkpoint_s
                 if progress is not None:
                     progress("checkpoint", {"groups": len(ball.nodes), "added": added})
 

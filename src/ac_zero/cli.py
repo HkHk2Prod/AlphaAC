@@ -170,6 +170,15 @@ def main(argv: list[str] | None = None) -> int:
         help="`grow`: dump to disk every N added groups (0 = only at the end)",
     )
     ds.add_argument(
+        "--checkpoint-hours",
+        type=float,
+        default=4.0,
+        help="`ball`: every N hours, rewrite both documents and push them to the bucket "
+        "(0 = only at the end). This is how much progress an interruption may cost: a "
+        "checkpoint left on a disk that dies with the machine buys nothing, so the write "
+        "and the upload are one event",
+    )
+    ds.add_argument(
         "--log-every",
         type=int,
         default=1000,
@@ -904,6 +913,32 @@ def _publish_dataset_artifact(
         reporter.progress(phase, "uploaded to HF bucket", {"files": len(published.uploaded_uris)})
 
 
+def _upload_ball_checkpoint(
+    args: argparse.Namespace, reporter: CliReporter, groups_path: Path, annotations_path: Path
+) -> None:
+    """Push a mid-run checkpoint of both ball documents to the bucket.
+
+    No summary: that is an end-of-run report, and rendering one every few hours over a
+    growing dataset would cost more than the checkpoint it accompanies. Uploads never
+    raise -- a hub blip must not kill a run that has hours of expansion behind it -- so a
+    failure is a warning and the next checkpoint tries again.
+    """
+    if args.no_upload:
+        return
+    published = (
+        publish_to_bucket(groups_path, bucket=args.bucket or DEFAULT_BUCKET).outcomes
+        + publish_to_bucket(annotations_path, bucket=args.bucket or DEFAULT_BUCKET).outcomes
+    )
+    for outcome in published:
+        if not outcome.ok:
+            reporter.warning(
+                "ball", "HF upload skipped", {"file": outcome.remote_name, "error": outcome.error}
+            )
+    uploaded = [outcome.remote_name for outcome in published if outcome.ok]
+    if uploaded:
+        reporter.progress("ball", "checkpoint pushed to HF bucket", {"files": len(uploaded)})
+
+
 def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
     """Expand the persistent dataset outward from the trivial group by AC moves."""
     path = Path(_resolve_dataset_path(args.output) or _resolve_dataset_path(args.input))
@@ -952,27 +987,35 @@ def _dataset_ball(args: argparse.Namespace, reporter: CliReporter) -> int:
     upper bounds, and every group within `complete_depth` of the origin is present.
     The distances are emitted as the companion annotation file, so no `annotate` pass
     follows; both files are summarized and pushed to the bucket.
+
+    Every ``--checkpoint-hours`` the run rewrites both documents *and pushes them*. On a
+    machine that can be taken away mid-run -- a Kaggle session, a spot instance -- a
+    checkpoint left on a disk that dies with the container buys nothing, so the local
+    write and the bucket push are one event: the interval is how much progress an
+    interruption may cost, and nothing else.
     """
     groups_path = Path(
         _resolve_dataset_path(args.output)
         or ball_groups_path(DATASET_DIR, args.rank, args.max_relator_length)
     )
+    annotations_path = annotation_path(groups_path, args.moveset)
     config = BallConfig(
         rank=args.rank,
         moveset=args.moveset,
         target=args.target,
         max_relator_length=args.max_relator_length,
         workers=args.workers,
-        checkpoint_every=args.checkpoint_every,
+        checkpoint_hours=args.checkpoint_hours,
         log_every=args.log_every,
         time_limit_s=args.minutes * 60 if args.minutes > 0 else None,
     )
-    report = grow_ball(
-        groups_path,
-        config,
-        progress=lambda message, metrics: reporter.progress("ball", message, metrics),
-    )
-    annotations_path = annotation_path(groups_path, args.moveset)
+
+    def on_progress(message: str, metrics: dict[str, Any]) -> None:
+        reporter.progress("ball", message, metrics)
+        if message == "checkpoint":
+            _upload_ball_checkpoint(args, reporter, groups_path, annotations_path)
+
+    report = grow_ball(groups_path, config, progress=on_progress)
     result: dict[str, Any] = {
         "path": str(groups_path),
         "annotations": str(annotations_path),

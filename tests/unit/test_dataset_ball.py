@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -168,7 +169,7 @@ def test_both_documents_validate(tmp_path: Path) -> None:
 
 def test_a_checkpoint_leaves_a_resumable_file(tmp_path: Path) -> None:
     """A run that checkpoints mid-flight records how far it expanded, not just what it found."""
-    groups = _grow(tmp_path, target=500, checkpoint_every=50)
+    groups = _grow(tmp_path, target=500, checkpoint_hours=1e-9)  # a checkpoint every merge
     document, _ = _documents(groups)
 
     expanded = document["ball"]["expanded"]
@@ -176,6 +177,50 @@ def test_a_checkpoint_leaves_a_resumable_file(tmp_path: Path) -> None:
     assert document["ball"]["moveset"] == MOVESET
     # The expanded prefix is exactly the groups closer than the first unexpanded one.
     assert document["provenance"]["expanded"] == expanded
+
+
+def test_checkpoints_are_taken_on_the_clock_not_on_a_group_count(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The interval is hours of work at risk, not groups added.
+
+    A checkpoint rewrites both documents in full, so its cost grows with the ball while a
+    group count does not -- and what the interval is really buying is a bound on the work
+    an interruption can destroy, which is measured in time.
+    """
+    # A clock that advances half an hour on every read, so the run "spans" hours without
+    # taking any. Swapped only inside `ball`, leaving the real clock alone elsewhere.
+    now = [0.0]
+
+    def tick() -> float:
+        now[0] += 1800.0
+        return now[0]
+
+    monkeypatch.setattr("ac_zero.datasets.ball.time", SimpleNamespace(monotonic=tick))
+
+    taken: list[int] = []
+
+    def progress(message: str, metrics: dict) -> None:
+        if message == "checkpoint":
+            taken.append(int(metrics["added"]))
+
+    groups = tmp_path / "ball.groups.json"
+    grow_ball(
+        groups,
+        BallConfig(rank=2, moveset=MOVESET, target=600, workers=1, checkpoint_hours=1.0),
+        progress=progress,
+    )
+    # The clock, not the group count, decided: half-hour merges under a one-hour interval.
+    assert taken, "a run spanning hours must checkpoint"
+    assert read_relator_bound(groups) == 0
+    # And nothing was written between them: a zero interval writes only at the end.
+    quiet: list[int] = []
+    grow_ball(
+        tmp_path / "quiet.groups.json",
+        BallConfig(rank=2, moveset=MOVESET, target=600, workers=1, checkpoint_hours=0.0),
+        progress=lambda message, metrics: quiet.append(1) if message == "checkpoint" else None,
+    )
+    assert not quiet
 
 
 # -- the relator bound -------------------------------------------------------

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **`dataset ball` checkpoints on the clock, and a checkpoint is a push.** The interval
+  is now `--checkpoint-hours` (default 4) instead of a group count: what a checkpoint
+  buys is a bound on the *work* an interruption can destroy, which is measured in time,
+  while its cost is a full rewrite of both documents — which grows with the ball, where a
+  group count does not. Each checkpoint also uploads both documents to the bucket, since
+  a checkpoint left on a disk that dies with the machine (a Kaggle container, a spot
+  instance) buys nothing at all.
+- **Kaggle: 10-hour sessions, and no job is killed mid-flush any more.** Every task drops
+  to `max_runtime_minutes: 600`. A terminated job is killed outright — nothing in
+  `ac_zero` handles SIGTERM — so whatever it had not pushed dies with the container, and
+  every long job now runs on `budget_min(margin)`: what is left of the session *now*, less
+  the minutes it needs to flush. Measuring from *now* is the fix — a job is launched only
+  after its dataset is pulled from the bucket, and for a multi-gigabyte ball that pull was
+  quietly eating the flush margin, so the watchdog reached the job before the job reached
+  its own soft deadline. The ball reserves 20 minutes to rewrite both documents and push
+  them (it had none, and was therefore always SIGTERM'd, making its last checkpoint
+  silently the only output of a session); training keeps its 10.
+- **Kaggle training pushes on the same 4-hour cadence, and stops checkpointing every
+  iteration.** `--upload-every-hours` is now passed explicitly (4, matching the ball), and
+  the training tasks move from `checkpoint_every: 1` to `25`. The checkpoint event is not
+  a disk-write knob — it is what the HF uploader and the self-play showcase hang off, and
+  every save rewrites the run's whole metrics history — so one per iteration was pure
+  waste, while disabling it would have pushed nothing at all.
+
 - **One length bound, and the dataset carries it.** `max_relator_tokens` is now the
   only length limit in the project: the encoder's grid width, the bound the environment
   masks moves by, *and* the bound the training dataset was generated under. The
