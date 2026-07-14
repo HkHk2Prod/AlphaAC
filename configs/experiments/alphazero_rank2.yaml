@@ -1,7 +1,7 @@
 rank: 2
 agent: alphazero
 model: linear_policy_value
-total_length_cap: 128
+max_relator_tokens: 48
 dataset:
   count: 4
   depth: 3

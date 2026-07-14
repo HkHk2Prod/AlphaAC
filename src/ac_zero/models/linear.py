@@ -3,9 +3,8 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from ac_zero.encoding.padded import PaddedEncoding
-from ac_zero.models.features import GLOBAL_FEATURE_COUNT, global_features, vocabulary_size
-from ac_zero.models.torch_utils import float_tensor, long_tensor
+from ac_zero.models.batch import EncodedBatch
+from ac_zero.models.features import GLOBAL_FEATURE_COUNT, vocabulary_size
 from ac_zero.models.trainable import TrainablePolicyValueModel
 
 
@@ -23,11 +22,9 @@ class _LinearTrunk(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(vocab, embed_dim, padding_idx=0)
 
-    def forward(self, encoding: PaddedEncoding) -> torch.Tensor:
-        tokens = long_tensor(encoding.tokens)
-        embeds = self.embedding(tokens).reshape(1, -1)
-        globals_ = float_tensor(global_features(encoding)).unsqueeze(0)
-        return torch.cat([embeds, globals_], dim=1)
+    def forward(self, batch: EncodedBatch) -> torch.Tensor:
+        embeds = self.embedding(batch.tokens).reshape(batch.size, -1)
+        return torch.cat([embeds, batch.globals], dim=1)
 
 
 class LinearPolicyValueModel(TrainablePolicyValueModel):
@@ -35,16 +32,16 @@ class LinearPolicyValueModel(TrainablePolicyValueModel):
 
     The trunk only embeds the relator letters and flattens them alongside the
     global features, so the trainable heads form a linear model over the same
-    word-aware features the residual MLP consumes. This is the deterministic CPU
+    word-aware features the residual MLP consumes. This is the deterministic
     baseline: a single learned embedding plus linear heads, no hidden trunk layers.
     """
 
     architecture = "linear_policy_value"
 
-    def __init__(self, *, seed: int = 0, embed_dim: int = 8) -> None:
-        super().__init__(seed=seed, embed_dim=embed_dim)
+    def __init__(self, *, seed: int = 0, device: str = "cpu", embed_dim: int = 8) -> None:
+        super().__init__(seed=seed, device=device, embed_dim=embed_dim)
 
-    def _build_trunk(self, encoding: PaddedEncoding) -> tuple[nn.Module, int]:
+    def _build_trunk(self, batch: EncodedBatch) -> tuple[nn.Module, int]:
         embed = self._hp["embed_dim"]
-        feature_dim = encoding.tokens.size * embed + GLOBAL_FEATURE_COUNT
-        return _LinearTrunk(vocabulary_size(encoding), embed), feature_dim
+        feature_dim = batch.token_slots * embed + GLOBAL_FEATURE_COUNT
+        return _LinearTrunk(vocabulary_size(batch.rank), embed), feature_dim

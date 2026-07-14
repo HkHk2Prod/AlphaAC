@@ -2,6 +2,133 @@
 
 ## Unreleased
 
+- **`dataset ball` checkpoints on the clock, and a checkpoint is a push.** The interval
+  is now `--checkpoint-hours` (default 4) instead of a group count: what a checkpoint
+  buys is a bound on the *work* an interruption can destroy, which is measured in time,
+  while its cost is a full rewrite of both documents — which grows with the ball, where a
+  group count does not. Each checkpoint also uploads both documents to the bucket, since
+  a checkpoint left on a disk that dies with the machine (a Kaggle container, a spot
+  instance) buys nothing at all.
+- **Kaggle: 10-hour sessions, and no job is killed mid-flush any more.** Every task drops
+  to `max_runtime_minutes: 600`. A terminated job is killed outright — nothing in
+  `ac_zero` handles SIGTERM — so whatever it had not pushed dies with the container, and
+  every long job now runs on `budget_min(margin)`: what is left of the session *now*, less
+  the minutes it needs to flush. Measuring from *now* is the fix — a job is launched only
+  after its dataset is pulled from the bucket, and for a multi-gigabyte ball that pull was
+  quietly eating the flush margin, so the watchdog reached the job before the job reached
+  its own soft deadline. The ball reserves 20 minutes to rewrite both documents and push
+  them (it had none, and was therefore always SIGTERM'd, making its last checkpoint
+  silently the only output of a session); training keeps its 10.
+- **Kaggle training pushes on the same 4-hour cadence, and stops checkpointing every
+  iteration.** `--upload-every-hours` is now passed explicitly (4, matching the ball), and
+  the training tasks move from `checkpoint_every: 1` to `25`. The checkpoint event is not
+  a disk-write knob — it is what the HF uploader and the self-play showcase hang off, and
+  every save rewrites the run's whole metrics history — so one per iteration was pure
+  waste, while disabling it would have pushed nothing at all.
+
+- **One length bound, and the dataset carries it.** `max_relator_tokens` is now the
+  only length limit in the project: the encoder's grid width, the bound the environment
+  masks moves by, *and* the bound the training dataset was generated under. The
+  environment's `total_length_cap` — a second, independent limit on the relators' sum —
+  is removed, along with the `safety_cap` truncation it produced; nothing bounds the sum
+  any more.
+  - `dataset grow` / `dataset ball` take `--max-relator-length` (0 = unbounded, was
+    `--total-length-cap`, which bounded the *total*). A move that would overshoot the
+    bound is one the environment masks, so a bounded ball is exactly the graph a model
+    of that encoder capacity can move in — which is what keeps its proven distances
+    exact *for that model*, rather than shortest paths routed through long groups the
+    model can neither hold nor legally reach.
+  - The bound is part of a dataset's identity: recorded in the file (`bounds`), carried
+    in its name (`ball_rank2_rel48.groups.json`), and checked when a run opens it. A
+    training run whose `max_relator_tokens` disagrees with its dataset is **refused**,
+    rather than silently filtering the groups that do not fit — dropping them would
+    leave the surviving distances wrong, since they were proven over paths running
+    through the dropped ones. Different capacity, different dataset.
+  - `max_relator_tokens: 0` (derive the capacity from the data) is gone: the data is now
+    generated *for* the capacity, so the capacity must be stated. Its default is 48.
+  - The Kaggle scheduler generates what it trains on: `ball-main` grows the ball at
+    `max_relator_length: 48` and every training task trains at `max_relator_tokens: 48`,
+    so both resolve to `ball_rank2_rel48` in the bucket (the runner derives the name from
+    the bound with the same helper the CLI uses). `alphazero_rank2_heavy` is set to the
+    same 48, so the local heavy run shares that dataset and checkpoint lineage.
+    **The unbounded `ball_rank2` already in the bucket cannot be reused**: a bounded ball
+    is a different graph, so `ball-main` starts the `rel48` ball from the origin.
+
+- **`aczero dataset ball`: closest-first generation with proven distances.** Where
+  `dataset grow` expands the *shortest* group under every universal move, this walks
+  outward from the trivial group by the **inverses** of one move set's moves, in
+  breadth-first order. A group is therefore discovered exactly when the first
+  inverse-move path reaches it, and that path reversed is a shortest path of forward
+  moves back to the origin — so every `distance_to_origin` it writes is a proven
+  optimum rather than the upper bound a search over a partially expanded graph can
+  give, and once the last group at distance `d` is expanded, *every* group at distance
+  `d+1` is present (reported as `complete_depth`). It needs no `dataset annotate` pass:
+  the run emits the annotation file itself, with the co-optimal first moves. The
+  motivation is the state of the grown dataset: under `strict-ac` only 59% of its 3.5M
+  groups can reach the origin at all, and its shells are incomplete from distance 4 up
+  (2,068 groups at distance 4 against a true 2,128; 43,657 at distance 6 against
+  97,668). Runs are bounded by a group budget (`--target`, `--minutes`) because shells
+  grow ~7x a layer at rank 2, they checkpoint and resume (the file is the queue — the
+  expanded prefix is a single number in it), and they apply no length cap, since
+  capping would reroute the shortest paths that run through a long group. Training runs
+  now default to `ball_rank{rank}.groups.json`.
+
+- **The supervised labels no longer need a stored move graph.** `SupervisedStore` now
+  derives each group's neighbours by applying the move set's moves rather than reading
+  the group file's `transitions` map, which lets it label a ball (which stores no
+  adjacency — that map is ~85% of a grown file's bytes) and, on a grown dataset, labels
+  the frontier groups whose transitions were never recorded and which were silently
+  dropped before. The labels are also built *for* an encoder capacity: a move whose
+  child overflows `max_relator_tokens`, like a no-op, is unplayable in the environment
+  and is left unlabelled rather than taught, and a group the encoder cannot hold is
+  dropped from the trainable rows instead of truncated — which is what makes an
+  uncapped ball safe to train on. The capacity is a source of the sidecar, so changing
+  it rebuilds the labels.
+
+- **A supervised training stage** (`agent: supervised`), a third backend alongside
+  `alphazero` and `ppo`. It learns the move that reduces a group's distance to the
+  trivial group, taking its labels from data the dataset already holds: scoring each
+  move's neighbour against the annotation file's distance-to-origin gives, per group
+  and per move, `delta = distance(neighbour) - distance(group)`. The policy target is `softmax(-delta / target_temperature)` over
+  the moves whose neighbour has a known distance (unlabelled moves get zero target
+  mass but stay in the softmax denominator); the value head is regressed on
+  `2 * gamma**distance - 1` at the same time, so an RL run warm-starting from the
+  checkpoint gets a usable critic as well as a policy. Evaluation is stated in the
+  task's own terms — `val_descent_accuracy` (how often the top-ranked move actually
+  reduces the distance) and `val_mean_delta` (the average distance change it causes)
+  — and the best checkpoint is chosen by descent accuracy, not by loss. The held-out
+  test split is scored once, after the final epoch. The stage trains on every
+  distance in the dataset: no `dataset.max_difficulty`, no curriculum. New
+  `configs/experiments/supervised_pretrain.yaml` (a small model to fine-tune with RL)
+  and `supervised_large.yaml` (a ~99M-parameter transformer to use directly).
+
+- **`aczero dataset split`** writes a third companion file, `<name>.split.json`,
+  assigning every group to train/val/test (80/10/10 by default) and publishing it to
+  the Hugging Face bucket alongside the groups and annotations. A group's split is a
+  deterministic function of its content hash, so re-running after a `dataset grow`
+  places the new groups without moving any group a model was already evaluated on,
+  and the file regenerates byte-for-byte from scratch.
+
+- **The models are batched and device-aware.** Every trunk
+  (`linear_policy_value`, `residual_mlp`, `deepsets`, `gru`, `transformer`) now
+  consumes an `EncodedBatch` of stacked states and returns `(batch, actions)` logits
+  and `(batch,)` values; search evaluates one state as a batch of one, and training
+  pushes whole minibatches through in a single pass instead of looping per example.
+  `train_batch` and `ppo_update` are true batched tensor ops. Models take a `device`
+  (`cpu` / `cuda` / `auto`), which is what makes a 100M-parameter model trainable at
+  all. The transformer gained `num_heads` (defaulting to `1`, which is exactly the
+  previous single-head layer, so existing checkpoints are unaffected). The removed
+  `policy_value_loss` helper had no remaining caller.
+
+- **The encoder no longer silently truncates a relator.** A relator longer than
+  `max_relator_tokens` now raises instead of being clipped to fit — a clipped relator
+  is a different, mathematically wrong presentation. The environment's legal-move mask
+  enforces the same bound, so an episode can never step into a state the model would
+  have to refuse, and the training env is now built with the *run's* encoder rather
+  than a default one. `max_relator_tokens: 0` (supervised only) derives the capacity
+  from the dataset's longest relator and records the resolved value in the checkpoint,
+  so a fine-tuning run can reconstruct the network's input shape.
+
 - The `grow` length cap and `annotate` search depth can now be **disabled with a
   `0` sentinel**: `total_length_cap=0` admits neighbours of any relator length, and
   `max_depth=0` runs the shorter-distance search unbounded. The Kaggle generation

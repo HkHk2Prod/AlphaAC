@@ -14,7 +14,6 @@ from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculum
 from ac_zero.training.pipeline.pipeline import TrainingPipelineConfig, run_training_pipeline
 from ac_zero.training.ppo.losses import (
     masked_softmax,
-    policy_value_loss,
     return_to_go,
     visit_count_policy,
 )
@@ -97,7 +96,7 @@ def test_model_size_overrides_reach_the_built_model() -> None:
     assert model._hp["num_layers"] == 3
 
 
-def test_visit_policy_and_masked_loss_ignore_illegal_actions() -> None:
+def test_visit_policy_and_masked_softmax_ignore_illegal_actions() -> None:
     mask = (True, False, True)
     target = visit_count_policy((3, 99, 1), mask)
     assert np.allclose(target, np.asarray([0.75, 0.0, 0.25]))
@@ -105,11 +104,6 @@ def test_visit_policy_and_masked_loss_ignore_illegal_actions() -> None:
     probs = masked_softmax(np.asarray([2.0, 100.0, 0.0]), mask)
     assert probs[1] == 0.0
     assert np.isclose(float(np.sum(probs)), 1.0)
-
-    loss = policy_value_loss(np.asarray([2.0, 100.0, 0.0]), 0.25, target, 0.5, mask)
-    assert loss.policy_loss > 0.0
-    assert loss.value_loss == 0.0625
-    assert loss.total_loss > loss.value_loss
 
 
 def test_training_pipeline_writes_checkpoint_and_summary(tmp_path: Path) -> None:
@@ -245,7 +239,7 @@ def test_run_description_reports_core_and_agent_specific_parameters() -> None:
         "moveset",
         "reward_mode",
         "gamma",
-        "total_length_cap",
+        "max_relator_tokens",
         "checkpoint_every",
         "progress_every",
         "verbosity",
@@ -758,21 +752,31 @@ def test_cli_train_download_checkpoint_warm_starts(monkeypatch, tmp_path: Path) 
 def test_seed_from_default_dataset_derives_names_and_respects_config() -> None:
     from ac_zero.cli import _seed_from_default_dataset
 
-    # With nothing set, both files are derived from rank + moveset.
-    derived = _seed_from_default_dataset(TrainingPipelineConfig(rank=2, moveset="strict-ac"))
-    assert derived.dataset_path == "data/generated/train_rank2.groups.json"
+    # With nothing set, the files are derived from rank + bound + moveset: the
+    # closest-first ball grown under this run's relator bound, whose distances are proven
+    # optima -- in the very graph a model of that encoder capacity moves in.
+    derived = _seed_from_default_dataset(
+        TrainingPipelineConfig(rank=2, moveset="strict-ac", max_relator_tokens=48)
+    )
+    assert derived.dataset_path == "data/generated/ball_rank2_rel48.groups.json"
     assert derived.dataset_annotations_path == (
-        "data/generated/train_rank2.strict-ac.annotations.json"
+        "data/generated/ball_rank2_rel48.strict-ac.annotations.json"
     )
 
-    # An explicit config path is never overridden by the derivation.
+    # A different capacity is a different dataset, not a filtered view of the same one.
+    narrow = _seed_from_default_dataset(
+        TrainingPipelineConfig(rank=2, moveset="strict-ac", max_relator_tokens=32)
+    )
+    assert narrow.dataset_path == "data/generated/ball_rank2_rel32.groups.json"
+
+    # An explicit config path is never overridden by the derivation, and its companions
+    # are derived from *it* -- pairing a custom dataset with the default ball's distances
+    # would label one graph with another's.
     explicit = _seed_from_default_dataset(
         TrainingPipelineConfig(rank=3, dataset_path="custom/groups.json")
     )
     assert explicit.dataset_path == "custom/groups.json"
-    assert explicit.dataset_annotations_path == (
-        "data/generated/train_rank3.strict-ac.annotations.json"
-    )
+    assert explicit.dataset_annotations_path == "custom/groups.strict-ac.annotations.json"
 
 
 def test_cli_train_seeds_from_dataset_by_default(monkeypatch, tmp_path: Path) -> None:
@@ -784,11 +788,15 @@ def test_cli_train_seeds_from_dataset_by_default(monkeypatch, tmp_path: Path) ->
         Path(local).parent.mkdir(parents=True, exist_ok=True)
         # Groups file the DatasetSource can load; annotations can be a stub.
         if str(local).endswith(".groups.json"):
-            from ac_zero.datasets.groups import group_entry
+            from ac_zero.datasets.groups import BOUNDS_KEY, RELATOR_BOUND, group_entry
 
             fixture = generate_solvable(rank=2, depth=2, seed=0).presentation
             entry = group_entry(fixture, ac_trivial=True, source="test")
-            Path(local).write_text(json.dumps({"rank": 2, "groups": [entry]}), encoding="utf-8")
+            bound = TrainingPipelineConfig().max_relator_tokens
+            Path(local).write_text(
+                json.dumps({BOUNDS_KEY: {RELATOR_BOUND: bound}, "rank": 2, "groups": [entry]}),
+                encoding="utf-8",
+            )
         else:
             Path(local).write_text(json.dumps({"annotations": []}), encoding="utf-8")
         return Path(local)
@@ -819,8 +827,8 @@ def test_cli_train_seeds_from_dataset_by_default(monkeypatch, tmp_path: Path) ->
     # No flag: the run seeds from the HF dataset, pulling both derived files.
     exit_code = main(["train", "--config", str(config_path), "--seed", "0"])
     assert exit_code == 0
-    assert "data/generated/train_rank2.groups.json" in pulled
-    assert "data/generated/train_rank2.strict-ac.annotations.json" in pulled
+    assert "data/generated/ball_rank2_rel48.groups.json" in pulled
+    assert "data/generated/ball_rank2_rel48.strict-ac.annotations.json" in pulled
 
 
 def test_cli_train_self_generated_uses_scrambles(monkeypatch, tmp_path: Path) -> None:

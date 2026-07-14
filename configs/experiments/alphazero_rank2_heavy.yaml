@@ -12,6 +12,8 @@
 # Leaving dataset.path unset lets `aczero train` pull the group dataset + its
 # annotations from the online HF bucket into data/generated/ by default (needed
 # for the navigation reward's start-to-goal distance and the distance curriculum).
+# Which dataset it pulls follows from `max_relator_tokens` below: the ball grown
+# under that same bound, `ball_rank2_rel48`.
 rank: 2
 agent: alphazero
 model: transformer
@@ -19,7 +21,13 @@ model_config:
   embed_dim: 16
   ff_dim: 64
   num_layers: 3
-total_length_cap: 128
+# The relator bound: the encoder's grid width, the length the environment masks moves by,
+# and the bound the dataset was generated under -- one number, and the run is refused if
+# its dataset disagrees. Kept equal to the Kaggle scheduler's tasks
+# (notebooks/kaggle/scheduler_state_repo/queue.yaml: `ball-main` grows the ball at 48 and
+# every training task trains at 48), so this run and those share one dataset and one
+# checkpoint lineage.
+max_relator_tokens: 48
 moveset: strict-ac
 dataset:
   count: 8

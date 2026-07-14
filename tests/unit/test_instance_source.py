@@ -9,7 +9,13 @@ import pytest
 
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.generator import generate_solvable
-from ac_zero.datasets.groups import MOVE_CATALOG, SCHEMA_VERSION, group_entry
+from ac_zero.datasets.groups import (
+    BOUNDS_KEY,
+    MOVE_CATALOG,
+    RELATOR_BOUND,
+    SCHEMA_VERSION,
+    group_entry,
+)
 from ac_zero.training.pipeline.instance_source import (
     DatasetSource,
     ScrambleSource,
@@ -18,11 +24,17 @@ from ac_zero.training.pipeline.instance_source import (
 from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
 
 _ANNOTATIONS_SCHEMA = "aczero-annotations-v1"
+# The relator bound the fixtures are generated under -- the config default, so a source
+# built from them agrees with the run that opens it.
+BOUND = TrainingPipelineConfig().max_relator_tokens
 
 
-def _write_groups(path: Path, presentations: list[BalancedPresentation]) -> None:
+def _write_groups(
+    path: Path, presentations: list[BalancedPresentation], bound: int = BOUND
+) -> None:
     groups = [group_entry(p, ac_trivial=True, source="universal_expansion") for p in presentations]
     document = {
+        BOUNDS_KEY: {RELATOR_BOUND: bound},
         "schema_version": SCHEMA_VERSION,
         "rank": 2,
         "move_catalog": MOVE_CATALOG,
@@ -70,12 +82,28 @@ def test_scramble_source_is_seed_deterministic() -> None:
     assert isinstance(source.sample(1), BalancedPresentation)
 
 
+def test_a_dataset_grown_under_another_bound_is_refused(tmp_path: Path) -> None:
+    """Self-play may only start from a dataset generated under the run's own bound.
+
+    The dataset is the graph: its groups are the ones a model of that capacity can hold,
+    and its distances are shortest paths through the moves such a model may legally play.
+    Point a differently-bounded run at it and both claims are false, so it is refused
+    rather than filtered -- dropping the groups that do not fit would leave the surviving
+    distances wrong, since they were proven over paths running through the dropped ones.
+    """
+    dataset = tmp_path / "train.groups.json"
+    _write_groups(dataset, _presentations([1, 2]), bound=BOUND)
+
+    with pytest.raises(ValueError, match=f"was generated max_relator_length={BOUND}"):
+        DatasetSource.from_file(dataset, max_relator_tokens=BOUND - 8)
+
+
 def test_dataset_source_samples_only_dataset_groups(tmp_path: Path) -> None:
     presentations = _presentations([1, 2, 3, 4])
     dataset = tmp_path / "train.groups.json"
     _write_groups(dataset, presentations)
     hashes = {p.content_hash for p in presentations}
-    source = DatasetSource.from_file(dataset)
+    source = DatasetSource.from_file(dataset, max_relator_tokens=BOUND)
 
     seen = {source.sample(seed).content_hash for seed in range(50)}
     assert seen <= hashes
@@ -94,7 +122,9 @@ def test_dataset_source_respects_max_difficulty(tmp_path: Path) -> None:
         moveset="universal",
     )
     easy = {p.content_hash for p, d in zip(presentations, [1, 2, 5, 8], strict=True) if d <= 2}
-    source = DatasetSource.from_file(dataset, annotations, max_difficulty=2)
+    source = DatasetSource.from_file(
+        dataset, annotations, max_difficulty=2, max_relator_tokens=BOUND
+    )
 
     seen = {source.sample(seed).content_hash for seed in range(50)}
     assert seen == easy
@@ -109,7 +139,7 @@ def test_dataset_source_rejects_empty_selection(tmp_path: Path) -> None:
         annotations, {p.content_hash: {"origin": 5} for p in presentations}, moveset="universal"
     )
     with pytest.raises(ValueError):
-        DatasetSource.from_file(dataset, annotations, max_difficulty=2)
+        DatasetSource.from_file(dataset, annotations, max_difficulty=2, max_relator_tokens=BOUND)
 
 
 def test_dataset_source_exposes_known_distances_as_potentials(tmp_path: Path) -> None:
@@ -123,7 +153,7 @@ def test_dataset_source_exposes_known_distances_as_potentials(tmp_path: Path) ->
         {present.content_hash: {"origin": 4}, absent.content_hash: {"origin": None}},
         moveset="universal",
     )
-    source = DatasetSource.from_file(dataset, annotations)
+    source = DatasetSource.from_file(dataset, annotations, max_relator_tokens=BOUND)
     assert source.potentials == {present.content_hash: 4}
 
 
@@ -137,7 +167,9 @@ def test_dataset_source_require_potential_drops_unannotated_groups(tmp_path: Pat
         {present.content_hash: {"origin": 4}, absent.content_hash: {"origin": None}},
         moveset="universal",
     )
-    source = DatasetSource.from_file(dataset, annotations, require_potential=True)
+    source = DatasetSource.from_file(
+        dataset, annotations, require_potential=True, max_relator_tokens=BOUND
+    )
     seen = {source.sample(seed).content_hash for seed in range(50)}
     assert seen == {present.content_hash}
 
@@ -176,7 +208,7 @@ def _distance_dataset(tmp_path: Path, distances: list[int | None]) -> DatasetSou
         {p.content_hash: {"origin": d} for p, d in zip(presentations, distances, strict=True)},
         moveset="universal",
     )
-    source = DatasetSource.from_file(dataset, annotations)
+    source = DatasetSource.from_file(dataset, annotations, max_relator_tokens=BOUND)
     source._by_hash = {p.content_hash: d for p, d in zip(presentations, distances, strict=True)}
     return source
 
@@ -239,7 +271,9 @@ def test_dataset_source_describe_reports_group_and_annotation_stats(tmp_path: Pa
     rows[presentations[3].content_hash] = {"origin": None}
     _write_annotations(annotations, rows, moveset="universal")
 
-    summary = DatasetSource.from_file(dataset, annotations, max_difficulty=2).describe()
+    summary = DatasetSource.from_file(
+        dataset, annotations, max_difficulty=2, max_relator_tokens=BOUND
+    ).describe()
     assert summary["source"] == "dataset"
     assert summary["path"] == str(dataset)
     assert summary["groups_total"] == 4

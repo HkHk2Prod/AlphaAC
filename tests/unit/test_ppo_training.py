@@ -156,11 +156,10 @@ def test_trainer_iteration_updates_the_model_and_reports_finite_stats() -> None:
     model = create_trainable_model("residual_mlp", seed=0)
     # Force the lazy build so the "before" snapshot has real weights to compare.
     env = ACEnvironment(generate_solvable(2, 2, 0).presentation, ACEnvironmentConfig(max_moves=6))
-    model.apply(StateEncoder().encode(env.state), len(env.legal_action_mask()))
+    encoder = StateEncoder(config.max_relator_tokens)
+    model.apply(encoder.encode(env.state), len(env.legal_action_mask()))
     before = model.to_json()["parameters"]
-    trainer = PPOTrainer(
-        config, StateEncoder(config.max_relator_tokens), build_instance_source(config)
-    )
+    trainer = PPOTrainer(config, encoder, build_instance_source(config))
     result = trainer.run_iteration(model, seed=5, iteration=1, rng=random.Random(5))
 
     assert len(result.episodes) == config.episodes_per_iteration

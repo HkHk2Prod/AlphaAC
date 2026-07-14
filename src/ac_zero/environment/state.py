@@ -21,7 +21,6 @@ class ACSearchState:
     moves_remaining: int
     catalog_version: str
     last_action: int | None = None
-    safety_truncated: bool = False
     # Potential (distance to the trivial group) of the last state whose potential
     # was known, carried so the "potential" reward can defer crediting a descent
     # across an unannotated excursion until the episode re-enters the known region.
@@ -41,5 +40,4 @@ class ACSearchState:
             self.moves_remaining,
             self.catalog_version,
             self.last_action,
-            self.safety_truncated,
         )

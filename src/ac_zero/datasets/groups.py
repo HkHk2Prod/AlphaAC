@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,14 +8,54 @@ from typing import Any, Literal
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.expand import NeighbourRecord
 from ac_zero.datasets.io import atomic_write_json
+from ac_zero.datasets.json_stream import iter_json_array, read_members_before
 
 SCHEMA_VERSION = "aczero-groups-v1"
 MOVE_CATALOG = "universal-v1"
 SelectStrategy = Literal["smallest", "weighted-random"]
 
+# The per-relator bound the dataset was generated under lives under this top-level
+# member -- in every group file, grown or ball. It is named to sort before ``groups``
+# so `read_relator_bound` recovers it from a multi-gigabyte file without decoding a
+# single group (documents are written with sorted keys).
+BOUNDS_KEY = "bounds"
+RELATOR_BOUND = "max_relator_length"
+
 # Provenance strings for the ``source`` field.
 SOURCE_TRIVIAL = "trivial"
 SOURCE_EXPANSION = "universal_expansion"
+SOURCE_ORIGIN_BALL = "origin_ball"
+
+
+def read_relator_bound(path: str | Path) -> int:
+    """The longest relator any group in this dataset may carry; 0 if it is unbounded.
+
+    Every consumer that puts the dataset behind an encoder checks its capacity against
+    this: a model bounded differently from its data is trained on moves it cannot play,
+    or plays moves whose outcome the data never proved a distance for.
+    """
+    bounds = read_members_before(Path(path), "groups").get(BOUNDS_KEY, {})
+    return int(bounds.get(RELATOR_BOUND, 0))
+
+
+def check_relator_bound(path: str | Path, stored: int, requested: int, what: str) -> None:
+    """Refuse to extend a dataset under a bound other than the one it was grown under.
+
+    A ball grown to `rel48` and then extended unbounded is not a `rel48` ball with more
+    groups in it: the groups added past the bound reroute the shortest paths through
+    themselves, and every distance already written becomes a claim about a graph the
+    file no longer holds.
+    """
+    if stored == requested:
+        return
+    raise ValueError(
+        f"{path} is a {_describe_bound(stored)} {what}; it cannot be extended as a "
+        f"{_describe_bound(requested)} one -- generate that one under its own name"
+    )
+
+
+def _describe_bound(bound: int) -> str:
+    return f"max_relator_length={bound}" if bound > 0 else "unbounded"
 
 
 @dataclass(slots=True)
@@ -24,7 +63,7 @@ class GroupNode:
     """One group in the universal construction graph, stored in minimal form.
 
     ``transitions`` maps each applicable universal move ID to the content hash of
-    the group it reaches (the complete local adjacency within the length cap).
+    the group it reaches (the complete local adjacency within the relator bound).
     ``transitions is None`` marks an unexpanded frontier group -- one discovered as
     a neighbour but whose own moves have not been applied yet -- so a run resumes
     from exactly the groups still to expand without a separate flag.
@@ -58,23 +97,35 @@ class GroupStore:
     later by the annotation pass over the stored adjacency.
     """
 
-    def __init__(self, nodes: dict[str, GroupNode], rank: int) -> None:
+    def __init__(self, nodes: dict[str, GroupNode], rank: int, max_relator_length: int = 0) -> None:
         self.nodes = nodes
         self.rank = rank
+        self.max_relator_length = max_relator_length
 
     @classmethod
-    def load_or_seed(cls, path: Path, rank: int) -> GroupStore:
+    def load_or_seed(cls, path: Path, rank: int, max_relator_length: int = 0) -> GroupStore:
+        """Reopen the stored graph, or seed a fresh one holding just the trivial root.
+
+        The document is streamed rather than parsed: :func:`json.loads` holds the whole
+        file as text *and* as a decoded object graph before the first node exists, which
+        on a multi-gigabyte dataset costs several times its size. The rank is read off
+        the entries, which each carry it -- keys are written sorted, so the document's
+        own ``rank`` member trails the ``groups`` array and reaching it would mean
+        buffering the very thing being streamed. The relator bound is the exception: it
+        is written to sort *before* the groups precisely so a resuming run can check the
+        bound it was asked for against the one the file was grown under.
+        """
         nodes: dict[str, GroupNode] = {}
         if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            rank = int(data.get("rank", rank))
-            for entry in data.get("groups", []):
+            check_relator_bound(path, read_relator_bound(path), max_relator_length, "dataset")
+            for entry in iter_json_array(path, "groups"):
+                rank = int(entry.get("rank", rank))
                 node = _entry_to_node(entry, rank)
                 nodes[node.content_hash] = node
         if not nodes:
             root = _trivial_root(rank)
             nodes[root.content_hash] = root
-        return cls(nodes, rank)
+        return cls(nodes, rank, max_relator_length)
 
     def select_batch(
         self,
@@ -139,18 +190,20 @@ class GroupStore:
         return max((node.total_length for node in self.nodes.values()), default=0)
 
     def write(self, path: Path) -> None:
-        entries = [_node_to_entry(node) for node in self.nodes.values()]
+        """Rewrite the graph, streaming the entries so a checkpoint stays bounded."""
+        count = len(self.nodes)
         frontier = self.frontier()
         data = {
+            BOUNDS_KEY: {RELATOR_BOUND: self.max_relator_length},
             "schema_version": SCHEMA_VERSION,
             "rank": self.rank,
             "move_catalog": MOVE_CATALOG,
-            "groups": entries,
+            "groups": (_node_to_entry(node) for node in self.nodes.values()),
             "provenance": {
                 "generator": "universal_graph_expansion",
-                "count": len(entries),
+                "count": count,
                 "frontier": frontier,
-                "exhausted": len(entries) - frontier,
+                "exhausted": count - frontier,
                 "max_length": self.max_length(),
             },
         }
@@ -186,10 +239,16 @@ def group_entry(
     ac_trivial: bool | None,
     source: str,
     transitions: dict[int, str] | None = None,
+    content_hash: str | None = None,
 ) -> dict[str, Any]:
-    """Build one minimal group-dataset entry (also used for curated candidates)."""
+    """Build one minimal group-dataset entry (also used for curated candidates).
+
+    ``content_hash`` lets a caller that already holds the hash pass it in rather than
+    have the presentation derive (and then cache) its own -- which, over millions of
+    groups rewritten at every checkpoint, is a hash and a string per group.
+    """
     entry: dict[str, Any] = {
-        "hash": presentation.content_hash,
+        "hash": content_hash or presentation.content_hash,
         "rank": presentation.rank,
         "ac_trivial": ac_trivial,
         "source": source,

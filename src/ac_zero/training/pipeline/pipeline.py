@@ -5,7 +5,7 @@ import random
 import time
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.navigation_reward import AlphaUpdater
@@ -37,6 +37,7 @@ from ac_zero.training.pipeline.pipeline_summary import (
 from ac_zero.training.ppo.losses import PolicyValueLoss
 from ac_zero.training.ppo.ppo import PPOTrainer
 from ac_zero.training.ppo.replay_buffer import ReplayBuffer
+from ac_zero.training.supervised.pipeline import run_supervised_pipeline
 
 
 def run_training_pipeline(
@@ -44,7 +45,15 @@ def run_training_pipeline(
     seed: int,
     callbacks: CallbackManager | None = None,
 ) -> TrainingPipelineSummary:
-    """Run config-driven data generation, replay training, and artifact writing."""
+    """Run config-driven data generation, replay training, and artifact writing.
+
+    ``agent: supervised`` hands off to the labelled-dataset pretrainer instead, which
+    writes the same artifacts (run directory, metrics, plots, checkpoint bundle) so
+    every caller -- the CLI, the Kaggle notebook, the scheduler -- is agnostic to
+    which of the three backends produced the model.
+    """
+    if config.agent == "supervised":
+        return run_supervised_pipeline(config, seed, callbacks)
     return _TrainingRun(config, seed, callbacks).execute()
 
 
@@ -73,7 +82,13 @@ class _TrainingRun:
         # dataset sidecar is compiled here rather than raced for by every worker.
         self._instance_source = build_instance_source(config)
         self.rng = random.Random(seed)
-        self.model = create_trainable_model(config.model, seed=seed, **config.model_config)
+        self.model = create_trainable_model(
+            config.model,
+            seed=seed,
+            device=config.device,
+            # The sizes are architecture hyperparameters, never a `device` override.
+            **cast(dict[str, Any], config.model_config),
+        )
         self._warm_start_payload: dict[str, Any] | None = None
         self.warm_started_from = self._warm_start()
         self.checkpointer = RunCheckpointer(

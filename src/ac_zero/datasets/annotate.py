@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -49,6 +49,32 @@ def annotation_path(groups_path: str | Path, moveset: str) -> Path:
     name = groups.name
     base = name[: -len(_GROUPS_SUFFIX)] if name.endswith(_GROUPS_SUFFIX) else groups.stem
     return groups.with_name(f"{base}.{moveset}.annotations.json")
+
+
+def annotation_entry(
+    content_hash: str,
+    *,
+    distance_to_origin: int | None,
+    moves_to_origin: list[int],
+    distance_to_shorter: int | None = None,
+    moves_to_shorter: list[int] | None = None,
+    shorter_proven: bool = False,
+) -> dict[str, Any]:
+    """Build one annotation entry -- the shape both this pass and `dataset ball` write.
+
+    ``optimal`` marks an entry whose distance to the origin is a proven shortest
+    path. The descent fields default to "no descent search was run", which is what
+    a ball generated for one move set carries.
+    """
+    return {
+        "hash": content_hash,
+        "distance_to_origin": distance_to_origin,
+        "optimal_moves_to_origin": moves_to_origin,
+        "distance_to_shorter": distance_to_shorter,
+        "optimal_moves_to_shorter": moves_to_shorter or [],
+        "shorter_proven": shorter_proven,
+        "optimal": distance_to_origin is not None,
+    }
 
 
 def annotate(
@@ -284,28 +310,26 @@ def _write(
     moves_origin: dict[str, list[int]],
     shorter: dict[str, tuple[int | None, list[int], bool]],
 ) -> None:
-    annotations = []
-    for h in lengths:
-        distance, moves, proven = shorter.get(h, (None, [], False))
-        annotations.append(
-            {
-                "hash": h,
-                "distance_to_origin": dist_origin.get(h),
-                "optimal_moves_to_origin": moves_origin.get(h, []),
-                "distance_to_shorter": distance,
-                "optimal_moves_to_shorter": moves,
-                "shorter_proven": proven,
-                "optimal": h in dist_origin,
-            }
-        )
+    def entries() -> Iterator[dict[str, Any]]:
+        for h in lengths:
+            distance, moves, proven = shorter.get(h, (None, [], False))
+            yield annotation_entry(
+                h,
+                distance_to_origin=dist_origin.get(h),
+                moves_to_origin=moves_origin.get(h, []),
+                distance_to_shorter=distance,
+                moves_to_shorter=moves,
+                shorter_proven=proven,
+            )
+
     data = {
         "schema_version": SCHEMA_VERSION,
         "rank": rank,
         "moveset": moveset,
         "move_catalog": UniversalCatalog(rank).version,
-        "annotations": annotations,
+        "annotations": entries(),
         "provenance": {
-            "count": len(annotations),
+            "count": len(lengths),
             "reached_origin": len(dist_origin),
             "with_shorter": sum(1 for v in shorter.values() if v[0] is not None),
         },

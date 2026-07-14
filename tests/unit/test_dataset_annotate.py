@@ -20,7 +20,7 @@ from ac_zero.moves.universal import UniversalCatalog, move_set
 
 def _dataset(tmp_path: Path, target: int = 60) -> Path:
     path = tmp_path / "toy.groups.json"
-    grow_dataset(path, GrowConfig(rank=2, target=target, total_length_cap=10, workers=1))
+    grow_dataset(path, GrowConfig(rank=2, target=target, max_relator_length=6, workers=1))
     return path
 
 

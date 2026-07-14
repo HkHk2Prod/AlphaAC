@@ -9,6 +9,7 @@ from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.algebra.word import FreeGroupWord
 from ac_zero.certificates.certificate import build_certificate
 from ac_zero.certificates.verifier import CertificateVerifier
+from ac_zero.encoding.padded import within_capacity
 from ac_zero.environment.env import ACEnvironment
 from ac_zero.moves.catalog import ActionCatalog
 from ac_zero.moves.primitive import ConjugateRelatorMove, InvertRelatorMove, PrimitiveMove
@@ -33,7 +34,7 @@ class BidirectionalSearch:
     first, and a state seen by both sides splices a forward path
     ``initial -> m -> goal``. Nicholson's rule (stop once the summed frontier
     depths reach the best meeting length) makes the spliced path a fewest-moves
-    certificate, provably optimal unless the length cap pruned a branch or a
+    certificate, provably optimal unless the relator bound pruned a branch or a
     budget was exhausted first. The win over one-directional BFS is reach: the
     two shallow frontiers together cover roughly ``b^(d/2)`` states instead of
     ``b^d``, so deeper trivializations land inside the same node budget.
@@ -55,7 +56,7 @@ class BidirectionalSearch:
         """Search both directions for a shortest move sequence to the goal."""
         catalog = ActionCatalog(initial.rank)
         cfg = env_template.config
-        cap = cfg.total_length_cap
+        capacity = env_template.relator_capacity
         max_moves = cfg.max_moves
         mask_noops = cfg.mask_noops
 
@@ -74,7 +75,7 @@ class BidirectionalSearch:
         best_len_path: tuple[int, ...] = ()
         expanded = generated = 0
         peak = len(frontier_f) + len(frontier_b)
-        cap_pruned = budget_hit = False
+        bound_pruned = budget_hit = False
         reason = "frontier_exhausted"
         df = db = 0
 
@@ -92,14 +93,14 @@ class BidirectionalSearch:
                 seen_b if forward else seen_f,
                 backward=not forward,
                 catalog=catalog,
-                cap=cap,
+                capacity=capacity,
                 mask_noops=mask_noops,
                 max_moves=max_moves,
                 generated_so_far=generated,
             )
             expanded += batch.expanded
             generated += batch.generated
-            cap_pruned = cap_pruned or batch.cap_pruned
+            bound_pruned = bound_pruned or batch.bound_pruned
             for total, full in batch.meetings:
                 if best_total is None or total < best_total:
                     best_total, best_path = total, full
@@ -122,7 +123,7 @@ class BidirectionalSearch:
 
         if best_total is not None:
             final = _apply_path(initial, best_path, catalog)
-            proved = not cap_pruned and not budget_hit
+            proved = not bound_pruned and not budget_hit
             return self._result(
                 initial,
                 final,
@@ -162,7 +163,7 @@ class BidirectionalSearch:
         *,
         backward: bool,
         catalog: ActionCatalog,
-        cap: int,
+        capacity: int,
         mask_noops: bool,
         max_moves: int,
         generated_so_far: int,
@@ -173,8 +174,8 @@ class BidirectionalSearch:
             batch.expanded += 1
             for action_id, move in enumerate(catalog.moves):
                 nxt = _predecessor(pres, move) if backward else move.apply(pres)
-                if nxt.total_length > cap:
-                    batch.cap_pruned = True
+                if not within_capacity(nxt, capacity):
+                    batch.bound_pruned = True
                     continue
                 if mask_noops and nxt.content_hash == pres.content_hash:
                     continue
@@ -253,7 +254,7 @@ class _Batch:
     meetings: list[tuple[int, tuple[int, ...]]] = None  # type: ignore[assignment]
     expanded: int = 0
     generated: int = 0
-    cap_pruned: bool = False
+    bound_pruned: bool = False
     budget_hit: bool = False
 
     def __post_init__(self) -> None:

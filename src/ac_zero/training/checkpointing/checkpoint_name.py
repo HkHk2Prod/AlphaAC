@@ -6,8 +6,8 @@ name, so their best models chain into one warm-start lineage on Hugging Face
 that task and model, split into two parts:
 
 * a readable slug -- ``rank``, ``agent``, ``model``, ``moveset``, ``reward_mode``
-* a short hash of the remaining task-defining fields (goal, discount, length
-  caps, curriculum) so configs that differ only there never collide silently
+* a short hash of the remaining task-defining fields (goal, discount, relator
+  bound, curriculum) so configs that differ only there never collide silently
 
 Operational knobs that do not change *what* the model learns (iteration count,
 worker count, learning rate, batch size, run directory, seed, local dataset
@@ -30,7 +30,6 @@ _HASHED_FIELDS = (
     "goal_mode",
     "goal_reward",
     "gamma",
-    "total_length_cap",
     "max_relator_tokens",
     "scramble_depth",
     "dataset_max_difficulty",

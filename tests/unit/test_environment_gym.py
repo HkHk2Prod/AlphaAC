@@ -58,7 +58,9 @@ def _content_hash_mask(env: ACEnvironment, state: ACSearchState) -> tuple[bool, 
     mask: list[bool] = []
     for move in env.catalog.moves:
         nxt = move.apply(state.presentation)
-        legal = nxt.total_length <= env.config.total_length_cap
+        legal = all(
+            len(relator.letters) <= env.encoder.max_relator_tokens for relator in nxt.relators
+        )
         if env.config.mask_noops and nxt.content_hash == state.presentation.content_hash:
             legal = False
         mask.append(legal)
@@ -103,12 +105,29 @@ def test_legal_action_mask_flags_noops_only_when_enabled() -> None:
     assert all(unmasked[i] for i in noops)
 
 
-def test_legal_action_mask_rejects_moves_over_the_length_cap() -> None:
+def test_legal_action_mask_rejects_moves_over_the_relator_bound() -> None:
+    """A move that would outgrow the encoder's per-relator capacity is not playable."""
     pres = BalancedPresentation.from_letters(2, [[1, 2], [2]])
-    env = ACEnvironment(pres, ACEnvironmentConfig(total_length_cap=pres.total_length))
+    capacity = max(len(relator.letters) for relator in pres.relators)
+    env = ACEnvironment(pres, ACEnvironmentConfig(), StateEncoder(capacity))
+    over_bound = 0
     for action, legal in enumerate(env.legal_action_mask()):
-        grown = env.catalog.moves[action].apply(pres).total_length > pres.total_length
+        child = env.catalog.moves[action].apply(pres)
+        grown = any(len(relator.letters) > capacity for relator in child.relators)
+        over_bound += grown
         assert not (grown and legal)
+    assert over_bound, "the fixture must exercise at least one over-bound move"
+
+
+def test_the_relators_sum_is_never_bounded() -> None:
+    """Only each relator is bounded: a move may freely grow the presentation's total."""
+    pres = BalancedPresentation.from_letters(2, [[1, 2], [2]])
+    env = ACEnvironment(pres, ACEnvironmentConfig(), StateEncoder(32))
+    legal = [i for i, ok in enumerate(env.legal_action_mask()) if ok]
+    lengthening = [
+        i for i in legal if env.catalog.moves[i].apply(pres).total_length > pres.total_length
+    ]
+    assert lengthening, "a move that grows the total length must still be playable"
 
 
 def test_step_info_action_mask_matches_the_resulting_state() -> None:

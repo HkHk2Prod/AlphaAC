@@ -3,9 +3,8 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from ac_zero.encoding.padded import PaddedEncoding
-from ac_zero.models.features import GLOBAL_FEATURE_COUNT, global_features, vocabulary_size
-from ac_zero.models.torch_utils import float_tensor, long_tensor
+from ac_zero.models.batch import EncodedBatch
+from ac_zero.models.features import GLOBAL_FEATURE_COUNT, vocabulary_size
 from ac_zero.models.trainable import TrainablePolicyValueModel
 
 
@@ -27,11 +26,9 @@ class _ResidualMLPTrunk(nn.Module):
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
 
-    def forward(self, encoding: PaddedEncoding) -> torch.Tensor:
-        tokens = long_tensor(encoding.tokens)
-        embeds = self.embedding(tokens).reshape(1, -1)
-        globals_ = float_tensor(global_features(encoding)).unsqueeze(0)
-        x = torch.cat([embeds, globals_], dim=1)
+    def forward(self, batch: EncodedBatch) -> torch.Tensor:
+        embeds = self.embedding(batch.tokens).reshape(batch.size, -1)
+        x = torch.cat([embeds, batch.globals], dim=1)
         hidden = torch.relu(self.fc1(x))
         residual = torch.relu(self.fc2(hidden))
         return hidden + residual
@@ -49,11 +46,13 @@ class ResidualMLPPolicyValueModel(TrainablePolicyValueModel):
 
     architecture = "residual_mlp"
 
-    def __init__(self, *, seed: int = 0, embed_dim: int = 8, hidden_dim: int = 64) -> None:
-        super().__init__(seed=seed, embed_dim=embed_dim, hidden_dim=hidden_dim)
+    def __init__(
+        self, *, seed: int = 0, device: str = "cpu", embed_dim: int = 8, hidden_dim: int = 64
+    ) -> None:
+        super().__init__(seed=seed, device=device, embed_dim=embed_dim, hidden_dim=hidden_dim)
 
-    def _build_trunk(self, encoding: PaddedEncoding) -> tuple[nn.Module, int]:
+    def _build_trunk(self, batch: EncodedBatch) -> tuple[nn.Module, int]:
         embed = self._hp["embed_dim"]
         hidden = self._hp["hidden_dim"]
-        trunk = _ResidualMLPTrunk(vocabulary_size(encoding), embed, encoding.tokens.size, hidden)
+        trunk = _ResidualMLPTrunk(vocabulary_size(batch.rank), embed, batch.token_slots, hidden)
         return trunk, hidden

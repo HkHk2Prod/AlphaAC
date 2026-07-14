@@ -1,7 +1,7 @@
 rank: 2
 agent: ppo
 model: residual_mlp
-total_length_cap: 128
+max_relator_tokens: 48
 dataset:
   count: 8
   depth: 3

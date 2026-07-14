@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.environment.state import ACSearchState
 
 
@@ -30,12 +31,31 @@ class PaddedEncoding:
         }
 
 
+def within_capacity(presentation: BalancedPresentation, capacity: int) -> bool:
+    """Whether every relator fits `capacity` letters -- the one length bound there is.
+
+    The relators' *sum* is never bounded: a presentation may grow as long as it likes,
+    so long as no single relator outgrows the encoder that has to hold it. This is the
+    predicate the environment masks a move by, the searches prune a branch by, and the
+    dataset generator drops a neighbour by -- one rule, so all three explore the same
+    graph. `capacity` of 0 means unbounded (a dataset grown without a bound).
+    """
+    if capacity <= 0:
+        return True
+    return all(len(relator.letters) <= capacity for relator in presentation.relators)
+
+
 class StateEncoder:
     """Encode search states into padded arrays for model consumption.
 
-    This smoke encoder is intentionally simple and NumPy-based. Production JAX
-    encoders should preserve the same information contract and reject or mask
-    over-capacity states instead of silently losing mathematical data.
+    Every state is laid out on the same fixed ``(rank, max_relator_tokens)`` grid, so
+    encodings stack into a minibatch without further alignment. The capacity is a
+    hard contract, not a truncation point: a relator too long to fit raises rather
+    than being silently clipped, since a clipped relator is a different -- and
+    mathematically wrong -- presentation. Nothing ever needs clipping, because the
+    capacity is the bound the whole run is built around: the environment masks out any
+    move that would overshoot it (:func:`within_capacity`), and the dataset was
+    generated under the very same bound, so no group in it is one this grid cannot hold.
     """
 
     def __init__(self, max_relator_tokens: int = 32) -> None:
@@ -43,12 +63,21 @@ class StateEncoder:
         self.max_relator_tokens = max_relator_tokens
 
     def encode(self, state: ACSearchState) -> PaddedEncoding:
-        """Convert one immutable search state into padded token arrays."""
+        """Convert one immutable search state into padded token arrays.
+
+        Raises ``ValueError`` when a relator exceeds the encoder's capacity.
+        """
         rank = state.presentation.rank
         rows = []
         masks = []
         for relator in state.presentation.relators:
-            row = [letter + rank + 1 for letter in relator.letters[: self.max_relator_tokens]]
+            if len(relator.letters) > self.max_relator_tokens:
+                raise ValueError(
+                    f"relator of length {len(relator.letters)} exceeds the encoder capacity "
+                    f"of {self.max_relator_tokens} tokens; raise max_relator_tokens so the "
+                    "presentation fits instead of being truncated"
+                )
+            row = [letter + rank + 1 for letter in relator.letters]
             pad = self.max_relator_tokens - len(row)
             rows.append(row + [0] * pad)
             masks.append([True] * len(row) + [False] * pad)

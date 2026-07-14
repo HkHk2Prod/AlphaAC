@@ -2,13 +2,14 @@ from pathlib import Path
 
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.generator import generate_solvable
+from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.search.breadth_first import BreadthFirstConfig, BreadthFirstSearch
 
 
-def _env(presentation, max_moves=8, cap=48):
-    config = ACEnvironmentConfig(max_moves=max_moves, total_length_cap=cap)
-    return ACEnvironment(presentation, config)
+def _env(presentation, max_moves=8, capacity=48):
+    config = ACEnvironmentConfig(max_moves=max_moves)
+    return ACEnvironment(presentation, config, StateEncoder(capacity))
 
 
 def test_bfs_finds_a_verified_shortest_certificate(tmp_path: Path) -> None:
@@ -16,7 +17,7 @@ def test_bfs_finds_a_verified_shortest_certificate(tmp_path: Path) -> None:
     cert = tmp_path / "cert.json"
     result = BreadthFirstSearch().solve(
         instance.presentation,
-        env_template=_env(instance.presentation, max_moves=6, cap=32),
+        env_template=_env(instance.presentation, max_moves=6, capacity=32),
         certificate_path=cert,
     )
     assert result.success

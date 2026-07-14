@@ -1,0 +1,40 @@
+# Supervised pretraining of a small model, to be fine-tuned by an RL run afterwards.
+#
+# The model learns, for each group in the dataset, which move reduces its distance to
+# the trivial group. The checkpoint this writes is an ordinary policy/value checkpoint,
+# so an AlphaZero or PPO config picks it up with:
+#
+#   training:
+#     warm_start: runs/train/supervised_pretrain/model_checkpoint/best.json
+#     max_relator_tokens must match the value below, or the weights will not load.
+rank: 2
+agent: supervised
+model: transformer
+moveset: strict-ac
+# The relator bound: the longest relator a group may carry. It is the encoder's grid
+# width, the length bound the environment masks moves by, and the bound the dataset was
+# grown under -- one number, because they have to be the same number. The run is refused
+# on a dataset generated under any other.
+max_relator_tokens: 48
+model_config:
+  embed_dim: 128
+  ff_dim: 512
+  num_layers: 4
+  num_heads: 4
+dataset:
+  path: data/generated/ball_rank2_rel48.groups.json
+  annotations: data/generated/ball_rank2_rel48.strict-ac.annotations.json
+  split: data/generated/ball_rank2_rel48.split.json
+training:
+  device: auto
+  iterations: 50            # epochs
+  optimizer_updates: 200    # minibatches per epoch
+  batch_size: 128
+  learning_rate: 0.001
+  value_loss_weight: 0.5
+  gamma: 0.99               # sets the value target: 2 * gamma**distance - 1
+  target_temperature: 1.0
+  grad_clip: 1.0
+  eval_batches: 20
+  checkpoint_every: 1
+  run_directory: runs/train/supervised_pretrain

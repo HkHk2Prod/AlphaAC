@@ -80,14 +80,29 @@ def test_training_notebook_warm_starts_and_uploads_checkpoints() -> None:
     assert "plots/all_runs/" in source
 
 
-def test_scheduler_notebook_training_fills_the_runtime_budget() -> None:
+def test_scheduler_notebook_jobs_stop_in_time_to_flush_their_output() -> None:
+    """Every long job stops itself before the watchdog, with time to write and push.
+
+    A terminated job is killed outright -- nothing in ac_zero handles SIGTERM -- so what
+    it had not yet pushed dies with the container. Each job therefore runs on its own
+    budget: what is left of the session *now* (so the bucket pull it just paid for comes
+    out of its working time, not its margin), less the minutes it needs to flush.
+    """
     source = _code_source(_load(SCHEDULER_NOTEBOOK))
-    # `training.iterations` is an upper bound only: the wall-clock budget ends the
-    # run, and training stops earlier than the watchdog so its final checkpoint
-    # upload is not interrupted by the terminate().
-    assert "TRAIN_BUDGET_MIN = max(1, JOB_BUDGET_MIN - TRAIN_FLUSH_MARGIN_MIN)" in source
-    assert '"--minutes", str(TRAIN_BUDGET_MIN)' in source
-    assert '"--minutes", str(JOB_BUDGET_MIN)' in source  # generation fills the whole budget
+    assert "remaining = (DEADLINE - time.monotonic()) / 60" in source
+    assert "return max(1, int(remaining - flush_margin_min))" in source
+    # No job is handed the watchdog's own budget, which would leave it nothing to flush in.
+    assert '"--minutes", str(JOB_BUDGET_MIN)' not in source
+    assert '"--minutes", str(budget_min(TRAIN_FLUSH_MARGIN_MIN))' in source
+    assert '"--minutes", str(budget_min(BALL_FLUSH_MARGIN_MIN))' in source
+
+
+def test_scheduler_notebook_ball_and_training_push_on_a_timed_cadence() -> None:
+    """The push is the only durable output, so both jobs make one every few hours."""
+    source = _code_source(_load(SCHEDULER_NOTEBOOK))
+    # The ball rewrites both documents and pushes them; training pushes its bundle.
+    assert '"--checkpoint-hours", str(_opt("checkpoint_hours", 4))' in source
+    assert '"--upload-every-hours", str(_opt("upload_every_hours", 4))' in source
 
 
 def test_scheduler_notebook_training_syncs_checkpoints_with_the_bucket() -> None:

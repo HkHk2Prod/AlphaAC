@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 
 from ac_zero.datasets.generator import generate_solvable
-from ac_zero.datasets.groups import MOVE_CATALOG, SCHEMA_VERSION, group_entry
+from ac_zero.datasets.groups import (
+    BOUNDS_KEY,
+    MOVE_CATALOG,
+    RELATOR_BOUND,
+    SCHEMA_VERSION,
+    group_entry,
+)
 from ac_zero.environment.navigation_reward import AlphaUpdater, EpisodeStats, RewardConfig
 from ac_zero.training.logging.callbacks import CallbackManager
 from ac_zero.training.logging.events import LogLevel, TrainingEvent
@@ -39,6 +45,9 @@ def _annotated_dataset(tmp_path: Path) -> tuple[str, str]:
     dataset.write_text(
         json.dumps(
             {
+                # The bound the groups were generated under: a run whose encoder capacity
+                # differs is refused, so the fixture states the default one.
+                BOUNDS_KEY: {RELATOR_BOUND: TrainingPipelineConfig().max_relator_tokens},
                 "schema_version": SCHEMA_VERSION,
                 "rank": 2,
                 "move_catalog": MOVE_CATALOG,

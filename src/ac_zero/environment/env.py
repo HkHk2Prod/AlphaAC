@@ -9,7 +9,7 @@ import numpy as np
 from gymnasium import spaces
 
 from ac_zero.algebra.presentation import BalancedPresentation
-from ac_zero.encoding.padded import StateEncoder
+from ac_zero.encoding.padded import StateEncoder, within_capacity
 from ac_zero.environment.goals import exact_standard_goal, signed_permuted_basis_goal
 from ac_zero.environment.navigation_reward import (
     EpisodeStats,
@@ -29,7 +29,6 @@ class ACEnvironmentConfig:
     """Runtime limits and goal semantics for an AC search episode."""
 
     max_moves: int = 16
-    total_length_cap: int = 128
     mask_noops: bool = True
     goal_mode: str = "exact_standard"
     # Reaching a goal is rewarded on top of length reduction so the solved state
@@ -53,8 +52,13 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
     Observations are the padded encoder arrays (a `spaces.Dict`), so standard RL
     libraries can consume the env directly; the rich `ACSearchState` Markov state
     is carried in `info["state"]` and on `self.state` for the project's tree
-    searches. `terminated` is reserved for a true goal state, while horizons,
-    safety caps, and action-capacity failures are truncations.
+    searches. `terminated` is reserved for a true goal state, while horizons and
+    action-capacity failures are truncations.
+
+    The one length bound is `relator_capacity`: a move that would make a relator
+    longer than the encoder can hold is masked out, never played. Stepping one
+    anyway is a caller bug, and the encoder raises on it rather than truncating a
+    presentation into a different -- wrong -- one.
     """
 
     metadata = {"render_modes": []}  # noqa: RUF012 — gymnasium.Env convention
@@ -138,14 +142,35 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
     def _observation(self) -> dict[str, Any]:
         return self.encoder.encode(self.state).as_observation()
 
+    @property
+    def relator_capacity(self) -> int:
+        """The longest relator an episode may reach: the encoder's grid width.
+
+        The searches that expand presentations themselves (breadth-first, iterative
+        deepening, bidirectional, greedy) prune by this rather than re-deriving it, so
+        they explore the same graph the environment lets a model move in -- and the
+        same one its dataset was generated under.
+        """
+        return self.encoder.max_relator_tokens
+
     def legal_action_mask(self, state: ACSearchState | None = None) -> tuple[bool, ...]:
-        """Compute which strict primitive actions are currently allowed."""
+        """Compute which strict primitive actions are currently allowed.
+
+        A move is legal when every relator it produces fits the encoder's per-relator
+        capacity. That bound keeps the episode within the states the model can actually
+        represent -- the encoder refuses to truncate an over-long relator, so a move
+        that would make one is masked out here rather than left to fail at the next
+        observation -- and it is the *only* length bound: nothing caps the relators'
+        sum. It is also the bound the training dataset was generated under, so the
+        moves masked out here are exactly the ones the data left unlabelled.
+        """
         st = state or self.state
         current = st.presentation.relators
+        capacity = self.relator_capacity
         mask: list[bool] = []
         for move in self.catalog.moves:
             nxt = move.apply(st.presentation)
-            legal = nxt.total_length <= self.config.total_length_cap
+            legal = within_capacity(nxt, capacity)
             # Moves only ever rewrite relators, leaving rank and generator names
             # intact, so an unchanged relator tuple is the same no-op test as an
             # unchanged content hash -- without a SHA-256 of a JSON dump per move.
@@ -184,7 +209,6 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
             moves_remaining=remaining,
             catalog_version=self.catalog.version,
             last_action=action,
-            safety_truncated=nxt_pres.total_length > self.config.total_length_cap,
             last_known_potential=anchor,
         )
         truncated = False
@@ -195,9 +219,6 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         mask: tuple[bool, ...] | None = None
         if terminated:
             reason = "goal"
-        elif nxt.safety_truncated:
-            truncated = True
-            reason = "safety_cap"
         elif remaining == 0:
             truncated = True
             reason = "horizon"

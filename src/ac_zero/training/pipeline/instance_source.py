@@ -30,6 +30,7 @@ from numpy.typing import NDArray
 
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.generator import generate_solvable
+from ac_zero.datasets.groups import read_relator_bound
 from ac_zero.datasets.instance_store import UNKNOWN, InstanceStore
 from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
 
@@ -110,17 +111,22 @@ class DatasetSource:
         annotations_path: str | Path | None = None,
         max_difficulty: int | None = None,
         require_potential: bool = False,
+        *,
+        max_relator_tokens: int,
     ) -> DatasetSource:
-        """Map a grown group dataset, filtered by its companion annotations file.
+        """Map a group dataset, filtered by its companion annotations file.
 
         Presentations come from the ``.groups.json`` at ``path``. The per-group
         distances live in the separate ``annotations_path`` file: ``max_difficulty``
         caps ``distance_to_origin`` (a coarse curriculum knob, ``None`` = all), and
         ``require_potential`` keeps only groups whose ``distance_to_origin`` is known
-        (the potential reward's start states). The known distances are also exposed
-        via :attr:`potentials` so the environment can score potential-based shaping.
+        (the potential reward's start states). ``max_relator_tokens`` is not a filter
+        but a contract: the dataset must have been *generated* under that bound, or
+        the run is refused. The known distances are also exposed via :attr:`potentials`
+        so the environment can score potential-based shaping.
         """
         groups = Path(path)
+        require_dataset_bound(groups, max_relator_tokens)
         annotations = None if annotations_path is None else Path(annotations_path)
         store = InstanceStore.open(groups, annotations)
         selected = _select(store, max_difficulty, require_potential)
@@ -179,12 +185,16 @@ class DatasetSource:
 
 
 def _select(
-    store: InstanceStore, max_difficulty: int | None, require_potential: bool
+    store: InstanceStore,
+    max_difficulty: int | None,
+    require_potential: bool,
 ) -> NDArray[np.int64] | None:
     """Return the indices of the groups an episode may start from, `None` for all.
 
-    Both filters are stated in terms of a group's distance to origin, so without
-    an annotations file neither can be satisfied by any group.
+    Both filters are stated in terms of a group's distance to origin, so without an
+    annotations file neither can be satisfied by any group. Nothing is filtered by
+    length: the dataset was generated under this run's relator bound (checked when it
+    is opened), so every group in it is one the encoder can hold.
     """
     if max_difficulty is None and not require_potential:
         return None
@@ -195,6 +205,30 @@ def _select(
     if max_difficulty is not None:
         keep &= distances <= max_difficulty
     return np.flatnonzero(keep)
+
+
+def require_dataset_bound(groups_path: Path, max_relator_tokens: int) -> None:
+    """Refuse to train a model on a dataset generated under a different relator bound.
+
+    The bound is what makes the dataset's distances true *for this model*: a ball grown
+    to `rel48` proves shortest paths through the graph a 48-token encoder moves in. Put
+    a 32-token model on it and the labels point down descents whose next group it cannot
+    represent and whose move the environment masks; grow the ball unbounded and every
+    distance may route through a group no bounded model can enter. Neither is a filter
+    away -- dropping the offending groups leaves the *remaining* distances wrong, since
+    they were proven over paths that ran through the dropped ones.
+    """
+    stored = read_relator_bound(groups_path)
+    if stored == max_relator_tokens:
+        return
+    generated = f"max_relator_length={stored}" if stored else "unbounded"
+    raise ValueError(
+        f"{groups_path} was generated {generated}, but this run's max_relator_tokens is "
+        f"{max_relator_tokens}. Its distances are shortest paths through a different "
+        f"graph than the one this model moves in. Train on a dataset grown under this "
+        f"bound (`aczero dataset ball --max-relator-length {max_relator_tokens}`), or "
+        f"set max_relator_tokens to match the dataset."
+    )
 
 
 def _constraint(max_difficulty: int | None, require_potential: bool) -> str:
@@ -254,5 +288,6 @@ def build_instance_source(config: TrainingPipelineConfig) -> InstanceSource:
             config.dataset_annotations_path,
             config.dataset_max_difficulty,
             require_potential=config.reward_mode in ("potential", "navigation"),
+            max_relator_tokens=config.max_relator_tokens,
         )
     return ScrambleSource(config.rank, config.scramble_depth)

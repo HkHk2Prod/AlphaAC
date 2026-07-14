@@ -6,31 +6,68 @@ limits:
   max_launches_per_tick: 5
   stale_heartbeat_minutes: 180
 tasks:
-- id: generation-main
-  mode: generation
-  notebook_slug: hkhk2prod/alphaac-generation
+# Closest-first generation: expands outward from the trivial group by the inverses of the
+# strict-ac moves, breadth-first, so every distance it writes is a proven optimum and each
+# shell is complete before the next begins. It emits the annotation file itself, which is
+# why no annotation task follows it. Resumes from the bucket: the groups file is the queue.
+#
+# `max_relator_length` must equal the `max_relator_tokens` of the training tasks below.
+# It is what makes this ball *their* graph: a move that would outgrow it is one their
+# environment masks, so the distances proven here are shortest paths through the moves
+# those models may actually play. A training run pointed at a ball grown under any other
+# bound is refused, and the bound is in the filename (`ball_rank2_rel48.groups.json`), so
+# the two tasks meet on the same object in the bucket.
+- id: ball-main
+  mode: ball
+  notebook_slug: hkhk2prod/alphaac-ball
   notebook_dir: notebooks/kaggle
   active: true
   remaining_runs: null
   accelerator: cpu
   priority: 100
-  max_runtime_minutes: 705
+  max_runtime_minutes: 600
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    moveset: strict-ac
+    max_relator_length: 48
+    target: 100000000
+    # Every 4 hours the run rewrites both documents and pushes them to the bucket. That
+    # push is the session's only durable output -- /kaggle/working dies with the container
+    # -- so this is how much expansion an interruption may cost, and nothing is written in
+    # between: a checkpoint rewrites the whole ball, and that cost grows with it.
+    checkpoint_hours: 4
+    workers: 0
+# The length-first grow and the annotation pass that gave it distances. Retired in favour
+# of `ball-main`: its distances were only ever upper bounds (a shortest path can run
+# through a group it never expanded) and under strict-ac only 59% of its groups could
+# reach the origin at all. Left here, inactive, because the grown dataset is still what
+# the universal move set and the descent labels are built from.
+- id: generation-main
+  mode: generation
+  notebook_slug: hkhk2prod/alphaac-generation
+  notebook_dir: notebooks/kaggle
+  active: false
+  remaining_runs: null
+  accelerator: cpu
+  priority: 100
+  max_runtime_minutes: 600
   stop_after_current_iteration: false
   config:
     rank: 2
     target: 100000000
-    total_length_cap: 0
+    max_relator_length: 0
     workers: 0
     output: /kaggle/working/train_rank2.groups.json
 - id: annotation-main
   mode: annotation
   notebook_slug: hkhk2prod/alphaac-annotation
   notebook_dir: notebooks/kaggle
-  active: true
+  active: false
   remaining_runs: null
   accelerator: cpu
   priority: 90
-  max_runtime_minutes: 705
+  max_runtime_minutes: 600
   stop_after_current_iteration: false
   config:
     moveset: strict-ac
@@ -44,14 +81,14 @@ tasks:
   remaining_runs: null
   accelerator: cpu
   priority: 50
-  max_runtime_minutes: 705
+  max_runtime_minutes: 600
   stop_after_current_iteration: false
   config:
     rank: 2
     agent: alphazero
     model: residual_mlp
     moveset: strict-ac
-    total_length_cap: 128
+    max_relator_tokens: 48
     seed: 0
     dataset:
       bucket: HkHk2Prod/alphaac-data
@@ -68,7 +105,12 @@ tasks:
       value_loss_weight: 1.0
       mcts_simulations: 128
       c_puct: 1.5
-      checkpoint_every: 1
+      # Iterations between checkpoints. Not a disk-write knob: the checkpoint event is
+      # what the 4-hourly HF push and the self-play showcase hang off, and each save
+      # rewrites the run's whole metrics history -- so one per iteration is pure waste,
+      # while 0 (never) would push nothing at all. 25 keeps the uploader fed with a fresh
+      # bundle while writing 25x less.
+      checkpoint_every: 25
       workers: 0
 - id: train-ppo-strict-navigation
   mode: training
@@ -78,14 +120,14 @@ tasks:
   remaining_runs: null
   accelerator: cpu
   priority: 50
-  max_runtime_minutes: 705
+  max_runtime_minutes: 600
   stop_after_current_iteration: false
   config:
     rank: 2
     agent: ppo
     model: residual_mlp
     moveset: strict-ac
-    total_length_cap: 128
+    max_relator_tokens: 48
     seed: 0
     dataset:
       bucket: HkHk2Prod/alphaac-data
@@ -102,7 +144,9 @@ tasks:
       entropy_coef: 0.01
       value_loss_weight: 0.5
       learning_rate: 0.02
-      checkpoint_every: 1
+      # See `checkpoint_every` on the alphazero task above: the event feeds the 4-hourly
+      # push, so it must fire -- just not every iteration.
+      checkpoint_every: 25
       workers: 0
 - id: train-alphazero-strict-navigation-transformer
   mode: training
@@ -112,14 +156,14 @@ tasks:
   remaining_runs: null
   accelerator: cpu
   priority: 50
-  max_runtime_minutes: 705
+  max_runtime_minutes: 600
   stop_after_current_iteration: false
   config:
     rank: 2
     agent: alphazero
     model: transformer
     moveset: strict-ac
-    total_length_cap: 128
+    max_relator_tokens: 48
     seed: 0
     dataset:
       bucket: HkHk2Prod/alphaac-data
@@ -136,7 +180,12 @@ tasks:
       value_loss_weight: 1.0
       mcts_simulations: 128
       c_puct: 1.5
-      checkpoint_every: 1
+      # Iterations between checkpoints. Not a disk-write knob: the checkpoint event is
+      # what the 4-hourly HF push and the self-play showcase hang off, and each save
+      # rewrites the run's whole metrics history -- so one per iteration is pure waste,
+      # while 0 (never) would push nothing at all. 25 keeps the uploader fed with a fresh
+      # bundle while writing 25x less.
+      checkpoint_every: 25
       workers: 0
 - id: train-ppo-strict-navigation-transformer
   mode: training
@@ -146,14 +195,14 @@ tasks:
   remaining_runs: null
   accelerator: cpu
   priority: 50
-  max_runtime_minutes: 705
+  max_runtime_minutes: 600
   stop_after_current_iteration: false
   config:
     rank: 2
     agent: ppo
     model: transformer
     moveset: strict-ac
-    total_length_cap: 128
+    max_relator_tokens: 48
     seed: 0
     dataset:
       bucket: HkHk2Prod/alphaac-data
@@ -170,7 +219,9 @@ tasks:
       entropy_coef: 0.01
       value_loss_weight: 0.5
       learning_rate: 0.02
-      checkpoint_every: 1
+      # See `checkpoint_every` on the alphazero task above: the event feeds the 4-hourly
+      # push, so it must fire -- just not every iteration.
+      checkpoint_every: 25
       workers: 0
 - id: solve-greedy-strict
   mode: solve
@@ -180,7 +231,7 @@ tasks:
   remaining_runs: null
   accelerator: cpu
   priority: 40
-  max_runtime_minutes: 705
+  max_runtime_minutes: 600
   stop_after_current_iteration: false
   config:
     rank: 2

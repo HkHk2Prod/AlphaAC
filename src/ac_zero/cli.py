@@ -20,11 +20,13 @@ from ac_zero.agents.random_agent import RandomLegalActionAgent
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.annotate import AnnotateConfig, annotate, annotation_path
+from ac_zero.datasets.ball import BallConfig, ball_groups_path, grow_ball
 from ac_zero.datasets.candidates import write_candidates
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
 from ac_zero.datasets.hub import DEFAULT_BUCKET, download_dataset, upload_dataset
 from ac_zero.datasets.publish import publish_to_bucket
+from ac_zero.datasets.split import SplitConfig, split_path, write_split
 from ac_zero.datasets.summary import write_annotation_summary, write_dataset_summary
 from ac_zero.datasets.validation import validate_dataset
 from ac_zero.encoding.padded import StateEncoder
@@ -81,7 +83,16 @@ def main(argv: list[str] | None = None) -> int:
     ds = sub.add_parser("dataset")
     ds.add_argument(
         "subcmd",
-        choices=["grow", "validate", "candidates", "annotate", "upload", "download"],
+        choices=[
+            "grow",
+            "ball",
+            "validate",
+            "candidates",
+            "annotate",
+            "split",
+            "upload",
+            "download",
+        ],
     )
     ds.add_argument("--config", default="configs/experiments/smoke.yaml")
     ds.add_argument("--output", default="")
@@ -95,7 +106,12 @@ def main(argv: list[str] | None = None) -> int:
         help="`upload`/`download`: bucket file name (default: the local basename)",
     )
     ds.add_argument(
-        "--total-length-cap", type=int, default=48, help="`grow`: relator length cap (0 = no cap)"
+        "--max-relator-length",
+        type=int,
+        default=0,
+        help="`grow`/`ball`: longest relator a group may carry; a move that would "
+        "overshoot it is one the environment masks, so the dataset holds exactly the "
+        "groups a model of that encoder capacity can reach (0 = unbounded)",
     )
     ds.add_argument(
         "--max-depth", type=int, default=32, help="`annotate`: max moves per search (0 = unbounded)"
@@ -104,15 +120,35 @@ def main(argv: list[str] | None = None) -> int:
         "--moveset",
         choices=list(MOVE_SET_NAMES),
         default="universal",
-        help="`annotate`: move set to compute distances under",
+        help="`annotate`/`ball`: move set to compute distances under",
     )
-    ds.add_argument("--rank", type=int, default=2, help="group rank for `grow`")
-    ds.add_argument("--target", type=int, default=100, help="`grow`: new groups to add this run")
+    ds.add_argument(
+        "--val-fraction",
+        type=float,
+        default=0.1,
+        help="`split`: share of groups held out for validation (default 0.1)",
+    )
+    ds.add_argument(
+        "--test-fraction",
+        type=float,
+        default=0.1,
+        help="`split`: share of groups held out for the final test report (default 0.1)",
+    )
+    ds.add_argument(
+        "--split-salt",
+        default=SplitConfig().salt,
+        help="`split`: changing this reshuffles every group into a new split, which "
+        "invalidates any model already scored against the old one",
+    )
+    ds.add_argument("--rank", type=int, default=2, help="group rank for `grow`/`ball`")
+    ds.add_argument(
+        "--target", type=int, default=100, help="`grow`/`ball`: new groups to add this run"
+    )
     ds.add_argument(
         "--minutes",
         type=float,
         default=0.0,
-        help="`grow`: soft wall-clock budget in minutes (0 = run until target/frontier)",
+        help="`grow`/`ball`: soft wall-clock budget in minutes (0 = run until target/frontier)",
     )
     ds.add_argument(
         "--select",
@@ -132,6 +168,15 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=5000,
         help="`grow`: dump to disk every N added groups (0 = only at the end)",
+    )
+    ds.add_argument(
+        "--checkpoint-hours",
+        type=float,
+        default=4.0,
+        help="`ball`: every N hours, rewrite both documents and push them to the bucket "
+        "(0 = only at the end). This is how much progress an interruption may cost: a "
+        "checkpoint left on a disk that dies with the machine buys nothing, so the write "
+        "and the upload are one event",
     )
     ds.add_argument(
         "--log-every",
@@ -271,6 +316,8 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
     if args.cmd == "dataset":
         if args.subcmd == "grow":
             return _dataset_grow(args, reporter)
+        if args.subcmd == "ball":
+            return _dataset_ball(args, reporter)
         if args.subcmd == "candidates":
             output = args.output or "data/candidates/standard.json"
             written = write_candidates(output)
@@ -278,6 +325,8 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             return 0
         if args.subcmd == "annotate":
             return _dataset_annotate(args, reporter)
+        if args.subcmd == "split":
+            return _dataset_split(args, reporter)
         if args.subcmd == "upload":
             return _dataset_upload(args, reporter)
         if args.subcmd == "download":
@@ -426,19 +475,26 @@ def _train(
 
 
 def _seed_from_default_dataset(config: TrainingPipelineConfig) -> TrainingPipelineConfig:
-    """Point the run at the rank/moveset default dataset files under ``DATASET_DIR``.
+    """Point the run at the default dataset files for its rank, bound, and move set.
 
-    Mirrors the Kaggle notebook's naming (``train_rank{rank}.groups.json`` and
-    ``train_rank{rank}.{moveset}.annotations.json``) so ``aczero train`` seeds
-    from the same HF group dataset. Explicit ``dataset.path``/``dataset.annotations``
-    in the config win, so a user-set path is never overridden.
+    The default is the closest-first ``ball_rank{rank}_rel{max_relator_tokens}`` ball and
+    its companion annotations: every distance in it is a proven optimum, and every group
+    within its ``complete_depth`` of the origin is there -- neither of which the
+    length-first ``train_rank{rank}`` dataset can claim. The run's ``max_relator_tokens``
+    picks the file because it is the bound the ball was grown under; a run that changes
+    its encoder capacity trains on a different ball, not a filtered view of the same one.
+    Explicit ``dataset.path``/``dataset.annotations`` in the config win.
     """
-    groups = config.dataset_path or f"{DATASET_DIR}/train_rank{config.rank}.groups.json"
-    annotations = (
-        config.dataset_annotations_path
-        or f"{DATASET_DIR}/train_rank{config.rank}.{config.moveset}.annotations.json"
+    default_groups = ball_groups_path(DATASET_DIR, config.rank, config.max_relator_tokens)
+    groups = config.dataset_path or str(default_groups)
+    annotations = config.dataset_annotations_path or str(annotation_path(groups, config.moveset))
+    split = config.dataset_split_path or str(split_path(groups))
+    return replace(
+        config,
+        dataset_path=groups,
+        dataset_annotations_path=annotations,
+        dataset_split_path=split,
     )
-    return replace(config, dataset_path=groups, dataset_annotations_path=annotations)
 
 
 def _ensure_training_dataset(
@@ -467,6 +523,14 @@ def _ensure_training_dataset(
             reporter.warning(
                 "dataset", "annotations absent from bucket", {"name": annotations.name}
             )
+    # Only the supervised stage reads the split, and it cannot run without one -- so a
+    # missing split file is a hard failure there, not a warning to shrug past here.
+    if not config.dataset_split_path or config.agent != "supervised":
+        return
+    split = Path(config.dataset_split_path)
+    if force or not split.exists():
+        reporter.progress("dataset", "pulling split from bucket", {"bucket": bucket})
+        download_dataset(split, bucket=bucket)
 
 
 def _warm_start_from_hf(
@@ -733,7 +797,7 @@ def _benchmark(reporter: CliReporter) -> int:
     certs = Path("runs/smoke/certificates")
     run.mkdir(parents=True, exist_ok=True)
     pres = generate_solvable(2, 2, 0).presentation
-    config = ACEnvironmentConfig(max_moves=8, total_length_cap=48)
+    config = ACEnvironmentConfig(max_moves=8)
     rows = []
     for name in (
         "random",
@@ -849,6 +913,32 @@ def _publish_dataset_artifact(
         reporter.progress(phase, "uploaded to HF bucket", {"files": len(published.uploaded_uris)})
 
 
+def _upload_ball_checkpoint(
+    args: argparse.Namespace, reporter: CliReporter, groups_path: Path, annotations_path: Path
+) -> None:
+    """Push a mid-run checkpoint of both ball documents to the bucket.
+
+    No summary: that is an end-of-run report, and rendering one every few hours over a
+    growing dataset would cost more than the checkpoint it accompanies. Uploads never
+    raise -- a hub blip must not kill a run that has hours of expansion behind it -- so a
+    failure is a warning and the next checkpoint tries again.
+    """
+    if args.no_upload:
+        return
+    published = (
+        publish_to_bucket(groups_path, bucket=args.bucket or DEFAULT_BUCKET).outcomes
+        + publish_to_bucket(annotations_path, bucket=args.bucket or DEFAULT_BUCKET).outcomes
+    )
+    for outcome in published:
+        if not outcome.ok:
+            reporter.warning(
+                "ball", "HF upload skipped", {"file": outcome.remote_name, "error": outcome.error}
+            )
+    uploaded = [outcome.remote_name for outcome in published if outcome.ok]
+    if uploaded:
+        reporter.progress("ball", "checkpoint pushed to HF bucket", {"files": len(uploaded)})
+
+
 def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
     """Expand the persistent dataset outward from the trivial group by AC moves."""
     path = Path(_resolve_dataset_path(args.output) or _resolve_dataset_path(args.input))
@@ -857,7 +947,7 @@ def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
         target=args.target,
         select=args.select,
         seed=args.seed,
-        total_length_cap=args.total_length_cap,
+        max_relator_length=args.max_relator_length,
         short_bias=args.short_bias,
         workers=args.workers,
         checkpoint_every=args.checkpoint_every,
@@ -885,6 +975,80 @@ def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
         summary_writer=write_dataset_summary,
         result=result,
     )
+    reporter.result_json(result, sort_keys=True)
+    return 0
+
+
+def _dataset_ball(args: argparse.Namespace, reporter: CliReporter) -> int:
+    """Grow the ball around the trivial group closest first, under one move set.
+
+    Unlike `grow`, this expands by the *inverses* of the move set's moves in
+    breadth-first order, so the distances it writes are proven optima rather than
+    upper bounds, and every group within `complete_depth` of the origin is present.
+    The distances are emitted as the companion annotation file, so no `annotate` pass
+    follows; both files are summarized and pushed to the bucket.
+
+    Every ``--checkpoint-hours`` the run rewrites both documents *and pushes them*. On a
+    machine that can be taken away mid-run -- a Kaggle session, a spot instance -- a
+    checkpoint left on a disk that dies with the container buys nothing, so the local
+    write and the bucket push are one event: the interval is how much progress an
+    interruption may cost, and nothing else.
+    """
+    groups_path = Path(
+        _resolve_dataset_path(args.output)
+        or ball_groups_path(DATASET_DIR, args.rank, args.max_relator_length)
+    )
+    annotations_path = annotation_path(groups_path, args.moveset)
+    config = BallConfig(
+        rank=args.rank,
+        moveset=args.moveset,
+        target=args.target,
+        max_relator_length=args.max_relator_length,
+        workers=args.workers,
+        checkpoint_hours=args.checkpoint_hours,
+        log_every=args.log_every,
+        time_limit_s=args.minutes * 60 if args.minutes > 0 else None,
+    )
+
+    def on_progress(message: str, metrics: dict[str, Any]) -> None:
+        reporter.progress("ball", message, metrics)
+        if message == "checkpoint":
+            _upload_ball_checkpoint(args, reporter, groups_path, annotations_path)
+
+    report = grow_ball(groups_path, config, progress=on_progress)
+    result: dict[str, Any] = {
+        "path": str(groups_path),
+        "annotations": str(annotations_path),
+        "moveset": args.moveset,
+        "max_relator_length": args.max_relator_length,
+        "groups": report.total,
+        "added": report.added,
+        "expanded": report.expanded,
+        "complete_depth": report.complete_depth,
+        "max_distance": report.max_distance,
+        "max_length": report.max_length,
+    }
+    # Two artifacts, each with its own summary: the groups and the distances that
+    # label them. They are published separately but reported as one run.
+    summaries: list[str] = []
+    uploaded: list[str] = []
+    for data_path, summary_writer in (
+        (groups_path, write_dataset_summary),
+        (annotations_path, write_annotation_summary),
+    ):
+        published: dict[str, Any] = {}
+        _publish_dataset_artifact(
+            args,
+            reporter,
+            phase="ball",
+            data_path=data_path,
+            summary_writer=summary_writer,
+            result=published,
+        )
+        summaries += [published["summary"]] if "summary" in published else []
+        uploaded += published.get("uploaded", [])
+    result["summaries"] = summaries
+    result["uploaded"] = uploaded
     reporter.result_json(result, sort_keys=True)
     return 0
 
@@ -938,6 +1102,37 @@ def _dataset_annotate(args: argparse.Namespace, reporter: CliReporter) -> int:
         phase="annotate",
         data_path=output_path,
         summary_writer=write_annotation_summary,
+        result=result,
+    )
+    reporter.result_json(result, sort_keys=True)
+    return 0
+
+
+def _dataset_split(args: argparse.Namespace, reporter: CliReporter) -> int:
+    """Assign every group to a train/val/test split and publish the split file.
+
+    The assignment is a function of each group's content hash, so re-running this
+    after a ``dataset grow`` places the new groups without disturbing any group a
+    model has already been evaluated on.
+    """
+    input_path = _resolve_dataset_path(args.input)
+    val, test = args.val_fraction, args.test_fraction
+    config = SplitConfig(train=1.0 - val - test, val=val, test=test, salt=args.split_salt)
+    report = write_split(input_path, config)
+    result: dict[str, Any] = {
+        "input": input_path,
+        "output": report.path,
+        "total": report.total,
+        "train": report.train,
+        "val": report.val,
+        "test": report.test,
+    }
+    _publish_dataset_artifact(
+        args,
+        reporter,
+        phase="split",
+        data_path=Path(report.path),
+        summary_writer=None,
         result=result,
     )
     reporter.result_json(result, sort_keys=True)
