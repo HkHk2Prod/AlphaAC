@@ -83,7 +83,6 @@ def build_env_config(
 ) -> ACEnvironmentConfig:
     return ACEnvironmentConfig(
         max_moves=max_moves,
-        total_length_cap=config.total_length_cap,
         goal_mode=config.goal_mode,
         reward_mode=config.reward_mode,
         goal_reward=config.goal_reward,

@@ -1,6 +1,5 @@
 rank: 2
 max_moves: 8
-total_length_cap: 48
 # Agents the `aczero benchmark` command actually runs, in report order. Each is
 # implemented and produces an independently replay-verified certificate.
 agents:

@@ -10,10 +10,10 @@ rank: 2
 agent: supervised
 model: transformer
 moveset: strict-ac
-# The ball is grown with no length cap, so its longest relator is not a capacity worth
-# sizing to: a handful of groups reach far past the rest, and deriving the capacity from
-# them (`0`) would pay attention over a mostly-padded window for every batch. Cap it, and
-# the groups that do not fit are dropped from training rather than truncated.
+# The relator bound: the longest relator a group may carry. It is the encoder's grid
+# width, the length bound the environment masks moves by, and the bound the dataset was
+# grown under -- one number, because they have to be the same number. The run is refused
+# on a dataset generated under any other.
 max_relator_tokens: 48
 model_config:
   embed_dim: 768
@@ -21,9 +21,9 @@ model_config:
   num_layers: 14
   num_heads: 12
 dataset:
-  path: data/generated/ball_rank2.groups.json
-  annotations: data/generated/ball_rank2.strict-ac.annotations.json
-  split: data/generated/ball_rank2.split.json
+  path: data/generated/ball_rank2_rel48.groups.json
+  annotations: data/generated/ball_rank2_rel48.strict-ac.annotations.json
+  split: data/generated/ball_rank2_rel48.split.json
 training:
   device: auto
   iterations: 200           # epochs

@@ -104,18 +104,18 @@ def assign(content_hash: str, config: SplitConfig) -> Split:
 def write_split(groups_path: str | Path, config: SplitConfig) -> SplitReport:
     """Assign every group in ``groups_path`` and write the split file beside it.
 
-    The group file is streamed rather than parsed, so a multi-gigabyte dataset splits
-    in bounded memory.
+    The group file is streamed twice -- once to count the splits, once to write them --
+    rather than parsed, and the assignments are handed to the writer as a generator. So a
+    multi-gigabyte dataset splits in bounded memory, at the price of a second pass: the
+    counts belong in the file's provenance, and they are only known once every group has
+    been assigned.
     """
     config.validate()
     groups = Path(groups_path)
-    assignments = [
-        {"hash": entry["hash"], "split": assign(entry["hash"], config)}
-        for entry in iter_json_array(groups, "groups")
-    ]
-    if not assignments:
+    counts = Counter(assign(entry["hash"], config) for entry in iter_json_array(groups, "groups"))
+    total = sum(counts.values())
+    if not total:
         raise ValueError(f"{groups}: dataset has no groups to split")
-    counts = Counter(str(entry["split"]) for entry in assignments)
     destination = split_path(groups)
     atomic_write_json(
         destination,
@@ -123,17 +123,20 @@ def write_split(groups_path: str | Path, config: SplitConfig) -> SplitReport:
             "schema_version": SCHEMA_VERSION,
             "salt": config.salt,
             "ratios": {"train": config.train, "val": config.val, "test": config.test},
-            "assignments": assignments,
+            "assignments": (
+                {"hash": entry["hash"], "split": assign(entry["hash"], config)}
+                for entry in iter_json_array(groups, "groups")
+            ),
             "provenance": {
                 "source": groups.name,
-                "count": len(assignments),
+                "count": total,
                 **{name: counts.get(name, 0) for name in SPLITS},
             },
         },
     )
     return SplitReport(
         path=str(destination),
-        total=len(assignments),
+        total=total,
         train=counts.get("train", 0),
         val=counts.get("val", 0),
         test=counts.get("test", 0),

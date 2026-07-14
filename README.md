@@ -110,8 +110,8 @@ shortest path of forward moves back to the origin.
 
 ```bash
 uv run --frozen aczero dataset ball \
-  --output data/generated/ball_rank2.groups.json \
-  --rank 2 --moveset strict-ac --target 1000000
+  --rank 2 --moveset strict-ac --max-relator-length 48 --target 1000000
+# -> data/generated/ball_rank2_rel48.groups.json
 ```
 
 Two properties follow, and they are the point:
@@ -125,12 +125,21 @@ Two properties follow, and they are the point:
 
 Shells grow by roughly sevenfold a layer at rank 2 (1, 8, 51, 328, 2128, 14240,
 97668, 683413, …), so a run is bounded by a group budget (`--target`, `--minutes`)
-rather than by a depth, and resumes into the next shell on the next run. Nothing is
-dropped for being long — a length cap would reroute the shortest paths that run
-through a long group — so the groups a model's encoder cannot hold are filtered by
-its `max_relator_tokens` where they are consumed, not where they are made.
+rather than by a depth, and resumes into the next shell on the next run.
 
-This is the default dataset for training runs (`ball_rank{rank}.groups.json`); the
+`--max-relator-length` bounds the ball the same way the environment bounds an episode:
+a move that would make a relator longer than the bound is one the environment masks, so
+a group carrying an over-long relator is not in the graph at all. That is what keeps the
+distances exact *for the model trained on them* — they are shortest paths through the
+very graph the model moves in, not through long groups its encoder could never hold and
+its environment would never let it enter. Only each relator is bounded; their sum is
+not. The bound is part of the dataset's identity: it is recorded in the file, carried in
+its name, and a training run whose `max_relator_tokens` disagrees with it is refused.
+`0` grows the ball unbounded — the whole graph, with no model attached.
+
+A bounded ball is therefore the default dataset for training runs
+(`ball_rank{rank}_rel{max_relator_tokens}.groups.json`), and **a model of a different
+capacity trains on a different ball**, not on a filtered view of the same one. The
 length-first `grow` dataset remains for the universal move set and descent labels.
 
 The grown dataset outgrows GitHub's 100 MB per-file limit, so it is **not** kept
@@ -335,17 +344,28 @@ the run reports as `train`/`val`/`test` counts in its opening `dataset` event.
 More `dataset grow` therefore widens the supervised training set only insofar as
 it *expands* groups, not merely discovers them.
 
-### Encoder capacity
+### Encoder capacity — the one length bound
 
-The encoder lays every presentation on a fixed `(rank, max_relator_tokens)` grid,
-and a relator too long to fit is now an error rather than a silent truncation — a
-truncated relator is a different, mathematically wrong presentation. The
-environment's legal-move mask enforces the same bound, so an episode can never
-walk into a state the model would have to refuse. `max_relator_tokens: 0` (the
-supervised stage only) derives the capacity from the dataset's longest relator, and
-the resolved number is written into the checkpoint. **A fine-tuning RL config must
-set the same `max_relator_tokens`**, since the capacity fixes the network's input
-shape, and it must seed from a source whose presentations fit it.
+`max_relator_tokens` is the longest relator anything in a run may carry, and it is a
+single number wearing three hats: the encoder's grid width, the bound the environment
+masks moves by, and the bound the dataset was generated under. Nothing bounds the
+relators' *sum*.
+
+The encoder lays every presentation on a fixed `(rank, max_relator_tokens)` grid, and a
+relator too long to fit is an error rather than a silent truncation — a truncated
+relator is a different, mathematically wrong presentation. Nothing ever needs
+truncating, though, because the environment's legal-move mask enforces the same bound
+(an episode cannot walk into a state the model would have to refuse) and the dataset was
+grown under it (no group in it is one the grid cannot hold).
+
+Because the three have to agree, a run **refuses to start on a dataset generated under a
+different bound**. A ball grown to `rel48` proves shortest paths through the graph a
+48-token model moves in; a 32-token model trained on it would chase descents through
+groups it can neither represent nor legally reach. This is not a filter away — dropping
+the offending groups leaves the *surviving* distances wrong, since they were proven over
+paths that ran through the dropped ones. A fine-tuning RL config must likewise set the
+same `max_relator_tokens` as the checkpoint it warm-starts from, since the capacity
+fixes the network's input shape.
 
 Verify a certificate:
 

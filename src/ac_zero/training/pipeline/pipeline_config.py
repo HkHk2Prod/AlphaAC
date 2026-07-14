@@ -33,12 +33,16 @@ class TrainingPipelineConfig:
     dataset_split_path: str | None = None
     dataset_max_difficulty: int | None = None
     dataset_bucket: str | None = None
-    total_length_cap: int = 128
-    # Per-relator token capacity of the encoder. A relator too long to fit raises
-    # rather than being truncated, and the environment masks out any move that would
-    # make one. `0` derives the capacity from the dataset's longest relator, so a
-    # supervised run always fits its data (see `agent: supervised` below).
-    max_relator_tokens: int = 32
+    # Per-relator token capacity of the encoder, and the run's one length bound: a
+    # relator too long to fit raises rather than being truncated, and the environment
+    # masks out any move that would make one. Nothing bounds the relators' sum.
+    #
+    # This is also the bound the dataset must have been *generated* under. A ball grown
+    # to `rel48` is the graph a 48-token model moves in -- its distances are shortest
+    # paths through exactly that graph -- so training a 32-token model on it would
+    # chase descents through groups the model can neither represent nor legally reach.
+    # The run refuses to start on a dataset whose bound differs (`_check_dataset_bound`).
+    max_relator_tokens: int = 48
     goal_mode: str = "exact_standard"
     reward_mode: str = "length_reduction_and_goal"
     # Named move set (`ac_zero.moves.universal.MOVE_SET_NAMES`) self-play actually
@@ -159,7 +163,6 @@ class TrainingPipelineConfig:
             dataset_split_path=_optional_str(dataset.get("split")),
             dataset_max_difficulty=_optional_int(dataset.get("max_difficulty")),
             dataset_bucket=_optional_str(dataset.get("bucket")),
-            total_length_cap=int(data.get("total_length_cap", defaults.total_length_cap)),
             max_relator_tokens=int(data.get("max_relator_tokens", defaults.max_relator_tokens)),
             goal_mode=str(data.get("goal_mode", defaults.goal_mode)),
             reward_mode=str(
@@ -277,15 +280,10 @@ class TrainingPipelineConfig:
             raise ValueError("scramble_depth must be non-negative")
         if self.dataset_max_difficulty is not None and self.dataset_max_difficulty < 0:
             raise ValueError("dataset_max_difficulty must be non-negative")
-        if self.total_length_cap <= 0:
-            raise ValueError("total_length_cap must be positive")
-        if self.max_relator_tokens < 0:
-            raise ValueError("max_relator_tokens must be non-negative")
-        if self.max_relator_tokens == 0 and self.agent != "supervised":
+        if self.max_relator_tokens <= 0:
             raise ValueError(
-                "max_relator_tokens 0 (derive the encoder capacity from the dataset) is "
-                "only supported by the supervised stage; the RL backends visit states "
-                "the dataset does not contain, so their capacity must be set explicitly"
+                "max_relator_tokens must be positive: it is the encoder's grid width, "
+                "and the bound the dataset has to have been generated under"
             )
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
@@ -412,7 +410,6 @@ def run_description(
         "goal_reward": config.goal_reward,
         "gamma": config.gamma,
         "scramble_depth": config.scramble_depth,
-        "total_length_cap": config.total_length_cap,
         "max_relator_tokens": config.max_relator_tokens,
         "iterations": config.iterations,
         "episodes_per_iteration": config.episodes_per_iteration,

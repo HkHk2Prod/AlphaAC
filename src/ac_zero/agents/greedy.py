@@ -9,6 +9,7 @@ from ac_zero.agents.base import SolverResult
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.certificate import build_certificate
 from ac_zero.certificates.verifier import CertificateVerifier
+from ac_zero.encoding.padded import within_capacity
 from ac_zero.environment.env import ACEnvironment
 from ac_zero.environment.goals import exact_standard_goal, signed_permuted_basis_goal
 from ac_zero.moves.catalog import ActionCatalog
@@ -300,7 +301,7 @@ class GreedyBestFirstSearch:
             expanded += 1
             for action_id, move in enumerate(catalog.moves):
                 nxt = move.apply(pres)
-                if nxt.total_length > env_template.config.total_length_cap:
+                if not within_capacity(nxt, env_template.relator_capacity):
                     continue
                 if env_template.config.mask_noops and nxt.content_hash == pres.content_hash:
                     continue

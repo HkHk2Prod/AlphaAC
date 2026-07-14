@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.environment.state import ACSearchState
 
 
@@ -30,6 +31,20 @@ class PaddedEncoding:
         }
 
 
+def within_capacity(presentation: BalancedPresentation, capacity: int) -> bool:
+    """Whether every relator fits `capacity` letters -- the one length bound there is.
+
+    The relators' *sum* is never bounded: a presentation may grow as long as it likes,
+    so long as no single relator outgrows the encoder that has to hold it. This is the
+    predicate the environment masks a move by, the searches prune a branch by, and the
+    dataset generator drops a neighbour by -- one rule, so all three explore the same
+    graph. `capacity` of 0 means unbounded (a dataset grown without a bound).
+    """
+    if capacity <= 0:
+        return True
+    return all(len(relator.letters) <= capacity for relator in presentation.relators)
+
+
 class StateEncoder:
     """Encode search states into padded arrays for model consumption.
 
@@ -37,9 +52,10 @@ class StateEncoder:
     encodings stack into a minibatch without further alignment. The capacity is a
     hard contract, not a truncation point: a relator too long to fit raises rather
     than being silently clipped, since a clipped relator is a different -- and
-    mathematically wrong -- presentation. Size the capacity to the data
-    (``ac_zero.datasets.supervised_store`` reads the longest relator in a dataset)
-    or to the environment's ``total_length_cap``, which no episode can exceed.
+    mathematically wrong -- presentation. Nothing ever needs clipping, because the
+    capacity is the bound the whole run is built around: the environment masks out any
+    move that would overshoot it (:func:`within_capacity`), and the dataset was
+    generated under the very same bound, so no group in it is one this grid cannot hold.
     """
 
     def __init__(self, max_relator_tokens: int = 32) -> None:

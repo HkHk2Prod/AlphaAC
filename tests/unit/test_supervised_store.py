@@ -17,11 +17,17 @@ from ac_zero.datasets.supervised_store import DELTA_UNKNOWN, SupervisedStore, si
 from ac_zero.moves.universal import moveset_catalog
 
 MOVESET = "strict-ac"
+# The dataset is generated under the same relator bound the labels are built for: the
+# bound is what makes a move playable, so it is one number and not two (the training
+# pipeline refuses a dataset generated under any other -- see `require_dataset_bound`).
+BOUND = 6
 
 
-def _labelled(tmp_path: Path, target: int = 300, capacity: int = 0) -> tuple[Path, SupervisedStore]:
+def _labelled(
+    tmp_path: Path, target: int = 300, capacity: int = BOUND
+) -> tuple[Path, SupervisedStore]:
     groups = tmp_path / "toy.groups.json"
-    grow_dataset(groups, GrowConfig(rank=2, target=target, total_length_cap=10, workers=1))
+    grow_dataset(groups, GrowConfig(rank=2, target=target, max_relator_length=BOUND, workers=1))
     annotate(groups, AnnotateConfig(moveset=MOVESET, workers=1))
     write_split(groups, SplitConfig())
     store = SupervisedStore.open(
@@ -51,13 +57,15 @@ def test_shape_and_capacity_match_the_dataset(tmp_path: Path) -> None:
     assert store.count == len(hashes)
     assert store.deltas.shape == (len(hashes), store.actions)
     assert store.actions == 3 * store.rank**2  # the strict-AC catalog
-    # The capacity is the longest relator in the data, so nothing is truncated.
+    assert store.max_relator_tokens == BOUND
+    # Nothing is truncated because nothing needs to be: the generator never admitted a
+    # group the encoder could not hold.
     longest = max(
         len(relator)
         for entry in json.loads(groups.read_text())["groups"]
         for relator in entry["relators"]
     )
-    assert store.longest_relator == longest
+    assert longest <= BOUND
 
 
 def test_delta_is_the_change_in_distance_to_the_origin(tmp_path: Path) -> None:
@@ -103,23 +111,26 @@ def test_a_frontier_group_is_labelled_from_its_moves(tmp_path: Path) -> None:
     assert labelled
 
 
-def test_the_capacity_unlabels_the_moves_the_environment_would_mask(tmp_path: Path) -> None:
-    """A move whose child overflows `max_relator_tokens` is no label: the env masks it."""
-    groups, roomy = _labelled(tmp_path, capacity=0)
-    tight = SupervisedStore.open(
-        groups, annotation_path(groups, MOVESET), split_path(groups), MOVESET, 4
-    )
-    assert tight.max_relator_tokens == 4
+def test_the_bound_unlabels_the_moves_the_environment_would_mask(tmp_path: Path) -> None:
+    """A move whose child overflows the bound carries no label: the env masks it.
 
-    # Every move the tight capacity still labels is one the roomy one labelled the same
-    # way, and it drops at least one that overflows.
-    labelled = tight.deltas != DELTA_UNKNOWN
-    assert bool((tight.deltas[labelled] == roomy.deltas[labelled]).all())
-    assert int(labelled.sum()) < int((roomy.deltas != DELTA_UNKNOWN).sum())
-    # ...and no group it trains on has a relator the encoder could not hold.
-    rows = tight.trainable("train")
-    assert rows.size
-    assert bool((tight.longest[rows] <= 4).all())
+    The bound is the dataset's own, so this is not a filter applied after the fact: the
+    over-bound child is not a group the dataset holds, and the move reaching it is not
+    one the environment would let the model play.
+    """
+    groups, store = _labelled(tmp_path)
+    entries = json.loads(groups.read_text())["groups"]
+    catalog = moveset_catalog(MOVESET, store.rank)
+
+    over_bound = 0
+    for row, entry in enumerate(entries):
+        presentation = BalancedPresentation.from_letters(store.rank, entry["relators"])
+        for action, move in enumerate(catalog.moves):
+            child = move.apply(presentation)
+            if any(len(relator.letters) > BOUND for relator in child.relators):
+                over_bound += 1
+                assert store.deltas[row, action] == DELTA_UNKNOWN
+    assert over_bound, "the fixture must exercise at least one over-bound move"
 
 
 def test_every_trainable_group_has_at_least_one_descent_move(tmp_path: Path) -> None:
@@ -176,10 +187,10 @@ def test_the_sidecar_is_rebuilt_when_a_source_changes(tmp_path: Path) -> None:
     groups, store = _labelled(tmp_path, target=200)
     before = store.count
 
-    grow_dataset(groups, GrowConfig(rank=2, target=200, total_length_cap=10, workers=1))
+    grow_dataset(groups, GrowConfig(rank=2, target=200, max_relator_length=BOUND, workers=1))
     annotate(groups, AnnotateConfig(moveset=MOVESET, workers=1))
     write_split(groups, SplitConfig())
     rebuilt = SupervisedStore.open(
-        groups, annotation_path(groups, MOVESET), split_path(groups), MOVESET, 0
+        groups, annotation_path(groups, MOVESET), split_path(groups), MOVESET, BOUND
     )
     assert rebuilt.count > before

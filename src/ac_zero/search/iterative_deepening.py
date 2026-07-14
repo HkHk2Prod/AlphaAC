@@ -7,6 +7,7 @@ from ac_zero.agents.base import SolverResult
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.certificate import build_certificate
 from ac_zero.certificates.verifier import CertificateVerifier
+from ac_zero.encoding.padded import within_capacity
 from ac_zero.environment.env import ACEnvironment
 from ac_zero.environment.goals import exact_standard_goal, signed_permuted_basis_goal
 from ac_zero.moves.catalog import ActionCatalog
@@ -45,13 +46,13 @@ class IterativeDeepeningSearch:
         """Search depth bounds 0..max_moves for a shortest reaching path."""
         catalog = ActionCatalog(initial.rank)
         goal_mode = env_template.config.goal_mode
-        cap = env_template.config.total_length_cap
+        capacity = env_template.relator_capacity
         generated = 0
         expanded = 0
         best = initial
         best_path: tuple[int, ...] = ()
         budget_hit = False
-        cap_pruned = False
+        bound_pruned = False
 
         for limit in range(env_template.config.max_moves + 1):
             stack: list[tuple[BalancedPresentation, tuple[int, ...], frozenset[str]]] = [
@@ -60,7 +61,7 @@ class IterativeDeepeningSearch:
             while stack:
                 pres, path, on_path = stack.pop()
                 if _is_goal(pres, goal_mode):
-                    # Minimality holds only if the length cap never hid a branch.
+                    # Minimality holds only if the relator bound never hid a branch.
                     return self._result(
                         initial,
                         pres,
@@ -73,7 +74,7 @@ class IterativeDeepeningSearch:
                         goal_mode,
                         experiment_id,
                         seed,
-                        not cap_pruned,
+                        not bound_pruned,
                     )
                 if pres.total_length < best.total_length:
                     best, best_path = pres, path
@@ -82,8 +83,8 @@ class IterativeDeepeningSearch:
                 expanded += 1
                 for action_id in reversed(range(len(catalog.moves))):
                     nxt = catalog.move(action_id).apply(pres)
-                    if nxt.total_length > cap:
-                        cap_pruned = True
+                    if not within_capacity(nxt, capacity):
+                        bound_pruned = True
                         continue
                     if nxt.content_hash in on_path:
                         continue

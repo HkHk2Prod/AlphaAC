@@ -13,7 +13,7 @@ from ac_zero.datasets.grow import GrowConfig, grow_dataset
 
 
 def _grow(path: Path, target: int, **kwargs: object) -> dict:
-    grow_dataset(path, GrowConfig(rank=2, target=target, total_length_cap=10, workers=1, **kwargs))
+    grow_dataset(path, GrowConfig(rank=2, target=target, max_relator_length=6, workers=1, **kwargs))
     return json.loads(path.read_text())
 
 
@@ -63,16 +63,31 @@ def test_grow_only_ever_grows_on_resume(tmp_path: Path) -> None:
     assert sum(1 for e in data["groups"] if e["source"] == "trivial") == 1
 
 
-def test_length_cap_zero_admits_neighbours_a_tight_cap_drops() -> None:
-    """total_length_cap=0 disables the cap: length-increasing neighbours survive."""
+def test_relator_bound_zero_admits_neighbours_a_tight_bound_drops() -> None:
+    """max_relator_length=0 is unbounded; a tight bound drops the neighbours over it."""
     root = BalancedPresentation.standard(2)
-    _init_expand_worker(2, 0, None)  # 0 = no cap, None = every universal move
-    uncapped = expand_group(root)
-    _init_expand_worker(2, root.total_length, None)  # cap at the root's own length
-    capped = expand_group(root)
-    assert any(n.total_length > root.total_length for n in uncapped)
-    assert all(n.total_length <= root.total_length for n in capped)
-    assert len(uncapped) > len(capped)
+    longest = max(len(relator.letters) for relator in root.relators)
+    _init_expand_worker(2, 0, None)  # 0 = unbounded, None = every universal move
+    unbounded = expand_group(root)
+    _init_expand_worker(2, longest, None)  # bound at the root's own longest relator
+    bounded = expand_group(root)
+
+    def over(record: object, bound: int) -> bool:
+        return any(len(word) > bound for word in record.letters)  # type: ignore[attr-defined]
+
+    assert any(over(n, longest) for n in unbounded)
+    assert all(not over(n, longest) for n in bounded)
+    assert len(unbounded) > len(bounded)
+
+
+def test_the_bound_is_per_relator_not_on_their_sum() -> None:
+    """A neighbour whose total grows but whose relators all fit is kept."""
+    root = BalancedPresentation.standard(2)
+    _init_expand_worker(2, 8, None)
+    kept = expand_group(root)
+    assert any(n.total_length > root.total_length for n in kept), (
+        "a bound on each relator must not bound the presentation's total length"
+    )
 
 
 def test_grow_stops_at_time_limit_before_target(tmp_path: Path, monkeypatch) -> None:
@@ -92,7 +107,7 @@ def test_grow_stops_at_time_limit_before_target(tmp_path: Path, monkeypatch) -> 
     path = tmp_path / "toy.groups.json"
     report = grow_dataset(
         path,
-        GrowConfig(rank=2, target=1_000_000, total_length_cap=10, workers=1, time_limit_s=1.0),
+        GrowConfig(rank=2, target=1_000_000, max_relator_length=6, workers=1, time_limit_s=1.0),
     )
     # Time, not the (astronomical) target, bounded the run; the file is a valid,
     # flushed dataset with at least the trivial root.

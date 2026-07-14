@@ -28,6 +28,7 @@ for, so changing any of them rebuilds it rather than silently training on stale 
 from __future__ import annotations
 
 from array import array
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,7 @@ from ac_zero.datasets.digest_index import UNKNOWN, digest_array, sorted_lookup, 
 from ac_zero.datasets.instance_store import read_annotations
 from ac_zero.datasets.json_stream import iter_json_array
 from ac_zero.datasets.split import SPLIT_CODES
+from ac_zero.encoding.padded import within_capacity
 from ac_zero.moves.universal import MoveSetCatalog, moveset_catalog
 
 SCHEMA_VERSION = "aczero-supervised-v1"
@@ -96,7 +98,6 @@ class _Join:
         self._present: list[bool] = []  # whether each slot holds a playable move
         self.deltas: list[NDArray[np.int16]] = []
         self.own_distances: list[NDArray[np.int32]] = []
-        self.longest: list[int] = []  # each group's longest relator
 
     @property
     def actions(self) -> int:
@@ -115,7 +116,6 @@ class _Join:
         )
         own_hash = str(entry["hash"])
         self._own += bytes.fromhex(own_hash)
-        self.longest.append(max(len(word) for word in entry["relators"]))
         for move in self._catalog.moves:
             child = move.apply(presentation)
             playable = child.content_hash != own_hash and self._fits(child)
@@ -128,9 +128,7 @@ class _Join:
 
     def _fits(self, presentation: BalancedPresentation) -> bool:
         """Whether the encoder could hold this group -- what the env's mask asks."""
-        if not self._capacity:
-            return True
-        return all(len(relator.letters) <= self._capacity for relator in presentation.relators)
+        return within_capacity(presentation, self._capacity)
 
     def flush(self) -> None:
         """Resolve the buffered chunk's distances into delta rows."""
@@ -178,12 +176,10 @@ def build(
 
     group_digests = digest_array(digests)
     splits = values_for(*sorted_lookup(*_read_split(split_file)), group_digests)
-    longest = np.asarray(join.longest, dtype=np.int32)
     columns: Columns = {
         "deltas": np.concatenate(join.deltas),
         "distances": np.concatenate(join.own_distances),
         "splits": splits.astype(np.int8),
-        "longest": longest,
     }
     header = {
         "schema_version": SCHEMA_VERSION,
@@ -191,7 +187,6 @@ def build(
         "moveset": moveset,
         "count": len(group_digests),
         "actions": join.actions,
-        "longest_relator": int(longest.max()),
         "max_relator_tokens": max_relator_tokens,
         "sources": _fingerprints(
             {"groups": groups_path, "annotations": annotations_path, "split": split_file}
@@ -214,16 +209,12 @@ class SupervisedStore:
         self.moveset = str(mapped.header["moveset"])
         self.count = int(mapped.header["count"])
         self.actions = int(mapped.header["actions"])
-        # The longest relator in the dataset: the encoder capacity that fits every
-        # group without truncating one.
-        self.longest_relator = int(mapped.header["longest_relator"])
         self.max_relator_tokens = int(mapped.header["max_relator_tokens"])
         # Held for its lifetime: dropping it would close the mapping the columns view.
         self._mapped = mapped
         self.deltas: NDArray[np.int16] = mapped.columns["deltas"]
         self.distances: NDArray[np.int32] = mapped.columns["distances"]
         self.splits: NDArray[np.int8] = mapped.columns["splits"]
-        self.longest: NDArray[np.int32] = mapped.columns["longest"]
 
     @classmethod
     def open(
@@ -236,9 +227,10 @@ class SupervisedStore:
     ) -> SupervisedStore:
         """Map the sidecar for these sources, (re)building it when absent or stale.
 
-        ``max_relator_tokens`` is the encoder capacity the labels are for (0 = no
-        limit): it decides which moves the environment would let a model play, so a
-        run that changes it gets a rebuilt sidecar rather than the old one's labels.
+        ``max_relator_tokens`` is the encoder capacity the labels are for -- the same
+        bound the dataset was generated under. It decides which moves the environment
+        would let a model play, so a run that changes it gets a rebuilt sidecar rather
+        than the old one's labels.
         """
         path = sidecar_path(groups_path, moveset)
         sources = _fingerprints(
@@ -257,21 +249,27 @@ class SupervisedStore:
             raise ValueError(f"{path}: supervised sidecar could not be read after being built")
         return cls(mapped)
 
+    @cached_property
+    def _labelled(self) -> NDArray[np.bool_]:
+        """Whether each group has any move whose neighbour's distance is known.
+
+        Cached: it is the same question for every split, and answering it scans the
+        whole ``(groups, actions)`` delta matrix.
+        """
+        labelled: NDArray[np.bool_] = (self.deltas != DELTA_UNKNOWN).any(axis=1)
+        return labelled
+
     def trainable(self, split: str) -> NDArray[np.int64]:
         """The rows of ``split`` that carry a usable label.
 
         A group is trainable when it is in the split, its own distance to the origin is
         known and positive -- the origin itself is the goal, not a state to move out of
-        -- at least one of its moves leads somewhere whose distance is known, and the
-        encoder can hold it: a ball is grown with no length cap, so that its distances
-        stay optimal, and the groups too long to present to the model are dropped here
-        instead of truncated there.
+        -- and at least one of its moves leads somewhere whose distance is known. No
+        group is dropped for being long: the dataset was generated under this run's
+        relator bound, so every group in it is one the encoder can hold.
         """
         code = SPLIT_CODES.get(split)
         if code is None:
             raise ValueError(f"unknown split {split!r}; choose from {sorted(SPLIT_CODES)}")
-        labelled = (self.deltas != DELTA_UNKNOWN).any(axis=1)
-        keep = (self.splits == code) & (self.distances > 0) & labelled
-        if self.max_relator_tokens:
-            keep &= self.longest <= self.max_relator_tokens
+        keep = (self.splits == code) & (self.distances > 0) & self._labelled
         return np.flatnonzero(keep).astype(np.int64)

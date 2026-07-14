@@ -19,10 +19,15 @@ and they are the whole point:
   distance ``d`` has been expanded, *every* group at distance ``d + 1`` is in the
   dataset. The deepest such ``d`` is recorded as ``complete_depth``.
 
-Nothing is dropped for being long: a length cap would silently reroute (or delete) the
-shortest paths that run through a long group, and forfeit the exactness above. The groups
-too long for a model's encoder are filtered where they are consumed, not where they are
-made.
+``max_relator_length`` bounds the ball, and it bounds it the same way the environment
+bounds an episode: a move that would make a relator longer than the bound is not played,
+so a group with an over-long relator is not in the graph at all. That is what keeps the
+exactness above *for the model trained on it* -- the distances are shortest paths through
+the very graph the model moves in, not through long groups its encoder could never hold
+and its environment would never let it enter. The bound is on each relator, never on the
+sum of them, and it belongs to the dataset rather than to the consumer: it is recorded in
+the file and carried in its name, and a run whose encoder capacity disagrees with it is
+refused. ``0`` leaves the ball unbounded -- the whole graph, no model attached.
 
 Shells grow by roughly sevenfold a layer at rank 2, so a run is bounded by a group budget
 rather than a depth, and reports the depth it completed.
@@ -42,7 +47,7 @@ from ac_zero.datasets.ball_store import OriginBall
 from ac_zero.datasets.expand import BatchHandle, ExpansionPool
 from ac_zero.system.parallel import describe_worker_pool
 
-__all__ = ["BallConfig", "BallReport", "grow_ball"]
+__all__ = ["BallConfig", "BallReport", "ball_groups_path", "grow_ball"]
 
 # Emitted incrementally during long runs: (message, metrics).
 ProgressCallback = Callable[[str, dict[str, Any]], None]
@@ -52,6 +57,19 @@ ProgressCallback = Callable[[str, dict[str, Any]], None]
 _LOOKAHEAD = 2
 
 
+def ball_groups_path(directory: str | Path, rank: int, max_relator_length: int) -> Path:
+    """Name a ball's group file after the two things that define its graph.
+
+    ``ball_rank2_rel48.groups.json`` -- the bound is in the name because a ball grown
+    under a different one is a *different dataset*, not a longer run of the same one,
+    and the model trained on it has a different input shape. An unbounded ball keeps
+    the plain ``ball_rank2.groups.json``. The companion annotation and split files
+    derive from this stem, so they inherit the bound for free.
+    """
+    suffix = f"_rel{max_relator_length}" if max_relator_length > 0 else ""
+    return Path(directory) / f"ball_rank{rank}{suffix}.groups.json"
+
+
 @dataclass(frozen=True, slots=True)
 class BallConfig:
     """Parameters for one closest-first generation run."""
@@ -59,6 +77,10 @@ class BallConfig:
     rank: int
     moveset: str = "strict-ac"
     target: int = 100  # new groups to add this run
+    # Longest relator a group may carry to be in the ball; 0 grows it unbounded. A move
+    # that would overshoot it is one the environment masks, so the ball holds exactly
+    # the groups a model with this encoder capacity can reach (see the module docstring).
+    max_relator_length: int = 0
     workers: int = 0
     batch_size: int = 256
     # Rewrite both files every this many newly added groups so an interrupted run keeps
@@ -95,7 +117,9 @@ def grow_ball(
     """
     groups_path = Path(groups_path)
     annotations_path = annotation_path(groups_path, config.moveset)
-    ball = OriginBall.load_or_seed(groups_path, annotations_path, config.rank, config.moveset)
+    ball = OriginBall.load_or_seed(
+        groups_path, annotations_path, config.rank, config.moveset, config.max_relator_length
+    )
     if progress is not None:
         progress(
             "growing ball",
@@ -103,6 +127,7 @@ def grow_ball(
                 "path": str(groups_path),
                 "rank": config.rank,
                 "moveset": config.moveset,
+                "max_relator_length": config.max_relator_length,
                 "target": config.target,
                 "start_groups": len(ball.nodes),
                 "complete_depth": ball.complete_depth,
@@ -114,9 +139,9 @@ def grow_ball(
     added = expanded = checkpointed = logged = 0
     timed_out = False
     deadline = None if config.time_limit_s is None else time.monotonic() + config.time_limit_s
-    # No length cap: dropping a long group would reroute the shortest paths that run
-    # through it, and its distances would stop being optimal.
-    with ExpansionPool(config.rank, 0, config.workers, ball.inverse_ids) as pool:
+    with ExpansionPool(
+        config.rank, config.max_relator_length, config.workers, ball.inverse_ids
+    ) as pool:
         inflight: deque[tuple[list[int], BatchHandle]] = deque()
         claimed = ball.expanded
 

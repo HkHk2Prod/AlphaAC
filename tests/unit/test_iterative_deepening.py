@@ -2,6 +2,7 @@ from pathlib import Path
 
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.generator import generate_solvable
+from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.search.breadth_first import BreadthFirstSearch
 from ac_zero.search.iterative_deepening import (
@@ -10,9 +11,9 @@ from ac_zero.search.iterative_deepening import (
 )
 
 
-def _env(presentation, max_moves=6, cap=32):
-    config = ACEnvironmentConfig(max_moves=max_moves, total_length_cap=cap)
-    return ACEnvironment(presentation, config)
+def _env(presentation, max_moves=6, capacity=32):
+    config = ACEnvironmentConfig(max_moves=max_moves)
+    return ACEnvironment(presentation, config, StateEncoder(capacity))
 
 
 def test_iddfs_matches_bfs_length_and_verifies(tmp_path: Path) -> None:

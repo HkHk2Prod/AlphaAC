@@ -3,6 +3,7 @@ from pathlib import Path
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.generator import generate_solvable
+from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.moves.catalog import ActionCatalog
 from ac_zero.search.bidirectional import (
@@ -13,9 +14,9 @@ from ac_zero.search.bidirectional import (
 )
 
 
-def _env(presentation, max_moves=8, cap=48, goal_mode="exact_standard"):
-    config = ACEnvironmentConfig(max_moves=max_moves, total_length_cap=cap, goal_mode=goal_mode)
-    return ACEnvironment(presentation, config)
+def _env(presentation, max_moves=8, capacity=48, goal_mode="exact_standard"):
+    config = ACEnvironmentConfig(max_moves=max_moves, goal_mode=goal_mode)
+    return ACEnvironment(presentation, config, StateEncoder(capacity))
 
 
 def test_finds_a_verified_shortest_certificate(tmp_path: Path) -> None:
@@ -23,7 +24,7 @@ def test_finds_a_verified_shortest_certificate(tmp_path: Path) -> None:
     cert = tmp_path / "cert.json"
     result = BidirectionalSearch().solve(
         instance.presentation,
-        env_template=_env(instance.presentation, max_moves=6, cap=32),
+        env_template=_env(instance.presentation, max_moves=6, capacity=32),
         certificate_path=cert,
     )
     assert result.success
@@ -36,7 +37,7 @@ def test_matches_forward_bfs_optimal_length() -> None:
     from ac_zero.search.breadth_first import BreadthFirstSearch
 
     instance = generate_solvable(rank=2, depth=4, seed=7)
-    env = _env(instance.presentation, max_moves=8, cap=48)
+    env = _env(instance.presentation, max_moves=8, capacity=48)
     forward = BreadthFirstSearch().solve(instance.presentation, env_template=env)
     both = BidirectionalSearch().solve(instance.presentation, env_template=env)
     assert both.success and forward.success

@@ -24,7 +24,6 @@ from __future__ import annotations
 
 from array import array
 from collections.abc import Iterator, Mapping
-from functools import cached_property
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
@@ -218,19 +217,6 @@ class InstanceStore:
     def distances(self) -> NDArray[np.int32] | None:
         """Per-group distance to the trivial group, `UNKNOWN` where unannotated."""
         return self._columns.get("distances")
-
-    @cached_property
-    def longest(self) -> NDArray[np.int32]:
-        """Each group's longest relator, in letters.
-
-        A ball is grown with no length cap -- capping it would reroute the shortest
-        paths that pass through a long group and cost the distances their optimality --
-        so the groups a model's encoder cannot hold are filtered by whoever samples
-        them. Derived from the relator bounds rather than stored: the sidecar already
-        knows where every word starts and ends.
-        """
-        bounds = self._columns["word_offsets"].astype(np.int64)
-        return np.diff(bounds).reshape(-1, self.rank).max(axis=1).astype(np.int32)
 
     @property
     def potentials(self) -> Mapping[str, int]:

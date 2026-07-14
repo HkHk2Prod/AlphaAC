@@ -24,7 +24,16 @@ from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.annotate import SCHEMA_VERSION as ANNOTATIONS_SCHEMA
 from ac_zero.datasets.annotate import annotation_entry
 from ac_zero.datasets.expand import NeighbourRecord
-from ac_zero.datasets.groups import MOVE_CATALOG, SOURCE_ORIGIN_BALL, SOURCE_TRIVIAL, group_entry
+from ac_zero.datasets.groups import (
+    BOUNDS_KEY,
+    MOVE_CATALOG,
+    RELATOR_BOUND,
+    SOURCE_ORIGIN_BALL,
+    SOURCE_TRIVIAL,
+    check_relator_bound,
+    group_entry,
+    read_relator_bound,
+)
 from ac_zero.datasets.groups import SCHEMA_VERSION as GROUPS_SCHEMA
 from ac_zero.datasets.io import atomic_write_json
 from ac_zero.datasets.json_stream import iter_json_array, read_members_before
@@ -63,11 +72,19 @@ class OriginBall:
     ever appended when it is first discovered, the list is ordered by distance.
     """
 
-    def __init__(self, rank: int, moveset: str, nodes: list[BallNode], expanded: int = 0) -> None:
+    def __init__(
+        self,
+        rank: int,
+        moveset: str,
+        nodes: list[BallNode],
+        expanded: int = 0,
+        max_relator_length: int = 0,
+    ) -> None:
         self.rank = rank
         self.moveset = moveset
         self.nodes = nodes
         self.expanded = expanded
+        self.max_relator_length = max_relator_length
         self._index = {node.content_hash: i for i, node in enumerate(nodes)}
         catalog = UniversalCatalog(rank)
         forward_ids = move_set(moveset, catalog).ids
@@ -78,12 +95,22 @@ class OriginBall:
 
     @classmethod
     def load_or_seed(
-        cls, groups_path: Path, annotations_path: Path, rank: int, moveset: str
+        cls,
+        groups_path: Path,
+        annotations_path: Path,
+        rank: int,
+        moveset: str,
+        max_relator_length: int = 0,
     ) -> OriginBall:
         """Reopen an existing ball, or seed a fresh one holding just the origin."""
         if not groups_path.exists():
             origin = BalancedPresentation.standard(rank)
-            return cls(rank, moveset, [BallNode(origin, origin.content_hash, 0, [])])
+            return cls(
+                rank,
+                moveset,
+                [BallNode(origin, origin.content_hash, 0, [])],
+                max_relator_length=max_relator_length,
+            )
         state = read_members_before(groups_path, "groups").get(STATE_KEY, {})
         stored = str(state.get("moveset", ""))
         if stored != moveset:
@@ -91,21 +118,37 @@ class OriginBall:
                 f"{groups_path} is a {stored!r} ball; it cannot be extended under "
                 f"{moveset!r} -- generate that one under its own name"
             )
+        check_relator_bound(
+            groups_path, read_relator_bound(groups_path), max_relator_length, "ball"
+        )
         if not annotations_path.exists():
             raise FileNotFoundError(f"{groups_path} has no distances at {annotations_path}")
-        labels = {
-            entry["hash"]: entry for entry in iter_json_array(annotations_path, "annotations")
-        }
-        nodes = [
-            BallNode(
-                BalancedPresentation.from_letters(rank, entry["relators"]),
-                str(entry["hash"]),
-                int(labels[entry["hash"]]["distance_to_origin"]),
-                list(labels[entry["hash"]]["optimal_moves_to_origin"]),
+        # The two documents are written together from the one node list, so they are read
+        # back in lockstep: pairing them through a hash-keyed dict of every annotation
+        # would hold a second copy of the dataset beside the ball being built.
+        pairs = zip(
+            iter_json_array(groups_path, "groups"),
+            iter_json_array(annotations_path, "annotations"),
+            strict=True,
+        )
+        nodes = [cls._load_node(rank, group, label) for group, label in pairs]
+        return cls(rank, moveset, nodes, int(state.get("expanded", 0)), max_relator_length)
+
+    @staticmethod
+    def _load_node(rank: int, group: dict[str, Any], label: dict[str, Any]) -> BallNode:
+        """Rebuild one node from the group entry and the annotation entry beside it."""
+        if group["hash"] != label["hash"]:
+            raise ValueError(
+                "the groups and their distances have drifted out of order: "
+                f"group {group['hash']} is labelled {label['hash']}. Both files are "
+                "written by the same run -- regenerate them as the pair they are."
             )
-            for entry in iter_json_array(groups_path, "groups")
-        ]
-        return cls(rank, moveset, nodes, int(state.get("expanded", 0)))
+        return BallNode(
+            BalancedPresentation.from_letters(rank, group["relators"]),
+            str(group["hash"]),
+            int(label["distance_to_origin"]),
+            list(label["optimal_moves_to_origin"]),
+        )
 
     def merge(self, parent: int, records: list[NeighbourRecord]) -> int:
         """Record one group's inverse-move neighbours; return the count of new groups.
@@ -159,6 +202,7 @@ class OriginBall:
         return {
             "generator": GENERATOR,
             "moveset": self.moveset,
+            "max_relator_length": self.max_relator_length,
             "count": len(self.nodes),
             "expanded": self.expanded,
             "complete_depth": self.complete_depth,
@@ -166,16 +210,22 @@ class OriginBall:
         }
 
     def write(self, groups_path: Path, annotations_path: Path) -> None:
-        """Rewrite both documents: the groups, and the distances that label them."""
+        """Rewrite both documents: the groups, and the distances that label them.
+
+        Both arrays are handed to the writer as generators, so a checkpoint encodes one
+        entry at a time rather than materializing millions of them beside the ball it is
+        already holding.
+        """
         provenance = self._provenance()
         atomic_write_json(
             groups_path,
             {
                 STATE_KEY: {"moveset": self.moveset, "expanded": self.expanded},
+                BOUNDS_KEY: {RELATOR_BOUND: self.max_relator_length},
                 "schema_version": GROUPS_SCHEMA,
                 "rank": self.rank,
                 "move_catalog": MOVE_CATALOG,
-                "groups": [
+                "groups": (
                     group_entry(
                         node.presentation,
                         ac_trivial=True,
@@ -183,7 +233,7 @@ class OriginBall:
                         content_hash=node.content_hash,
                     )
                     for node in self.nodes
-                ],
+                ),
                 "provenance": {**provenance, "max_length": self.max_length()},
             },
         )
@@ -194,14 +244,14 @@ class OriginBall:
                 "rank": self.rank,
                 "moveset": self.moveset,
                 "move_catalog": UniversalCatalog(self.rank).version,
-                "annotations": [
+                "annotations": (
                     annotation_entry(
                         node.content_hash,
                         distance_to_origin=node.distance,
                         moves_to_origin=sorted(node.optimal_moves),
                     )
                     for node in self.nodes
-                ],
+                ),
                 "provenance": {**provenance, "reached_origin": len(self.nodes)},
             },
         )

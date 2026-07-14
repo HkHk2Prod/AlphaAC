@@ -12,7 +12,7 @@ def _mcts(simulations=48):
 
 def test_search_distributes_simulations_and_restores_root() -> None:
     instance = generate_solvable(rank=2, depth=2, seed=1)
-    config = ACEnvironmentConfig(max_moves=8, total_length_cap=48)
+    config = ACEnvironmentConfig(max_moves=8)
     env = ACEnvironment(instance.presentation, config)
     root_key = env.state.key
     stats = _mcts(simulations=48).search(env)
@@ -26,7 +26,7 @@ def test_search_distributes_simulations_and_restores_root() -> None:
 
 
 def test_greedy_rollout_solves_easy_instances() -> None:
-    config = ACEnvironmentConfig(max_moves=8, total_length_cap=48)
+    config = ACEnvironmentConfig(max_moves=8)
     solved = 0
     for seed in range(6):
         instance = generate_solvable(rank=2, depth=2, seed=seed)
@@ -43,7 +43,7 @@ def test_greedy_rollout_solves_easy_instances() -> None:
 
 def test_search_is_deterministic() -> None:
     instance = generate_solvable(rank=2, depth=2, seed=2)
-    config = ACEnvironmentConfig(max_moves=8, total_length_cap=48)
+    config = ACEnvironmentConfig(max_moves=8)
     first = _mcts(simulations=32).search(ACEnvironment(instance.presentation, config))
     second = _mcts(simulations=32).search(ACEnvironment(instance.presentation, config))
     assert first.visit_counts == second.visit_counts

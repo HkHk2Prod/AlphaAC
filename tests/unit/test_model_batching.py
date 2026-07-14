@@ -130,7 +130,7 @@ def test_the_environment_masks_out_moves_that_would_not_fit_the_encoder() -> Non
     """The episode never reaches a state the encoder would have to refuse."""
     encoder = StateEncoder(6)
     pres = BalancedPresentation.from_letters(2, [[1, 2, 1, 2, 1, 2], [2, 1]])
-    env = ACEnvironment(pres, ACEnvironmentConfig(max_moves=8, total_length_cap=64), encoder)
+    env = ACEnvironment(pres, ACEnvironmentConfig(max_moves=8), encoder)
 
     for action, legal in enumerate(env.legal_action_mask()):
         result = env.catalog.move(action).apply(env.state.presentation)

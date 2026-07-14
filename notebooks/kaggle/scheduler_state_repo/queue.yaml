@@ -10,6 +10,13 @@ tasks:
 # strict-ac moves, breadth-first, so every distance it writes is a proven optimum and each
 # shell is complete before the next begins. It emits the annotation file itself, which is
 # why no annotation task follows it. Resumes from the bucket: the groups file is the queue.
+#
+# `max_relator_length` must equal the `max_relator_tokens` of the training tasks below.
+# It is what makes this ball *their* graph: a move that would outgrow it is one their
+# environment masks, so the distances proven here are shortest paths through the moves
+# those models may actually play. A training run pointed at a ball grown under any other
+# bound is refused, and the bound is in the filename (`ball_rank2_rel48.groups.json`), so
+# the two tasks meet on the same object in the bucket.
 - id: ball-main
   mode: ball
   notebook_slug: hkhk2prod/alphaac-ball
@@ -23,11 +30,11 @@ tasks:
   config:
     rank: 2
     moveset: strict-ac
+    max_relator_length: 48
     target: 100000000
     # Each checkpoint rewrites both documents, so keep them rare as the ball grows.
     checkpoint_every: 250000
     workers: 0
-    output: /kaggle/working/ball_rank2.groups.json
 # The length-first grow and the annotation pass that gave it distances. Retired in favour
 # of `ball-main`: its distances were only ever upper bounds (a shortest path can run
 # through a group it never expanded) and under strict-ac only 59% of its groups could
@@ -46,7 +53,7 @@ tasks:
   config:
     rank: 2
     target: 100000000
-    total_length_cap: 0
+    max_relator_length: 0
     workers: 0
     output: /kaggle/working/train_rank2.groups.json
 - id: annotation-main
@@ -78,7 +85,7 @@ tasks:
     agent: alphazero
     model: residual_mlp
     moveset: strict-ac
-    total_length_cap: 128
+    max_relator_tokens: 48
     seed: 0
     dataset:
       bucket: HkHk2Prod/alphaac-data
@@ -112,7 +119,7 @@ tasks:
     agent: ppo
     model: residual_mlp
     moveset: strict-ac
-    total_length_cap: 128
+    max_relator_tokens: 48
     seed: 0
     dataset:
       bucket: HkHk2Prod/alphaac-data
@@ -146,7 +153,7 @@ tasks:
     agent: alphazero
     model: transformer
     moveset: strict-ac
-    total_length_cap: 128
+    max_relator_tokens: 48
     seed: 0
     dataset:
       bucket: HkHk2Prod/alphaac-data
@@ -180,7 +187,7 @@ tasks:
     agent: ppo
     model: transformer
     moveset: strict-ac
-    total_length_cap: 128
+    max_relator_tokens: 48
     seed: 0
     dataset:
       bucket: HkHk2Prod/alphaac-data

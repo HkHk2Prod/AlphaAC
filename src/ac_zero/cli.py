@@ -20,7 +20,7 @@ from ac_zero.agents.random_agent import RandomLegalActionAgent
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.annotate import AnnotateConfig, annotate, annotation_path
-from ac_zero.datasets.ball import BallConfig, grow_ball
+from ac_zero.datasets.ball import BallConfig, ball_groups_path, grow_ball
 from ac_zero.datasets.candidates import write_candidates
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
@@ -106,7 +106,12 @@ def main(argv: list[str] | None = None) -> int:
         help="`upload`/`download`: bucket file name (default: the local basename)",
     )
     ds.add_argument(
-        "--total-length-cap", type=int, default=48, help="`grow`: relator length cap (0 = no cap)"
+        "--max-relator-length",
+        type=int,
+        default=0,
+        help="`grow`/`ball`: longest relator a group may carry; a move that would "
+        "overshoot it is one the environment masks, so the dataset holds exactly the "
+        "groups a model of that encoder capacity can reach (0 = unbounded)",
     )
     ds.add_argument(
         "--max-depth", type=int, default=32, help="`annotate`: max moves per search (0 = unbounded)"
@@ -461,20 +466,19 @@ def _train(
 
 
 def _seed_from_default_dataset(config: TrainingPipelineConfig) -> TrainingPipelineConfig:
-    """Point the run at the rank/moveset default dataset files under ``DATASET_DIR``.
+    """Point the run at the default dataset files for its rank, bound, and move set.
 
-    The default is the closest-first ``ball_rank{rank}.groups.json`` and its
-    ``ball_rank{rank}.{moveset}.annotations.json``: every distance in it is a proven
-    optimum, and every group within its ``complete_depth`` of the origin is there --
-    neither of which the length-first ``train_rank{rank}`` dataset can claim. Explicit
-    ``dataset.path``/``dataset.annotations`` in the config win, so a run pointed at the
-    grown dataset (or any other) is never overridden.
+    The default is the closest-first ``ball_rank{rank}_rel{max_relator_tokens}`` ball and
+    its companion annotations: every distance in it is a proven optimum, and every group
+    within its ``complete_depth`` of the origin is there -- neither of which the
+    length-first ``train_rank{rank}`` dataset can claim. The run's ``max_relator_tokens``
+    picks the file because it is the bound the ball was grown under; a run that changes
+    its encoder capacity trains on a different ball, not a filtered view of the same one.
+    Explicit ``dataset.path``/``dataset.annotations`` in the config win.
     """
-    groups = config.dataset_path or f"{DATASET_DIR}/ball_rank{config.rank}.groups.json"
-    annotations = (
-        config.dataset_annotations_path
-        or f"{DATASET_DIR}/ball_rank{config.rank}.{config.moveset}.annotations.json"
-    )
+    default_groups = ball_groups_path(DATASET_DIR, config.rank, config.max_relator_tokens)
+    groups = config.dataset_path or str(default_groups)
+    annotations = config.dataset_annotations_path or str(annotation_path(groups, config.moveset))
     split = config.dataset_split_path or str(split_path(groups))
     return replace(
         config,
@@ -784,7 +788,7 @@ def _benchmark(reporter: CliReporter) -> int:
     certs = Path("runs/smoke/certificates")
     run.mkdir(parents=True, exist_ok=True)
     pres = generate_solvable(2, 2, 0).presentation
-    config = ACEnvironmentConfig(max_moves=8, total_length_cap=48)
+    config = ACEnvironmentConfig(max_moves=8)
     rows = []
     for name in (
         "random",
@@ -908,7 +912,7 @@ def _dataset_grow(args: argparse.Namespace, reporter: CliReporter) -> int:
         target=args.target,
         select=args.select,
         seed=args.seed,
-        total_length_cap=args.total_length_cap,
+        max_relator_length=args.max_relator_length,
         short_bias=args.short_bias,
         workers=args.workers,
         checkpoint_every=args.checkpoint_every,
@@ -950,12 +954,14 @@ def _dataset_ball(args: argparse.Namespace, reporter: CliReporter) -> int:
     follows; both files are summarized and pushed to the bucket.
     """
     groups_path = Path(
-        _resolve_dataset_path(args.output) or f"{DATASET_DIR}/ball_rank{args.rank}.groups.json"
+        _resolve_dataset_path(args.output)
+        or ball_groups_path(DATASET_DIR, args.rank, args.max_relator_length)
     )
     config = BallConfig(
         rank=args.rank,
         moveset=args.moveset,
         target=args.target,
+        max_relator_length=args.max_relator_length,
         workers=args.workers,
         checkpoint_every=args.checkpoint_every,
         log_every=args.log_every,
@@ -971,6 +977,7 @@ def _dataset_ball(args: argparse.Namespace, reporter: CliReporter) -> int:
         "path": str(groups_path),
         "annotations": str(annotations_path),
         "moveset": args.moveset,
+        "max_relator_length": args.max_relator_length,
         "groups": report.total,
         "added": report.added,
         "expanded": report.expanded,

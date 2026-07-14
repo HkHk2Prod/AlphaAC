@@ -10,11 +10,14 @@ import pytest
 
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.annotate import annotation_path
-from ac_zero.datasets.ball import BallConfig, grow_ball
+from ac_zero.datasets.ball import BallConfig, ball_groups_path, grow_ball
+from ac_zero.datasets.groups import read_relator_bound
 from ac_zero.datasets.validation import validate_dataset
 from ac_zero.moves.universal import UniversalCatalog, move_set
 
 MOVESET = "strict-ac"
+# Tight enough that the strict-AC moves actually run into it within a few shells.
+BOUND = 6
 
 
 def _grow(tmp_path: Path, target: int = 400, **kwargs: object) -> Path:
@@ -28,8 +31,13 @@ def _documents(groups: Path) -> tuple[dict, dict]:
     return json.loads(groups.read_text()), json.loads(annotations.read_text())
 
 
-def _true_distances(rank: int, depth: int) -> dict[str, int]:
-    """Breadth-first distances from the origin, computed independently of the store."""
+def _true_distances(rank: int, depth: int, bound: int = 0) -> dict[str, int]:
+    """Breadth-first distances from the origin, computed independently of the store.
+
+    ``bound`` restricts the walk to groups whose relators all fit it -- the graph a model
+    of that encoder capacity moves in, which is the graph a bounded ball's distances are
+    shortest paths through.
+    """
     catalog = UniversalCatalog(rank)
     inverses = [catalog.move(i) for i in move_set(MOVESET, catalog).inverse_ids(catalog)]
     origin = BalancedPresentation.standard(rank)
@@ -41,6 +49,8 @@ def _true_distances(rank: int, depth: int) -> dict[str, int]:
             continue
         for move in inverses:
             child = move.apply(presentation)
+            if bound and any(len(relator.letters) > bound for relator in child.relators):
+                continue
             if child.content_hash not in distances:
                 distances[child.content_hash] = distance + 1
                 queue.append((child, distance + 1))
@@ -138,6 +148,18 @@ def test_a_ball_of_another_move_set_is_refused(tmp_path: Path) -> None:
         grow_ball(groups, BallConfig(rank=2, moveset="universal", target=50, workers=1))
 
 
+def test_groups_that_drift_out_of_step_with_their_distances_are_refused(tmp_path: Path) -> None:
+    """A resume pairs the two documents by position; it must not pair them silently wrong."""
+    groups = _grow(tmp_path, target=200)
+    annotations = annotation_path(groups, MOVESET)
+    document = json.loads(annotations.read_text())
+    document["annotations"].reverse()
+    annotations.write_text(json.dumps(document))
+
+    with pytest.raises(ValueError, match="out of order"):
+        grow_ball(groups, BallConfig(rank=2, moveset=MOVESET, target=50, workers=1))
+
+
 def test_both_documents_validate(tmp_path: Path) -> None:
     groups = _grow(tmp_path, target=300)
     assert validate_dataset(groups).ok
@@ -154,3 +176,70 @@ def test_a_checkpoint_leaves_a_resumable_file(tmp_path: Path) -> None:
     assert document["ball"]["moveset"] == MOVESET
     # The expanded prefix is exactly the groups closer than the first unexpanded one.
     assert document["provenance"]["expanded"] == expanded
+
+
+# -- the relator bound -------------------------------------------------------
+
+
+def test_the_bound_appears_in_the_default_name() -> None:
+    """A ball grown under a different bound is a different dataset, so it is a different
+    file: the name says which graph the distances inside were proven in."""
+    assert ball_groups_path("data/generated", 2, 48) == Path(
+        "data/generated/ball_rank2_rel48.groups.json"
+    )
+    # Its companions derive from that stem, so they inherit the bound for free.
+    assert annotation_path(ball_groups_path("data/generated", 2, 48), MOVESET) == Path(
+        f"data/generated/ball_rank2_rel48.{MOVESET}.annotations.json"
+    )
+    # An unbounded ball -- the whole graph, no model attached -- keeps the plain name.
+    assert ball_groups_path("data/generated", 2, 0) == Path("data/generated/ball_rank2.groups.json")
+
+
+def test_a_bounded_ball_holds_only_groups_within_the_bound(tmp_path: Path) -> None:
+    groups = _grow(tmp_path, target=800, max_relator_length=BOUND)
+    document, _ = _documents(groups)
+
+    longest = max(len(relator) for entry in document["groups"] for relator in entry["relators"])
+    assert longest <= BOUND
+    # Only each relator is bounded, never their sum: a presentation may grow past it.
+    assert max(entry["total_length"] for entry in document["groups"]) > BOUND
+
+
+def test_a_bounded_ball_records_the_bound_it_was_grown_under(tmp_path: Path) -> None:
+    """The bound is part of the dataset, not of whoever reads it."""
+    groups = _grow(tmp_path, target=200, max_relator_length=BOUND)
+    document, annotations = _documents(groups)
+
+    assert read_relator_bound(groups) == BOUND
+    assert document["provenance"]["max_relator_length"] == BOUND
+    assert annotations["provenance"]["max_relator_length"] == BOUND
+    # An unbounded ball says so rather than saying nothing.
+    unbounded = _grow(tmp_path / "free", target=50)
+    assert read_relator_bound(unbounded) == 0
+
+
+def test_a_bounded_ball_proves_shortest_paths_through_its_own_graph(tmp_path: Path) -> None:
+    """The distances are optimal *in the bounded graph* -- the one the model moves in.
+
+    A path that detours through an over-long group is not a path the environment would
+    let a model walk, so it is not one the dataset may claim a distance over.
+    """
+    groups = _grow(tmp_path, target=2000, max_relator_length=BOUND)
+    document, annotations = _documents(groups)
+    depth = document["provenance"]["max_distance"]
+    truth = _true_distances(2, depth, bound=BOUND)
+
+    labels = {entry["hash"]: entry["distance_to_origin"] for entry in annotations["annotations"]}
+    assert labels
+    for content_hash, distance in labels.items():
+        assert distance == truth[content_hash]
+
+
+def test_a_ball_cannot_be_extended_under_a_different_bound(tmp_path: Path) -> None:
+    """Adding groups past the bound would reroute the shortest paths already written."""
+    groups = _grow(tmp_path, target=100, max_relator_length=BOUND)
+    with pytest.raises(ValueError, match=f"is a max_relator_length={BOUND} ball"):
+        grow_ball(
+            groups,
+            BallConfig(rank=2, moveset=MOVESET, target=10, workers=1, max_relator_length=BOUND + 4),
+        )

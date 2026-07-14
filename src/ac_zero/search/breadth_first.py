@@ -8,6 +8,7 @@ from ac_zero.agents.base import SolverResult
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.certificates.certificate import build_certificate
 from ac_zero.certificates.verifier import CertificateVerifier
+from ac_zero.encoding.padded import within_capacity
 from ac_zero.environment.env import ACEnvironment
 from ac_zero.environment.goals import exact_standard_goal, signed_permuted_basis_goal
 from ac_zero.moves.catalog import ActionCatalog
@@ -29,7 +30,7 @@ class BreadthFirstSearch:
     content-hash deduplication, so the first goal popped is reached by a
     fewest-moves certificate. That certificate is provably optimal when the
     search reached the goal without ever pruning a strictly shallower branch by
-    the total-length cap and without exhausting its node budget first.
+    the relator bound and without exhausting its node budget first.
     """
 
     def __init__(self, config: BreadthFirstConfig | None = None) -> None:
@@ -48,7 +49,7 @@ class BreadthFirstSearch:
         """Search for a shortest move sequence reaching the configured goal."""
         catalog = ActionCatalog(initial.rank)
         goal_mode = env_template.config.goal_mode
-        cap = env_template.config.total_length_cap
+        capacity = env_template.relator_capacity
         max_moves = env_template.config.max_moves
         frontier: deque[tuple[int, BalancedPresentation, tuple[int, ...]]] = deque()
         frontier.append((0, initial, ()))
@@ -90,7 +91,7 @@ class BreadthFirstSearch:
             expanded += 1
             for action_id, move in enumerate(catalog.moves):
                 nxt = move.apply(pres)
-                if nxt.total_length > cap:
+                if not within_capacity(nxt, capacity):
                     shallowest_prune = depth if shallowest_prune is None else shallowest_prune
                     continue
                 if env_template.config.mask_noops and nxt.content_hash == pres.content_hash:

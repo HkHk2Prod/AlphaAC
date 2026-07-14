@@ -21,8 +21,13 @@ UNKNOWN = -1
 
 
 def digest_array(digests: bytearray | bytes) -> NDArray[np.uint8]:
-    """View a flat run of concatenated digests as an ``(n, 32)`` byte matrix."""
-    return np.frombuffer(bytes(digests), dtype=np.uint8).reshape(-1, DIGEST_BYTES)
+    """View a flat run of concatenated digests as an ``(n, 32)`` byte matrix.
+
+    The buffer is viewed, not copied: ``bytes(digests)`` on a multi-million-group
+    dataset duplicates a hundred megabytes of digests for no reason. The caller must
+    have finished appending -- a ``bytearray`` cannot grow while a view is out.
+    """
+    return np.frombuffer(memoryview(digests), dtype=np.uint8).reshape(-1, DIGEST_BYTES)
 
 
 def prefixes(digests: NDArray[np.uint8]) -> NDArray[np.uint64]:

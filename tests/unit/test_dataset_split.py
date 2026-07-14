@@ -14,7 +14,7 @@ from ac_zero.datasets.split import SplitConfig, assign, split_path, write_split
 
 def _dataset(tmp_path: Path, target: int = 400) -> Path:
     path = tmp_path / "toy.groups.json"
-    grow_dataset(path, GrowConfig(rank=2, target=target, total_length_cap=10, workers=1))
+    grow_dataset(path, GrowConfig(rank=2, target=target, max_relator_length=6, workers=1))
     return path
 
 
@@ -71,7 +71,7 @@ def test_a_grown_dataset_keeps_every_existing_assignment(tmp_path: Path) -> None
         ]
     }
 
-    grow_dataset(groups, GrowConfig(rank=2, target=200, total_length_cap=10, workers=1))
+    grow_dataset(groups, GrowConfig(rank=2, target=200, max_relator_length=6, workers=1))
     after = {
         entry["hash"]: entry["split"]
         for entry in json.loads(Path(write_split(groups, SplitConfig()).path).read_text())[

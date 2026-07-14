@@ -37,7 +37,9 @@ class GrowConfig:
     target: int
     select: SelectStrategy = "smallest"
     seed: int = 0
-    total_length_cap: int = 48  # discard neighbours longer than this; 0 = no cap
+    # Longest relator a group may carry; neighbours that overshoot it are dropped, so
+    # the graph is the one an encoder of that capacity can move in. 0 = unbounded.
+    max_relator_length: int = 0
     short_bias: float = 2.0
     workers: int = 0
     # Groups claimed and expanded per round. Kept independent of the worker count
@@ -79,8 +81,8 @@ def grow_dataset(
     Loads the dataset at `path` (seeding the trivial root on the first run),
     repeatedly expands non-exhausted groups by every catalog move, and records
     each novel group with its co-optimal construction edges until `config.target`
-    new groups have been added, the reachable frontier (within the length cap) is
-    exhausted, or the optional `config.time_limit_s` wall-clock budget runs out.
+    new groups have been added, the reachable frontier (within the relator bound)
+    is exhausted, or the optional `config.time_limit_s` wall-clock budget runs out.
     The file is rewritten atomically -- both at the end and every
     `config.checkpoint_every` added groups -- so a run interrupted mid-way resumes
     from its last checkpoint, and every run only ever grows the database.
@@ -93,7 +95,7 @@ def grow_dataset(
     """
     path = Path(path)
     rng = random.Random(config.seed)
-    graph = GroupStore.load_or_seed(path, config.rank)
+    graph = GroupStore.load_or_seed(path, config.rank, config.max_relator_length)
     if progress is not None:
         progress("growing dataset", _start_metrics(path, config, len(graph.nodes)))
         _, message, metrics = describe_worker_pool(config.workers)
@@ -107,7 +109,7 @@ def grow_dataset(
     deadline = None if config.time_limit_s is None else time.monotonic() + config.time_limit_s
     claimed: set[str] = set()
     inflight: deque[tuple[list[GroupNode], BatchHandle]] = deque()
-    with ExpansionPool(config.rank, config.total_length_cap, config.workers) as pool:
+    with ExpansionPool(config.rank, config.max_relator_length, config.workers) as pool:
 
         def submit_next() -> bool:
             batch = graph.select_batch(
@@ -179,5 +181,6 @@ def _start_metrics(path: Path, config: GrowConfig, start_groups: int) -> dict[st
         "target": config.target,
         "select": config.select,
         "seed": config.seed,
+        "max_relator_length": config.max_relator_length,
         "start_groups": start_groups,
     }

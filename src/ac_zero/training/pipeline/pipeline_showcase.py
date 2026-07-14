@@ -38,8 +38,8 @@ from ac_zero.training.ppo.losses import masked_softmax, visit_count_policy
 # hundreds of steps on a far problem.
 _HEAD_STEPS = 20
 _TAIL_STEPS = 10
-# Presentations are bounded by `total_length_cap` letters, which still renders to
-# a few hundred characters at the cap; keep a transcript line terminal-sized.
+# Each relator is bounded by `max_relator_tokens` letters, but their sum is not, so a
+# presentation can still render to a few hundred characters; keep a line terminal-sized.
 _MAX_PRESENTATION_CHARS = 120
 
 

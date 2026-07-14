@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **One length bound, and the dataset carries it.** `max_relator_tokens` is now the
+  only length limit in the project: the encoder's grid width, the bound the environment
+  masks moves by, *and* the bound the training dataset was generated under. The
+  environment's `total_length_cap` — a second, independent limit on the relators' sum —
+  is removed, along with the `safety_cap` truncation it produced; nothing bounds the sum
+  any more.
+  - `dataset grow` / `dataset ball` take `--max-relator-length` (0 = unbounded, was
+    `--total-length-cap`, which bounded the *total*). A move that would overshoot the
+    bound is one the environment masks, so a bounded ball is exactly the graph a model
+    of that encoder capacity can move in — which is what keeps its proven distances
+    exact *for that model*, rather than shortest paths routed through long groups the
+    model can neither hold nor legally reach.
+  - The bound is part of a dataset's identity: recorded in the file (`bounds`), carried
+    in its name (`ball_rank2_rel48.groups.json`), and checked when a run opens it. A
+    training run whose `max_relator_tokens` disagrees with its dataset is **refused**,
+    rather than silently filtering the groups that do not fit — dropping them would
+    leave the surviving distances wrong, since they were proven over paths running
+    through the dropped ones. Different capacity, different dataset.
+  - `max_relator_tokens: 0` (derive the capacity from the data) is gone: the data is now
+    generated *for* the capacity, so the capacity must be stated. Its default is 48.
+  - The Kaggle scheduler generates what it trains on: `ball-main` grows the ball at
+    `max_relator_length: 48` and every training task trains at `max_relator_tokens: 48`,
+    so both resolve to `ball_rank2_rel48` in the bucket (the runner derives the name from
+    the bound with the same helper the CLI uses). `alphazero_rank2_heavy` is set to the
+    same 48, so the local heavy run shares that dataset and checkpoint lineage.
+    **The unbounded `ball_rank2` already in the bucket cannot be reused**: a bounded ball
+    is a different graph, so `ball-main` starts the `rel48` ball from the origin.
+
 - **`aczero dataset ball`: closest-first generation with proven distances.** Where
   `dataset grow` expands the *shortest* group under every universal move, this walks
   outward from the trivial group by the **inverses** of one move set's moves, in

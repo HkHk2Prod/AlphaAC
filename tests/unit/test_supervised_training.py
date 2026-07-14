@@ -23,11 +23,15 @@ from ac_zero.training.supervised.batches import SupervisedBatches, policy_target
 from ac_zero.training.supervised.supervised import SupervisedTrainer
 
 MOVESET = "strict-ac"
+# The dataset is generated under the run's relator bound; a run whose max_relator_tokens
+# differs is refused, because the dataset's descents are only descents in the graph that
+# bound defines.
+BOUND = 6
 
 
 def _dataset(tmp_path: Path, target: int = 300) -> Path:
     groups = tmp_path / "toy.groups.json"
-    grow_dataset(groups, GrowConfig(rank=2, target=target, total_length_cap=10, workers=1))
+    grow_dataset(groups, GrowConfig(rank=2, target=target, max_relator_length=BOUND, workers=1))
     annotate(groups, AnnotateConfig(moveset=MOVESET, workers=1))
     write_split(groups, SplitConfig())
     return groups
@@ -35,11 +39,11 @@ def _dataset(tmp_path: Path, target: int = 300) -> Path:
 
 def _batches(groups: Path, temperature: float = 1.0) -> SupervisedBatches:
     annotations = annotation_path(groups, MOVESET)
-    labels = SupervisedStore.open(groups, annotations, split_path(groups), MOVESET, 0)
+    labels = SupervisedStore.open(groups, annotations, split_path(groups), MOVESET, BOUND)
     return SupervisedBatches(
         InstanceStore.open(groups, annotations),
         labels,
-        StateEncoder(labels.longest_relator),
+        StateEncoder(BOUND),
         temperature=temperature,
         gamma=0.99,
         catalog_version=moveset_catalog(MOVESET, labels.rank).version,
@@ -52,7 +56,7 @@ def _config(tmp_path: Path, groups: Path, **overrides: object) -> TrainingPipeli
         "agent": "supervised",
         "model": "linear_policy_value",
         "moveset": MOVESET,
-        "max_relator_tokens": 0,  # derive the capacity from the dataset
+        "max_relator_tokens": BOUND,  # the bound the dataset was generated under
         "dataset_path": str(groups),
         "dataset_annotations_path": str(annotation_path(groups, MOVESET)),
         "dataset_split_path": str(split_path(groups)),
@@ -241,11 +245,11 @@ def test_the_checkpoint_warm_starts_an_rl_run(tmp_path: Path) -> None:
 
     payload = json.loads(best.read_text())
     assert payload["model_state"]["built"] is True
-    # The run was configured with `max_relator_tokens: 0` (derive it), and the checkpoint
-    # records the capacity it actually built with -- without that the fine-tune could not
-    # reconstruct the network's input shape.
+    # The checkpoint records the capacity it was built with -- without that the fine-tune
+    # could not reconstruct the network's input shape, nor know which dataset it may
+    # continue training on.
     capacity = payload["config"]["max_relator_tokens"]
-    assert capacity > 0
+    assert capacity == BOUND
 
     rl = TrainingPipelineConfig(
         rank=2,
@@ -253,9 +257,10 @@ def test_the_checkpoint_warm_starts_an_rl_run(tmp_path: Path) -> None:
         model="linear_policy_value",
         moveset=MOVESET,
         max_relator_tokens=capacity,
-        # Seed self-play from the same dataset the model was pretrained on. A random
-        # scramble could hand the episode a presentation longer than the capacity the
-        # pretrained network was built around, which the encoder rightly refuses.
+        # Seed self-play from the same dataset the model was pretrained on -- the one
+        # grown under this very bound. A random scramble could hand the episode a
+        # presentation longer than the capacity the pretrained network was built around,
+        # which the encoder rightly refuses.
         dataset_path=str(groups),
         dataset_annotations_path=str(annotation_path(groups, MOVESET)),
         iterations=1,
@@ -284,9 +289,24 @@ def test_a_supervised_config_needs_its_labels() -> None:
         ).validate()
 
 
-def test_only_the_supervised_stage_may_derive_its_encoder_capacity() -> None:
-    with pytest.raises(ValueError, match="only supported by the supervised stage"):
+def test_the_encoder_capacity_must_be_stated() -> None:
+    """There is no `derive it from the data` any more: the data is generated *for* it."""
+    with pytest.raises(ValueError, match="max_relator_tokens must be positive"):
         TrainingPipelineConfig(agent="ppo", max_relator_tokens=0).validate()
+
+
+def test_a_run_refuses_a_dataset_generated_under_a_different_bound(tmp_path: Path) -> None:
+    """The dataset's bound and the model's capacity are one number, and it is checked.
+
+    A ball grown to `BOUND` proves shortest paths through the graph a `BOUND`-token
+    encoder moves in. Train a wider model on it and its labels point down descents that
+    are not the shortest ones in *its* graph -- so the run refuses to start rather than
+    silently learning the wrong target.
+    """
+    groups = _dataset(tmp_path)
+    config = _config(tmp_path, groups, max_relator_tokens=BOUND + 2)
+    with pytest.raises(ValueError, match="was generated max_relator_length=6"):
+        run_training_pipeline(config, seed=0)
 
 
 def test_a_supervised_run_refuses_to_start_without_a_split(tmp_path: Path) -> None:

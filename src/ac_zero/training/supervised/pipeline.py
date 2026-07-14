@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import random
 import time
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -31,6 +30,7 @@ from ac_zero.training.checkpointing.checkpoint_name import derive_checkpoint_nam
 from ac_zero.training.checkpointing.checkpoint_writer import RunCheckpointer
 from ac_zero.training.logging.callbacks import CallbackManager, default_training_callbacks
 from ac_zero.training.logging.events import LogLevel
+from ac_zero.training.pipeline.instance_source import require_dataset_bound
 from ac_zero.training.pipeline.pipeline_artifacts import render_plots, write_fixture_certificate
 from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig, run_description
 from ac_zero.training.pipeline.pipeline_summary import (
@@ -68,21 +68,16 @@ class _SupervisedRun:
         groups = Path(str(config.dataset_path))
         annotations = Path(str(config.dataset_annotations_path))
         split_file = _split_file(config, groups)
+        # The dataset has to have been generated under this run's bound: its labels point
+        # down descents, and a descent is only a descent in the graph it was proven in.
+        require_dataset_bound(groups, config.max_relator_tokens)
         # The capacity decides which moves the environment would let the model play, so
         # the labels are built for it: it is a source of the sidecar, not a reader of it.
         self.labels = SupervisedStore.open(
             groups, annotations, split_file, config.moveset, config.max_relator_tokens
         )
         self.instances = InstanceStore.open(groups, annotations)
-        # `max_relator_tokens: 0` asks for the capacity the data actually needs. The
-        # encoder refuses to truncate, so this is the difference between a run that sees
-        # every relator and one that refuses to start. Resolve it into the config the run
-        # carries: the capacity fixes the network's input shape, so a checkpoint that did
-        # not record the number it was built with could not be fine-tuned from.
-        self.config = replace(
-            config,
-            max_relator_tokens=config.max_relator_tokens or self.labels.longest_relator,
-        )
+        self.config = config
         self.encoder = StateEncoder(self.config.max_relator_tokens)
         self.model = self._build_model()
         self.warm_started_from = self._warm_start()
@@ -148,7 +143,6 @@ class _SupervisedRun:
             "train": self.batches.size("train"),
             "val": self.batches.size("val"),
             "test": self.batches.size("test"),
-            "longest_relator": self.labels.longest_relator,
             "max_relator_tokens": self.encoder.max_relator_tokens,
             "labels": str(self.labels.path),
         }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -310,11 +310,10 @@ def _write(
     moves_origin: dict[str, list[int]],
     shorter: dict[str, tuple[int | None, list[int], bool]],
 ) -> None:
-    annotations = []
-    for h in lengths:
-        distance, moves, proven = shorter.get(h, (None, [], False))
-        annotations.append(
-            annotation_entry(
+    def entries() -> Iterator[dict[str, Any]]:
+        for h in lengths:
+            distance, moves, proven = shorter.get(h, (None, [], False))
+            yield annotation_entry(
                 h,
                 distance_to_origin=dist_origin.get(h),
                 moves_to_origin=moves_origin.get(h, []),
@@ -322,15 +321,15 @@ def _write(
                 moves_to_shorter=moves,
                 shorter_proven=proven,
             )
-        )
+
     data = {
         "schema_version": SCHEMA_VERSION,
         "rank": rank,
         "moveset": moveset,
         "move_catalog": UniversalCatalog(rank).version,
-        "annotations": annotations,
+        "annotations": entries(),
         "provenance": {
-            "count": len(annotations),
+            "count": len(lengths),
             "reached_origin": len(dist_origin),
             "with_shorter": sum(1 for v in shorter.values() if v[0] is not None),
         },

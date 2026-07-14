@@ -5,6 +5,7 @@ from concurrent.futures import Future, ProcessPoolExecutor
 from typing import NamedTuple, Protocol
 
 from ac_zero.algebra.presentation import BalancedPresentation
+from ac_zero.encoding.padded import within_capacity
 from ac_zero.moves.primitive import PrimitiveMove
 from ac_zero.moves.universal import UniversalCatalog
 from ac_zero.system.parallel import resolve_worker_count
@@ -28,34 +29,39 @@ class NeighbourRecord(NamedTuple):
 
 
 # Per-worker state, built once by the pool initializer so the hot expansion path
-# never re-allocates the moves or re-reads the length cap.
+# never re-allocates the moves or re-reads the relator bound.
 _WORKER_MOVES: tuple[tuple[int, PrimitiveMove], ...] = ()
-_WORKER_CAP: int = 0
+_WORKER_BOUND: int = 0
 
 
-def _init_expand_worker(rank: int, total_length_cap: int, move_ids: frozenset[int] | None) -> None:
-    global _WORKER_MOVES, _WORKER_CAP
+def _init_expand_worker(
+    rank: int, max_relator_length: int, move_ids: frozenset[int] | None
+) -> None:
+    global _WORKER_MOVES, _WORKER_BOUND
     catalog = UniversalCatalog(rank)
     selected = range(len(catalog)) if move_ids is None else sorted(move_ids)
     _WORKER_MOVES = tuple((move_id, catalog.move(move_id)) for move_id in selected)
-    _WORKER_CAP = total_length_cap
+    _WORKER_BOUND = max_relator_length
 
 
 def expand_group(presentation: BalancedPresentation) -> list[NeighbourRecord]:
     """Apply the pool's moves to one group, hashing each neighbour in-worker.
 
-    Returns every non-identity neighbour within the length cap (0 = no cap), keyed by universal
-    move ID -- the complete local adjacency under the pool's move set. All the
-    expensive per-neighbour work (applying the move, freely reducing, hashing)
-    happens here in the worker, so the main process only records precomputed edges
-    and adds new nodes.
+    Returns every non-identity neighbour whose relators all fit the pool's bound
+    (0 = unbounded), keyed by universal move ID -- the complete local adjacency
+    under the pool's move set. The bound is on each relator, never on their sum:
+    it is the same condition the environment masks a move by, so the graph this
+    builds is exactly the graph a model with that encoder capacity can move in.
+    All the expensive per-neighbour work (applying the move, freely reducing,
+    hashing) happens here in the worker, so the main process only records
+    precomputed edges and adds new nodes.
     """
     base = presentation.content_hash
     records: list[NeighbourRecord] = []
     for move_id, move in _WORKER_MOVES:
         child = move.apply(presentation)
         child_hash = child.content_hash
-        if child_hash == base or (_WORKER_CAP > 0 and child.total_length > _WORKER_CAP):
+        if child_hash == base or not within_capacity(child, _WORKER_BOUND):
             continue
         letters = tuple(relator.letters for relator in child.relators)
         records.append(NeighbourRecord(move_id, child_hash, letters, child.total_length))
@@ -119,6 +125,8 @@ class ExpansionPool:
     applies the whole catalog (what ``dataset grow`` builds its adjacency from),
     while a subset expands under one named move set -- ``dataset ball`` walks
     outward from the origin under the *inverses* of a move set's moves.
+    ``max_relator_length`` drops any neighbour with a relator longer than that
+    (0 = unbounded); see :func:`expand_group`.
 
     Two traps this avoids: creating a :class:`ProcessPoolExecutor` per round
     (on ``forkserver`` start methods every round re-spawned workers and rebuilt
@@ -135,12 +143,12 @@ class ExpansionPool:
     def __init__(
         self,
         rank: int,
-        total_length_cap: int,
+        max_relator_length: int,
         workers: int | None,
         move_ids: frozenset[int] | None = None,
     ) -> None:
         self._rank = rank
-        self._cap = total_length_cap
+        self._bound = max_relator_length
         self._move_ids = move_ids
         self._resolved = resolve_worker_count(workers)
         self._executor: ProcessPoolExecutor | None = None
@@ -162,11 +170,11 @@ class ExpansionPool:
             self._executor = ProcessPoolExecutor(
                 max_workers=self._resolved,
                 initializer=_init_expand_worker,
-                initargs=(self._rank, self._cap, self._move_ids),
+                initargs=(self._rank, self._bound, self._move_ids),
             )
         if self._executor is None:
             if not self._inline_ready:
-                _init_expand_worker(self._rank, self._cap, self._move_ids)
+                _init_expand_worker(self._rank, self._bound, self._move_ids)
                 self._inline_ready = True
             return _DoneBatch([expand_group(presentation) for presentation in presentations])
         # One task per worker keeps the batch balanced while minimizing the number

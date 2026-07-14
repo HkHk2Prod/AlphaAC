@@ -155,7 +155,7 @@ def test_showcase_plays_a_full_episode_and_reports_its_shape(tmp_path: Path, age
     assert episode.steps, "an episode with legal moves available takes at least one"
     # The horizon for an unannotated scramble is the unknown-distance fallback.
     assert len(episode.steps) <= config.curriculum_config.unknown_distance_max_moves
-    assert episode.reason in ("goal", "horizon", "safety_cap", "no_legal_action")
+    assert episode.reason in ("goal", "horizon", "no_legal_action")
     assert episode.solved is (episode.reason == "goal")
 
     (event,) = sink.events
