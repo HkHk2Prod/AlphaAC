@@ -45,6 +45,13 @@ def dataset(tmp_path: Path) -> Path:
     return _write_groups(tmp_path / "train.groups.json", _digests(4))
 
 
+def test_build_reports_progress(dataset: Path) -> None:
+    messages: list[str] = []
+    build(dataset, None, lambda message, _metrics: messages.append(message))
+    assert any("reading group relators" in m for m in messages)
+    assert any("writing sidecar" in m for m in messages)
+
+
 def test_open_builds_the_sidecar_beside_the_groups_file(dataset: Path) -> None:
     store = InstanceStore.open(dataset, None)
     assert store.path == sidecar_path(dataset) == dataset.parent / "train.groups.json.instances"

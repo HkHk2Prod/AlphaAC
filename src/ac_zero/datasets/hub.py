@@ -17,8 +17,9 @@ import os
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # Bucket holding the AlphaAC training datasets (namespace/bucket-name).
 DEFAULT_BUCKET = "HkHk2Prod/alphaac-data"
@@ -56,6 +57,15 @@ def _hub() -> Any:
     return huggingface_hub
 
 
+def _hub_errors() -> Any:
+    """The ``huggingface_hub.errors`` module, imported lazily like :func:`_hub`."""
+    try:
+        import huggingface_hub.errors as errors
+    except ImportError as exc:
+        raise RuntimeError(_INSTALL_HINT) from exc
+    return errors
+
+
 def _disable_progress_bars(hub: Any) -> None:
     """Turn off the hub's per-file transfer bars.
 
@@ -75,6 +85,63 @@ def remote_exists(remote_name: str, *, bucket: str = DEFAULT_BUCKET) -> bool:
         item.path == remote_name
         for item in hub.list_bucket_tree(bucket, recursive=True)
         if getattr(item, "type", "file") == "file"
+    )
+
+
+def _remote_size_once(remote_name: str, bucket: str) -> int | None:
+    """One metadata fetch for a single bucket path; ``None`` when it is absent.
+
+    Uses the per-file metadata endpoint rather than walking the whole bucket tree: the
+    bucket also holds every run's checkpoint tree, so a recursive listing is slow and,
+    with no deadline, can wedge a run at startup. This asks only about the one path.
+    """
+    hub = _hub()
+    errors = _hub_errors()
+    try:
+        meta = hub.get_bucket_file_metadata(bucket, remote_name)
+    except errors.EntryNotFoundError:
+        return None
+    except errors.HfHubHTTPError as exc:
+        if getattr(getattr(exc, "response", None), "status_code", None) == 404:
+            return None
+        raise
+    return int(meta.size)
+
+
+def remote_size(remote_name: str, *, bucket: str = DEFAULT_BUCKET) -> int | None:
+    """Return the byte size of ``remote_name`` in the bucket, or ``None`` if it is absent.
+
+    Used to decide whether a local dataset copy is already the bucket's current one:
+    these files are hundreds of megabytes of JSON, so any content change moves the byte
+    count, and a size match means a re-download would only rewrite identical bytes. It is
+    cheaper than a content hash and needs no local re-chunking -- the bucket's ``xet_hash``
+    cannot be recomputed on disk without the Xet chunker.
+
+    Runs under the same per-attempt wall-clock deadline as :func:`download_file`, so a
+    stalled connection is abandoned and retried on a fresh one rather than hanging the
+    caller (a supervised run queries this before it trains anything).
+    """
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        status, value, error = _run_with_deadline(
+            lambda: _remote_size_once(remote_name, bucket), f"hf-metadata-{attempt}"
+        )
+        if status == "ok":
+            return cast("int | None", value)
+        if status == "error":
+            assert error is not None  # an error status always carries its exception
+            raise error
+        print(
+            f"hub: metadata for {remote_name!r} did not respond within "
+            f"{_DOWNLOAD_TIMEOUT_S:.0f}s (attempt {attempt}/{_DOWNLOAD_ATTEMPTS})",
+            file=sys.stderr,
+            flush=True,
+        )
+        if attempt < _DOWNLOAD_ATTEMPTS:
+            time.sleep(_DOWNLOAD_BACKOFF_S * attempt)
+    raise TimeoutError(
+        f"metadata for {remote_name!r} from bucket {bucket!r} did not complete in "
+        f"{_DOWNLOAD_ATTEMPTS} attempts of {_DOWNLOAD_TIMEOUT_S:.0f}s; the bucket "
+        f"is not responding"
     )
 
 
@@ -146,20 +213,20 @@ def _download_once(
     return local
 
 
-def _download_attempt(
-    remote_name: str, local_path: str | Path, bucket: str, missing_ok: bool, name: str
-) -> tuple[str, Path | None, BaseException | None]:
-    """Run one fetch in a daemon thread; report ``ok``/``error``/``timeout``.
+def _run_with_deadline(
+    thunk: Callable[[], Any], name: str
+) -> tuple[str, Any, BaseException | None]:
+    """Run ``thunk`` in a daemon thread under the deadline; report ``ok``/``error``/``timeout``.
 
-    The transfer is an uninterruptible native call, so a thread that overruns the
-    deadline is left to die with the process and reported as ``timeout`` for the
-    caller to retry on a fresh connection.
+    A bucket call is an uninterruptible native call, so a thread that overruns the
+    deadline is left to die with the process and reported as ``timeout`` for the caller
+    to retry on a fresh connection. Shared by the download and metadata paths.
     """
     outcome: dict[str, Any] = {}
 
     def run() -> None:
         try:
-            outcome["result"] = _download_once(remote_name, local_path, bucket, missing_ok)
+            outcome["result"] = thunk()
         except BaseException as exc:  # surfaced in the calling thread below
             outcome["error"] = exc
 
@@ -171,8 +238,7 @@ def _download_attempt(
     error = outcome.get("error")
     if error is not None:
         return "error", None, error
-    value: Path | None = outcome.get("result")
-    return "ok", value, None
+    return "ok", outcome.get("result"), None
 
 
 def download_file(
@@ -197,11 +263,12 @@ def download_file(
     at once -- only an unresponsive transfer is retried.
     """
     for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
-        status, value, error = _download_attempt(
-            remote_name, local_path, bucket, missing_ok, f"hf-download-{attempt}"
+        status, value, error = _run_with_deadline(
+            lambda: _download_once(remote_name, local_path, bucket, missing_ok),
+            f"hf-download-{attempt}",
         )
         if status == "ok":
-            return value
+            return cast("Path | None", value)
         if status == "error":
             assert error is not None  # an error status always carries its exception
             raise error

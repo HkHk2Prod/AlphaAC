@@ -23,7 +23,7 @@ managed by hand. :mod:`ac_zero.datasets.columnar` owns its on-disk container.
 from __future__ import annotations
 
 from array import array
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
@@ -47,6 +47,10 @@ SCHEMA_VERSION = "aczero-instances-v1"
 # Relator letters are signed generator indices, so an int8 column holds any rank a
 # balanced presentation could realistically use.
 _MAX_RANK = 127
+# A build streams a multi-gigabyte group file single-threaded; this heartbeat keeps a
+# long one from looking hung. (message, metrics), matching the dataset ops' convention.
+ProgressCallback = Callable[[str, dict[str, Any]], None]
+_LOG_EVERY = 1_000_000
 
 __all__ = ["UNKNOWN", "InstanceStore", "build", "read_annotations", "sidecar_path"]
 
@@ -84,7 +88,9 @@ def read_annotations(path: Path) -> tuple[NDArray[np.uint8], NDArray[np.int32]]:
     return digest_array(digests), np.asarray(distances, dtype=np.int32)
 
 
-def _read_groups(path: Path) -> tuple[int, Columns, NDArray[np.uint8]]:
+def _read_groups(
+    path: Path, progress: ProgressCallback | None = None
+) -> tuple[int, Columns, NDArray[np.uint8]]:
     """Stream a `.groups.json` into its rank, relator columns, and group digests.
 
     ``word_offsets`` bounds every relator inside the flat ``letters`` column, so
@@ -94,10 +100,13 @@ def _read_groups(path: Path) -> tuple[int, Columns, NDArray[np.uint8]]:
     member: keys are written sorted, so that member trails the multi-gigabyte
     ``groups`` array and reaching it would mean buffering the very thing we stream.
     """
+    report = progress or (lambda _message, _metrics: None)
     letters = array("b")
     word_offsets = array("q", [0])
     digests = bytearray()
     rank = 0
+    seen = 0
+    logged = 0
     for entry in iter_json_array(path, "groups"):
         relators = entry["relators"]
         if not rank:
@@ -110,6 +119,10 @@ def _read_groups(path: Path) -> tuple[int, Columns, NDArray[np.uint8]]:
             letters.extend(relator)
             word_offsets.append(len(letters))
         digests += bytes.fromhex(entry["hash"])
+        seen += 1
+        if seen - logged >= _LOG_EVERY:
+            logged = seen
+            report("reading group relators", {"groups": seen})
     if not rank:
         raise ValueError(f"{path}: dataset has no groups")
     if len(letters) > np.iinfo(np.int32).max:
@@ -132,15 +145,23 @@ def _lookup_columns(digests: NDArray[np.uint8], distances: NDArray[np.int32]) ->
     }
 
 
-def build(groups_path: Path, annotations_path: Path | None) -> None:
+def build(
+    groups_path: Path,
+    annotations_path: Path | None,
+    progress: ProgressCallback | None = None,
+) -> None:
     """Stream the JSON dataset into its compact sidecar.
 
     The sidecar is assembled in a sibling temp file and moved into place, so a
     crash mid-build leaves no half-written mapping behind, and two processes
-    racing to build simply overwrite each other with identical bytes.
+    racing to build simply overwrite each other with identical bytes. ``progress``
+    is reported as the multi-gigabyte group and annotation files stream past.
     """
-    rank, columns, digests = _read_groups(groups_path)
+    report = progress or (lambda _message, _metrics: None)
+    report("reading group relators", {"groups": 0})
+    rank, columns, digests = _read_groups(groups_path, progress)
     if annotations_path is not None:
+        report("reading annotations", {"file": annotations_path.name})
         lookup = sorted_lookup(*read_annotations(annotations_path))
         distances = values_for(*lookup, digests)
         columns["distances"] = distances
@@ -151,6 +172,7 @@ def build(groups_path: Path, annotations_path: Path | None) -> None:
         "count": len(digests),
         "sources": _fingerprints(groups_path, annotations_path),
     }
+    report("writing sidecar", {"groups": len(digests)})
     write_columns(sidecar_path(groups_path), header, columns)
 
 
@@ -201,13 +223,18 @@ class InstanceStore:
         self._columns = mapped.columns
 
     @classmethod
-    def open(cls, groups_path: Path, annotations_path: Path | None) -> InstanceStore:
+    def open(
+        cls,
+        groups_path: Path,
+        annotations_path: Path | None,
+        progress: ProgressCallback | None = None,
+    ) -> InstanceStore:
         """Map the sidecar for these sources, (re)building it when absent or stale."""
         path = sidecar_path(groups_path)
         sources = _fingerprints(groups_path, annotations_path)
         mapped = ColumnFile.open(path)
         if mapped is None or not _current(mapped.header, sources):
-            build(groups_path, annotations_path)
+            build(groups_path, annotations_path, progress)
             mapped = ColumnFile.open(path)
         if mapped is None:  # pragma: no cover - a freshly built sidecar always reads back
             raise ValueError(f"{path}: sidecar could not be read after being built")

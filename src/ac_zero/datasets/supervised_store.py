@@ -28,6 +28,7 @@ for, so changing any of them rebuilds it rather than silently training on stale 
 from __future__ import annotations
 
 from array import array
+from collections.abc import Callable, Iterator
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -38,12 +39,24 @@ from numpy.typing import NDArray
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.columnar import ColumnFile, Columns
 from ac_zero.datasets.columnar import write as write_columns
-from ac_zero.datasets.digest_index import UNKNOWN, digest_array, sorted_lookup, values_for
+from ac_zero.datasets.digest_index import (
+    DIGEST_BYTES,
+    UNKNOWN,
+    digest_array,
+    sorted_lookup,
+    values_for,
+)
 from ac_zero.datasets.instance_store import read_annotations
 from ac_zero.datasets.json_stream import iter_json_array
 from ac_zero.datasets.split import SPLIT_CODES
 from ac_zero.encoding.padded import within_capacity
 from ac_zero.moves.universal import MoveSetCatalog, moveset_catalog
+from ac_zero.system.parallel import describe_worker_pool, imap_ordered, resolve_worker_count
+
+# A build streams multi-gigabyte JSON single-threaded and can run for an hour on a
+# 30M-group ball; without a heartbeat the run looks hung. This is how often it reports.
+ProgressCallback = Callable[[str, dict[str, Any]], None]
+_LOG_EVERY = 1_000_000
 
 SCHEMA_VERSION = "aczero-supervised-v1"
 # No neighbour distance is known for this move: its child is outside the grown region
@@ -84,61 +97,123 @@ def _read_split(path: Path) -> tuple[NDArray[np.uint8], NDArray[np.int32]]:
     return digest_array(digests), np.asarray(codes, dtype=np.int32)
 
 
-class _Join:
-    """Accumulates the per-group columns while the group file streams past."""
+# One group's minimal payload for a worker: its rank, its relators, and its own hash.
+_GroupInput = tuple[int, list[list[int]], str]
+# The digests and playable flags a worker returns for a chunk: concatenated own digests,
+# concatenated child digests (32 bytes per (group, action) slot), and the playable flags.
+_EncodedChunk = tuple[bytes, bytes, list[bool]]
 
-    def __init__(
-        self, catalog: MoveSetCatalog, distances: DistanceIndex, max_relator_tokens: int
-    ) -> None:
-        self._catalog = catalog
+# Move application + child hashing is pure-Python and GIL-bound, so it is fanned out to
+# worker *processes*. Each holds its own catalog and capacity -- never the gigabyte-scale
+# distance index, which stays in the main process -- so a worker carries kilobytes of
+# state. Set once per process by the pool initializer to avoid re-pickling per chunk.
+_WORKER_CATALOG: MoveSetCatalog | None = None
+_WORKER_CAPACITY = 0
+# Chunks kept in flight per worker while streaming, bounding the parsed groups held in
+# memory to (workers * this * _CHUNK) entries regardless of dataset size.
+_WINDOW_CHUNKS = 2
+
+
+def _init_encode_worker(moveset: str, rank: int, max_relator_tokens: int) -> None:
+    """Build the worker's catalog and remember its capacity, once per process."""
+    global _WORKER_CATALOG, _WORKER_CAPACITY
+    _WORKER_CATALOG = moveset_catalog(moveset, rank)
+    _WORKER_CAPACITY = max_relator_tokens
+
+
+def _encode_chunk(chunk: list[_GroupInput]) -> _EncodedChunk:
+    """Apply every move to every group in one chunk -- the CPU-heavy work workers run.
+
+    The children are derived from the moves rather than read out of the group file, so a
+    dataset that stores no adjacency at all -- a ``dataset ball``, whose distances are
+    proven rather than searched for -- labels exactly like a grown one. An unplayable move
+    still contributes its 32 zero bytes so the child rows stay aligned with the
+    ``(group, action)`` grid; the ``present`` flag discards it.
+    """
+    assert _WORKER_CATALOG is not None  # set by _init_encode_worker before any chunk
+    moves = _WORKER_CATALOG.moves
+    own = bytearray()
+    children = bytearray()
+    present: list[bool] = []
+    for rank, relators, own_hash in chunk:
+        presentation = BalancedPresentation.from_letters(rank, [list(r) for r in relators])
+        own += bytes.fromhex(own_hash)
+        for move in moves:
+            child = move.apply(presentation)
+            playable = child.content_hash != own_hash and within_capacity(child, _WORKER_CAPACITY)
+            present.append(playable)
+            children += bytes.fromhex(child.content_hash) if playable else bytes(32)
+    return bytes(own), bytes(children), present
+
+
+def _stream_encoded(
+    groups_path: Path, moveset: str, max_relator_tokens: int, workers: int
+) -> Iterator[tuple[int, _EncodedChunk]]:
+    """Stream groups, fan their move-application out to workers, yield ``(rank, encoded)``.
+
+    Chunks are dispatched in windows so at most ``workers * _WINDOW_CHUNKS`` chunks of
+    parsed groups are resident at once; results are yielded in input order (via
+    :func:`imap_ordered`), so the delta rows come out in group order and the sidecar is
+    identical for any worker count.
+    """
+    window = max(1, resolve_worker_count(workers)) * _WINDOW_CHUNKS
+    rank = 0
+    pending: list[list[_GroupInput]] = []
+    chunk: list[_GroupInput] = []
+
+    def dispatch() -> Iterator[_EncodedChunk]:
+        nonlocal pending
+        if not pending:
+            return iter(())
+        results = imap_ordered(
+            _encode_chunk,
+            pending,
+            workers=workers,
+            initializer=_init_encode_worker,
+            initargs=(moveset, rank, max_relator_tokens),
+        )
+        pending = []
+        return results
+
+    for entry in iter_json_array(groups_path, "groups"):
+        if not rank:
+            rank = int(entry["rank"])
+        chunk.append((rank, entry["relators"], str(entry["hash"])))
+        if len(chunk) >= _CHUNK:
+            pending.append(chunk)
+            chunk = []
+            if len(pending) >= window:
+                for encoded in dispatch():
+                    yield rank, encoded
+    if chunk:
+        pending.append(chunk)
+    for encoded in dispatch():
+        yield rank, encoded
+
+
+class _DeltaJoin:
+    """Turns worker-encoded chunks into delta rows against the distance index (main side)."""
+
+    def __init__(self, distances: DistanceIndex) -> None:
         self._distances = distances  # prefix-sorted (prefixes, digests, distances)
-        self._capacity = max_relator_tokens  # 0 = the encoder imposes no limit
-        self._own = bytearray()  # this chunk's group digests
-        self._children = bytearray()  # this chunk's child digests, actions per group
-        self._present: list[bool] = []  # whether each slot holds a playable move
+        self.actions = 0  # derived from the first chunk's shape
         self.deltas: list[NDArray[np.int16]] = []
         self.own_distances: list[NDArray[np.int32]] = []
+        self.group_digests = bytearray()
 
-    @property
-    def actions(self) -> int:
-        return len(self._catalog)
-
-    def add(self, entry: dict[str, Any]) -> None:
-        """Record one group's digest and the child each of its moves reaches.
-
-        The children are derived from the moves rather than read out of the group
-        file, so a dataset that stores no adjacency at all -- a ``dataset ball``, whose
-        distances are proven rather than searched for -- labels exactly like a grown
-        one, and neither pays for a move graph in JSON.
-        """
-        presentation = BalancedPresentation.from_letters(
-            int(entry["rank"]), [list(relator) for relator in entry["relators"]]
-        )
-        own_hash = str(entry["hash"])
-        self._own += bytes.fromhex(own_hash)
-        for move in self._catalog.moves:
-            child = move.apply(presentation)
-            playable = child.content_hash != own_hash and self._fits(child)
-            self._present.append(playable)
-            # An unplayable move still needs its 32 bytes so the child rows stay
-            # aligned with the (group, action) grid; the `present` flag discards it.
-            self._children += bytes.fromhex(child.content_hash) if playable else bytes(32)
-        if len(self._present) >= _CHUNK * self.actions:
-            self.flush()
-
-    def _fits(self, presentation: BalancedPresentation) -> bool:
-        """Whether the encoder could hold this group -- what the env's mask asks."""
-        return within_capacity(presentation, self._capacity)
-
-    def flush(self) -> None:
-        """Resolve the buffered chunk's distances into delta rows."""
-        if not self._present:
+    def add(self, encoded: _EncodedChunk) -> None:
+        """Resolve one encoded chunk's own/child digests into delta rows."""
+        own_bytes, children_bytes, present = encoded
+        if not present:
             return
-        own = values_for(*self._distances, digest_array(self._own))
-        child = values_for(*self._distances, digest_array(self._children))
-        child = child.reshape(-1, self.actions)
+        groups = len(own_bytes) // DIGEST_BYTES
+        if not self.actions:
+            self.actions = len(present) // groups
+        self.group_digests += own_bytes
+        own = values_for(*self._distances, digest_array(own_bytes))
+        child = values_for(*self._distances, digest_array(children_bytes)).reshape(-1, self.actions)
         known = (
-            np.asarray(self._present, dtype=np.bool_).reshape(child.shape)
+            np.asarray(present, dtype=np.bool_).reshape(child.shape)
             & (child != UNKNOWN)
             & (own != UNKNOWN)[:, None]
         )
@@ -147,9 +222,6 @@ class _Join:
         )
         self.deltas.append(np.where(known, delta, DELTA_UNKNOWN).astype(np.int16))
         self.own_distances.append(own)
-        self._own = bytearray()
-        self._children = bytearray()
-        self._present = []
 
 
 def build(
@@ -158,24 +230,43 @@ def build(
     split_file: Path,
     moveset: str,
     max_relator_tokens: int,
+    *,
+    workers: int = 0,
+    progress: ProgressCallback | None = None,
 ) -> None:
-    """Join the groups, their distances, and their split into the supervised sidecar."""
-    distances = sorted_lookup(*read_annotations(annotations_path))
-    rank = 0
-    join: _Join | None = None
-    digests = bytearray()
-    for entry in iter_json_array(groups_path, "groups"):
-        if join is None:
-            rank = int(entry["rank"])
-            join = _Join(moveset_catalog(moveset, rank), distances, max_relator_tokens)
-        digests += bytes.fromhex(entry["hash"])
-        join.add(entry)
-    if join is None:
-        raise ValueError(f"{groups_path}: dataset has no groups")
-    join.flush()
+    """Join the groups, their distances, and their split into the supervised sidecar.
 
-    group_digests = digest_array(digests)
+    ``workers`` fans the per-group move-application across that many worker processes (0 =
+    every physical core), turning the build's dominant cost -- hundreds of millions of
+    pure-Python move applications on a large ball -- from single-core into parallel work.
+    ``progress`` is called with ``(message, metrics)`` at each phase boundary and every
+    million groups, so a long build reports that it is alive rather than sitting silent.
+    """
+    report = progress or (lambda _message, _metrics: None)
+    report("reading annotations", {"file": annotations_path.name})
+    distances = sorted_lookup(*read_annotations(annotations_path))
+    _, worker_message, worker_metrics = describe_worker_pool(workers)
+    report(worker_message, worker_metrics)
+
+    join = _DeltaJoin(distances)
+    rank = 0
+    seen = 0
+    logged = 0
+    report("scanning groups and applying moves", {"groups": 0})
+    for chunk_rank, encoded in _stream_encoded(groups_path, moveset, max_relator_tokens, workers):
+        rank = chunk_rank
+        join.add(encoded)
+        seen += len(encoded[0]) // DIGEST_BYTES
+        if seen - logged >= _LOG_EVERY:
+            logged = seen
+            report("scanning groups and applying moves", {"groups": seen})
+    if not seen:
+        raise ValueError(f"{groups_path}: dataset has no groups")
+
+    report("reading split", {"file": split_file.name})
+    group_digests = digest_array(join.group_digests)
     splits = values_for(*sorted_lookup(*_read_split(split_file)), group_digests)
+    report("writing sidecar", {"groups": seen})
     columns: Columns = {
         "deltas": np.concatenate(join.deltas),
         "distances": np.concatenate(join.own_distances),
@@ -224,6 +315,9 @@ class SupervisedStore:
         split_file: Path,
         moveset: str,
         max_relator_tokens: int,
+        *,
+        workers: int = 0,
+        progress: ProgressCallback | None = None,
     ) -> SupervisedStore:
         """Map the sidecar for these sources, (re)building it when absent or stale.
 
@@ -243,7 +337,15 @@ class SupervisedStore:
             or mapped.header.get("sources") != sources
             or mapped.header.get("max_relator_tokens") != max_relator_tokens
         ):
-            build(groups_path, annotations_path, split_file, moveset, max_relator_tokens)
+            build(
+                groups_path,
+                annotations_path,
+                split_file,
+                moveset,
+                max_relator_tokens,
+                workers=workers,
+                progress=progress,
+            )
             mapped = ColumnFile.open(path)
         if mapped is None:  # pragma: no cover - a freshly built sidecar always reads back
             raise ValueError(f"{path}: supervised sidecar could not be read after being built")

@@ -24,10 +24,12 @@ from ac_zero.datasets.ball import BallConfig, ball_groups_path, grow_ball
 from ac_zero.datasets.candidates import write_candidates
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
-from ac_zero.datasets.hub import DEFAULT_BUCKET, download_dataset, upload_dataset
+from ac_zero.datasets.hub import DEFAULT_BUCKET, download_dataset, remote_size, upload_dataset
+from ac_zero.datasets.instance_store import InstanceStore
 from ac_zero.datasets.publish import publish_to_bucket
-from ac_zero.datasets.split import SplitConfig, split_path, write_split
+from ac_zero.datasets.split import SplitConfig, split_is_current, split_path, write_split
 from ac_zero.datasets.summary import write_annotation_summary, write_dataset_summary
+from ac_zero.datasets.supervised_store import SupervisedStore
 from ac_zero.datasets.validation import validate_dataset
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
@@ -90,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             "candidates",
             "annotate",
             "split",
+            "labels",
             "upload",
             "download",
         ],
@@ -335,6 +338,8 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             return _dataset_annotate(args, reporter)
         if args.subcmd == "split":
             return _dataset_split(args, reporter)
+        if args.subcmd == "labels":
+            return _dataset_labels(args, reporter)
         if args.subcmd == "upload":
             return _dataset_upload(args, reporter)
         if args.subcmd == "download":
@@ -518,6 +523,12 @@ def _ensure_training_dataset(
     if not config.dataset_path:
         return
     bucket = config.dataset_bucket or DEFAULT_BUCKET
+    # Supervised runs read the whole ball plus a split that must cover every group, so
+    # they provision differently: refresh each file against the bucket by size and rebuild
+    # the split whenever it no longer matches the dataset (see `_provision_supervised_dataset`).
+    if config.agent == "supervised":
+        _provision_supervised_dataset(config, bucket, reporter)
+        return
     groups = Path(config.dataset_path)
     if force or not groups.exists():
         reporter.progress("dataset", "pulling groups from bucket", {"bucket": bucket})
@@ -531,14 +542,75 @@ def _ensure_training_dataset(
             reporter.warning(
                 "dataset", "annotations absent from bucket", {"name": annotations.name}
             )
-    # Only the supervised stage reads the split, and it cannot run without one -- so a
-    # missing split file is a hard failure there, not a warning to shrug past here.
-    if not config.dataset_split_path or config.agent != "supervised":
+
+
+def _provision_supervised_dataset(
+    config: TrainingPipelineConfig, bucket: str, reporter: CliReporter
+) -> None:
+    """Refresh the supervised dataset from the bucket and (re)build its split.
+
+    A supervised run trains on the whole ball and evaluates on its split, so a stale
+    local copy would train on old data or a split that no longer covers every group. Each
+    file is compared to the bucket by byte size and re-pulled only when it differs --
+    freshness without re-downloading hundreds of megabytes that already match -- and the
+    split is regenerated whenever it is missing or was built from a different dataset. The
+    split is a local artifact (it is not kept in the bucket), so it is generated here
+    rather than downloaded. Every decision is logged so the run's opening lines show
+    exactly what was refreshed.
+    """
+    groups = Path(config.dataset_path or "")
+    reporter.progress("dataset", "provisioning supervised dataset", {"bucket": bucket})
+    _sync_bucket_file(groups, bucket, reporter, required=True)
+    if config.dataset_annotations_path:
+        _sync_bucket_file(Path(config.dataset_annotations_path), bucket, reporter, required=True)
+    _ensure_dataset_split(groups, reporter)
+
+
+def _sync_bucket_file(local: Path, bucket: str, reporter: CliReporter, *, required: bool) -> None:
+    """Download ``local`` from the bucket only when the local copy differs from it by size."""
+    reporter.progress("dataset", "checking bucket for current size", {"name": local.name})
+    remote = remote_size(local.name, bucket=bucket)
+    local_bytes = local.stat().st_size if local.exists() else None
+    if remote is None:
+        if local_bytes is None:
+            if required:
+                raise FileNotFoundError(
+                    f"{local.name} is absent both locally and from bucket {bucket!r}; "
+                    "grow or download the dataset before training on it"
+                )
+            reporter.warning("dataset", "absent locally and from bucket", {"name": local.name})
+        else:
+            reporter.progress("dataset", "not in bucket; keeping local copy", {"name": local.name})
         return
-    split = Path(config.dataset_split_path)
-    if force or not split.exists():
-        reporter.progress("dataset", "pulling split from bucket", {"bucket": bucket})
-        download_dataset(split, bucket=bucket)
+    if local_bytes == remote:
+        reporter.progress(
+            "dataset",
+            "local copy matches bucket; skipping download",
+            {"name": local.name, "bytes": remote},
+        )
+        return
+    reporter.progress(
+        "dataset",
+        "local copy differs from bucket; downloading",
+        {"name": local.name, "local_bytes": local_bytes, "remote_bytes": remote},
+    )
+    download_dataset(local, bucket=bucket)
+
+
+def _ensure_dataset_split(groups: Path, reporter: CliReporter) -> None:
+    """Keep the split beside ``groups`` when it matches the dataset, else regenerate it."""
+    split = split_path(groups)
+    current, reason = split_is_current(groups)
+    if current:
+        reporter.progress("dataset", "split matches dataset; keeping it", {"name": split.name})
+        return
+    reporter.progress("dataset", f"regenerating split: {reason}", {"name": split.name})
+    report = write_split(groups, SplitConfig())
+    reporter.progress(
+        "dataset",
+        "split written",
+        {"train": report.train, "val": report.val, "test": report.test, "total": report.total},
+    )
 
 
 def _warm_start_from_hf(
@@ -1146,6 +1218,56 @@ def _dataset_split(args: argparse.Namespace, reporter: CliReporter) -> int:
     )
     reporter.result_json(result, sort_keys=True)
     return 0
+
+
+def _dataset_labels(args: argparse.Namespace, reporter: CliReporter) -> int:
+    """Precompute the supervised label and instance sidecars for a training config.
+
+    Run this once before ``aczero train`` on a large ball so the run memory-maps ready-made
+    sidecars instead of building them at startup. It provisions the dataset the same way
+    ``train`` does (refreshing groups/annotations from the bucket and ensuring the split)
+    and then builds exactly the sidecars that config's run would build -- same moveset,
+    bound, and split -- fanning the per-group move-application across ``--workers`` processes.
+    """
+    config = TrainingPipelineConfig.from_mapping(_load_config(Path(args.config)))
+    if args.workers:
+        config = replace(config, workers=args.workers)
+    config = _seed_from_default_dataset(config)
+    _ensure_training_dataset(config, reporter)
+    groups = Path(str(config.dataset_path))
+    annotations = Path(str(config.dataset_annotations_path))
+    split_file = _split_file_for(config, groups)
+
+    def on_build(message: str, metrics: dict[str, Any]) -> None:
+        reporter.progress("sidecar", message, metrics)
+
+    instances = InstanceStore.open(groups, annotations, progress=on_build)
+    labels = SupervisedStore.open(
+        groups,
+        annotations,
+        split_file,
+        config.moveset,
+        config.max_relator_tokens,
+        workers=config.workers,
+        progress=on_build,
+    )
+    reporter.result_json(
+        {
+            "groups": str(groups),
+            "labels": str(labels.path),
+            "instances": str(instances.path),
+            "count": labels.count,
+            "actions": labels.actions,
+            "moveset": labels.moveset,
+        },
+        sort_keys=True,
+    )
+    return 0
+
+
+def _split_file_for(config: TrainingPipelineConfig, groups: Path) -> Path:
+    """The split path a supervised run reads: the configured one, else the one beside groups."""
+    return Path(config.dataset_split_path) if config.dataset_split_path else split_path(groups)
 
 
 def _load_config(path: Path) -> dict[str, Any]:
