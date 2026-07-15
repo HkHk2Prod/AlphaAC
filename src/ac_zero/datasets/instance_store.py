@@ -125,11 +125,11 @@ def _read_groups(
             report("reading group relators", {"groups": seen})
     if not rank:
         raise ValueError(f"{path}: dataset has no groups")
-    if len(letters) > np.iinfo(np.int32).max:
-        raise ValueError(f"{path}: {len(letters)} relator letters overflow the offset column")
+    # word_offsets is int64: a multi-gigabyte ball can hold billions of relator
+    # letters, far past what a 32-bit offset could index into the letters column.
     columns: Columns = {
         "letters": np.frombuffer(letters, dtype=np.int8),
-        "word_offsets": np.asarray(word_offsets, dtype=np.int32),
+        "word_offsets": np.asarray(word_offsets, dtype=np.int64),
     }
     return rank, columns, digest_array(digests)
 
