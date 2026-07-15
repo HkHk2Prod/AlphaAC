@@ -42,6 +42,22 @@ def atomic_write_json(path: Path, data: Mapping[str, Any]) -> None:
         raise
 
 
+def stream_write_json(path: Path, data: Mapping[str, Any]) -> None:
+    """Write a JSON object straight to ``path``, without the atomic temp copy.
+
+    Same streaming encoding as :func:`atomic_write_json`, but the document is written
+    in place rather than to a sibling temp file renamed over ``path``. That halves the
+    peak disk a rewrite needs -- the old file is overwritten as the new one is written,
+    instead of both existing at once -- at the cost of atomicity: an interruption
+    mid-write leaves ``path`` truncated. Use it only where a durable copy lives
+    elsewhere, as the ball checkpoint's does in the bucket that resume pulls from, so a
+    torn local file is simply overwritten rather than lost.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        _write_object(handle, data)
+
+
 def _write_object(handle: IO[str], data: Mapping[str, Any]) -> None:
     """Write one JSON object, streaming any member handed over as an iterator."""
     handle.write("{")

@@ -94,6 +94,12 @@ class BallConfig:
     log_every: int = 10_000
     # Soft wall-clock budget in seconds; None runs until `target` is reached.
     time_limit_s: float | None = None
+    # Write each checkpoint via an atomic temp-and-rename (True) or straight in place
+    # (False). In place halves the peak disk a rewrite needs -- the old file is not held
+    # beside a full temp copy -- but a torn write leaves the local file corrupt, so it is
+    # safe only when a durable copy is pushed elsewhere (the scheduler pushes to the
+    # bucket resume pulls from). Default True keeps a lone local run always recoverable.
+    atomic_checkpoint: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,12 +203,12 @@ def grow_ball(
             # A checkpoint is taken between merges -- a consistent point, with nothing in
             # flight unmerged -- so the pair of documents it leaves is always resumable.
             if next_checkpoint is not None and time.monotonic() >= next_checkpoint:
-                ball.write(groups_path, annotations_path)
+                ball.write(groups_path, annotations_path, atomic=config.atomic_checkpoint)
                 next_checkpoint = time.monotonic() + checkpoint_s
                 if progress is not None:
                     progress("checkpoint", {"groups": len(ball), "added": added})
 
-    ball.write(groups_path, annotations_path)
+    ball.write(groups_path, annotations_path, atomic=config.atomic_checkpoint)
     report = BallReport(
         total=len(ball),
         added=added,

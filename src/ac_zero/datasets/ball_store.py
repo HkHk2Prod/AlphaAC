@@ -42,7 +42,7 @@ from ac_zero.datasets.groups import (
     read_relator_bound,
 )
 from ac_zero.datasets.groups import SCHEMA_VERSION as GROUPS_SCHEMA
-from ac_zero.datasets.io import atomic_write_json
+from ac_zero.datasets.io import atomic_write_json, stream_write_json
 from ac_zero.datasets.json_stream import iter_json_array, read_members_before
 from ac_zero.moves.universal import UniversalCatalog, move_set
 
@@ -242,15 +242,22 @@ class OriginBall:
                 moves_to_origin=self._moves_to_origin(index),
             )
 
-    def write(self, groups_path: Path, annotations_path: Path) -> None:
+    def write(self, groups_path: Path, annotations_path: Path, *, atomic: bool = True) -> None:
         """Rewrite both documents: the groups, and the distances that label them.
 
         Both arrays are handed to the writer as generators, so a checkpoint encodes one
         entry at a time rather than materializing millions of them beside the ball it is
         already holding.
+
+        ``atomic`` writes each document via a temp file renamed into place, so an
+        interrupted write never leaves a torn dataset behind. Setting it ``False`` writes
+        in place, which halves the peak disk a checkpoint needs (the old file is not held
+        alongside a temp copy) -- safe only when a durable copy is pushed elsewhere, as
+        the scheduler does to the bucket resume pulls from.
         """
+        writer = atomic_write_json if atomic else stream_write_json
         provenance = self._provenance()
-        atomic_write_json(
+        writer(
             groups_path,
             {
                 STATE_KEY: {"moveset": self.moveset, "expanded": self.expanded},
@@ -262,7 +269,7 @@ class OriginBall:
                 "provenance": {**provenance, "max_length": self.max_length()},
             },
         )
-        atomic_write_json(
+        writer(
             annotations_path,
             {
                 "schema_version": ANNOTATIONS_SCHEMA,
