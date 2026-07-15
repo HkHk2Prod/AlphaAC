@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ac_zero.datasets.io import atomic_write_json
+from ac_zero.datasets.io import atomic_write_json, stream_write_json
 from ac_zero.datasets.json_stream import iter_json_array, read_members_before
 
 
@@ -24,6 +24,26 @@ def test_streams_an_iterator_member(tmp_path: Path) -> None:
     atomic_write_json(path, {"groups": iter([{"a": 1}, {"a": 2}]), "rank": 2})
     assert json.loads(path.read_text()) == {"groups": [{"a": 1}, {"a": 2}], "rank": 2}
     assert list(iter_json_array(path, "groups")) == [{"a": 1}, {"a": 2}]
+
+
+def test_stream_write_matches_atomic_but_leaves_no_temp(tmp_path: Path) -> None:
+    """The in-place writer produces the same document as the atomic one, with no temp file."""
+    document = {"groups": [{"a": 1}, {"a": 2}], "rank": 2}
+    atomic = tmp_path / "a.json"
+    streamed = tmp_path / "s.json"
+    atomic_write_json(atomic, {"groups": iter(document["groups"]), "rank": 2})
+    stream_write_json(streamed, {"groups": iter(document["groups"]), "rank": 2})
+
+    assert streamed.read_text() == atomic.read_text()  # byte-identical encoding
+    # No sibling temp copy exists during or after an in-place write.
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["a.json", "s.json"]
+
+
+def test_stream_write_overwrites_in_place(tmp_path: Path) -> None:
+    path = tmp_path / "d.json"
+    stream_write_json(path, {"groups": iter([{"a": 1}]), "rank": 2})
+    stream_write_json(path, {"groups": iter([{"b": 9}]), "rank": 3})
+    assert json.loads(path.read_text()) == {"groups": [{"b": 9}], "rank": 3}
 
 
 def test_encodes_one_element_at_a_time(tmp_path: Path) -> None:

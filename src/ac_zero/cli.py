@@ -185,6 +185,14 @@ def main(argv: list[str] | None = None) -> int:
         help="`grow`: emit a progress log every N added groups (0 = only start/finish)",
     )
     ds.add_argument(
+        "--no-atomic-checkpoint",
+        action="store_true",
+        help="`ball`: write each checkpoint in place instead of via an atomic temp copy, "
+        "halving the peak disk a rewrite needs. A torn write corrupts the local file, so "
+        "use it only when a durable copy is pushed elsewhere -- as the scheduler does to "
+        "the bucket resume pulls from",
+    )
+    ds.add_argument(
         "--summary-dir",
         default="data/summaries",
         help="`grow`/`annotate`: directory for the post-run Markdown summary",
@@ -1008,6 +1016,7 @@ def _dataset_ball(args: argparse.Namespace, reporter: CliReporter) -> int:
         checkpoint_hours=args.checkpoint_hours,
         log_every=args.log_every,
         time_limit_s=args.minutes * 60 if args.minutes > 0 else None,
+        atomic_checkpoint=not args.no_atomic_checkpoint,
     )
 
     def on_progress(message: str, metrics: dict[str, Any]) -> None:

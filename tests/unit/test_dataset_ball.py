@@ -179,6 +179,34 @@ def test_a_checkpoint_leaves_a_resumable_file(tmp_path: Path) -> None:
     assert document["provenance"]["expanded"] == expanded
 
 
+def test_a_non_atomic_checkpoint_writes_the_same_resumable_dataset(tmp_path: Path) -> None:
+    """`atomic_checkpoint=False` skips the temp copy but leaves an identical, resumable pair."""
+    atomic = _grow(tmp_path / "atomic", target=800, checkpoint_hours=1e-9)
+    nonatomic = tmp_path / "nonatomic" / "ball.groups.json"
+    grow_ball(
+        nonatomic,
+        BallConfig(
+            rank=2,
+            moveset=MOVESET,
+            target=800,
+            workers=1,
+            checkpoint_hours=1e-9,
+            atomic_checkpoint=False,
+        ),
+    )
+
+    # Same bytes as the atomic writer, and it validates and resumes like any other ball.
+    assert nonatomic.read_text() == atomic.read_text()
+    assert (
+        annotation_path(nonatomic, MOVESET).read_text()
+        == annotation_path(atomic, MOVESET).read_text()
+    )
+    assert validate_dataset(nonatomic).ok
+    before = json.loads(nonatomic.read_text())["provenance"]["count"]
+    grow_ball(nonatomic, BallConfig(rank=2, moveset=MOVESET, target=1600, workers=1))
+    assert json.loads(nonatomic.read_text())["provenance"]["count"] > before
+
+
 def test_checkpoints_are_taken_on_the_clock_not_on_a_group_count(
     tmp_path: Path, monkeypatch
 ) -> None:

@@ -7,6 +7,13 @@ same pair of files ``dataset grow`` + ``dataset annotate`` produce, so every con
 (the instance store, the supervised labels, the split) reads a ball without knowing it
 is one.
 
+In memory the groups live in compact columns rather than as presentation objects (see
+:mod:`ac_zero.datasets.ball_columns`): a rank-2 ball reaches tens of millions of groups,
+and one Python object per group runs a machine out of memory long before it runs out of
+groups to add. The columns rebuild a presentation only for the group about to be
+expanded, and the digest-keyed dedup index is an open-addressing table rather than a
+dict of hex strings.
+
 What a ball does *not* store is the move adjacency. A grown dataset has to keep it --
 its distances are searched for over that graph afterwards -- but here the distances are
 known at the moment a group is discovered, and the adjacency is 85% of the bytes.
@@ -16,13 +23,14 @@ See :mod:`ac_zero.datasets.ball` for why the construction gives exact distances.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.datasets.annotate import SCHEMA_VERSION as ANNOTATIONS_SCHEMA
 from ac_zero.datasets.annotate import annotation_entry
+from ac_zero.datasets.ball_columns import BallColumns, DigestIndex
 from ac_zero.datasets.expand import NeighbourRecord
 from ac_zero.datasets.groups import (
     BOUNDS_KEY,
@@ -31,11 +39,10 @@ from ac_zero.datasets.groups import (
     SOURCE_ORIGIN_BALL,
     SOURCE_TRIVIAL,
     check_relator_bound,
-    group_entry,
     read_relator_bound,
 )
 from ac_zero.datasets.groups import SCHEMA_VERSION as GROUPS_SCHEMA
-from ac_zero.datasets.io import atomic_write_json
+from ac_zero.datasets.io import atomic_write_json, stream_write_json
 from ac_zero.datasets.json_stream import iter_json_array, read_members_before
 from ac_zero.moves.universal import UniversalCatalog, move_set
 
@@ -47,51 +54,40 @@ GENERATOR = "origin_ball_bfs"
 STATE_KEY = "ball"
 
 
-@dataclass(slots=True)
-class BallNode:
-    """One group of the ball: how far it is from the origin, and how it gets closer.
-
-    ``content_hash`` is carried rather than taken from the presentation, which would
-    hash (and then cache a string for) every group in the dataset at every checkpoint:
-    the expansion worker already computed it.
-    """
-
-    presentation: BalancedPresentation
-    content_hash: str
-    distance: int
-    # Every forward move of the set that steps this group one closer to the origin --
-    # the co-optimal first moves, which are exactly a supervised policy's target.
-    optimal_moves: list[int]
-
-
 class OriginBall:
     """The groups within a known distance of the trivial group, in discovery order.
 
-    The node list doubles as the breadth-first queue: ``expanded`` is how far into it
-    the run has got, everything after that is the frontier, and because a group is only
-    ever appended when it is first discovered, the list is ordered by distance.
+    The column list doubles as the breadth-first queue: ``expanded`` is how far into
+    it the run has got, everything after that is the frontier, and because a group is
+    only ever appended when it is first discovered, the list is ordered by distance.
     """
 
     def __init__(
         self,
         rank: int,
         moveset: str,
-        nodes: list[BallNode],
-        expanded: int = 0,
         max_relator_length: int = 0,
+        expanded: int = 0,
     ) -> None:
         self.rank = rank
         self.moveset = moveset
-        self.nodes = nodes
-        self.expanded = expanded
         self.max_relator_length = max_relator_length
-        self._index = {node.content_hash: i for i, node in enumerate(nodes)}
+        self.expanded = expanded
+        self._columns = BallColumns(rank)
+        self._index = DigestIndex()
         catalog = UniversalCatalog(rank)
         forward_ids = move_set(moveset, catalog).ids
         # Expanding by ``inv`` from a group reaches one that steps back to it by the
         # forward move ``inv`` inverts -- the co-optimal move recorded on the child.
         self.inverse_ids = frozenset(catalog.inverse_id(i) for i in forward_ids)
         self._forward_for = {catalog.inverse_id(i): i for i in forward_ids}
+        # A group's co-optimal moves are a subset of the set's forward moves, so they
+        # pack into a bitmask: bit ``i`` is the ``i``-th forward move in sorted order.
+        self._forward_sorted = sorted(forward_ids)
+        self._bit_for = {move_id: 1 << i for i, move_id in enumerate(self._forward_sorted)}
+
+    def __len__(self) -> int:
+        return len(self._columns)
 
     @classmethod
     def load_or_seed(
@@ -104,13 +100,15 @@ class OriginBall:
     ) -> OriginBall:
         """Reopen an existing ball, or seed a fresh one holding just the origin."""
         if not groups_path.exists():
+            ball = cls(rank, moveset, max_relator_length)
             origin = BalancedPresentation.standard(rank)
-            return cls(
-                rank,
-                moveset,
-                [BallNode(origin, origin.content_hash, 0, [])],
-                max_relator_length=max_relator_length,
+            ball._append(
+                [list(relator.letters) for relator in origin.relators],
+                bytes.fromhex(origin.content_hash),
+                0,
+                0,
             )
+            return ball
         state = read_members_before(groups_path, "groups").get(STATE_KEY, {})
         stored = str(state.get("moveset", ""))
         if stored != moveset:
@@ -123,32 +121,47 @@ class OriginBall:
         )
         if not annotations_path.exists():
             raise FileNotFoundError(f"{groups_path} has no distances at {annotations_path}")
-        # The two documents are written together from the one node list, so they are read
-        # back in lockstep: pairing them through a hash-keyed dict of every annotation
-        # would hold a second copy of the dataset beside the ball being built.
+        ball = cls(rank, moveset, max_relator_length, expanded=int(state.get("expanded", 0)))
+        # The two documents are written together from the one column list, so they are
+        # read back in lockstep: pairing them through a hash-keyed dict of every
+        # annotation would hold a second copy of the dataset beside the ball being built.
         pairs = zip(
             iter_json_array(groups_path, "groups"),
             iter_json_array(annotations_path, "annotations"),
             strict=True,
         )
-        nodes = [cls._load_node(rank, group, label) for group, label in pairs]
-        return cls(rank, moveset, nodes, int(state.get("expanded", 0)), max_relator_length)
+        for group, label in pairs:
+            ball._load_pair(group, label)
+        return ball
 
-    @staticmethod
-    def _load_node(rank: int, group: dict[str, Any], label: dict[str, Any]) -> BallNode:
-        """Rebuild one node from the group entry and the annotation entry beside it."""
+    def _load_pair(self, group: dict[str, Any], label: dict[str, Any]) -> None:
+        """Append one group from the group entry and the annotation entry beside it."""
         if group["hash"] != label["hash"]:
             raise ValueError(
                 "the groups and their distances have drifted out of order: "
                 f"group {group['hash']} is labelled {label['hash']}. Both files are "
                 "written by the same run -- regenerate them as the pair they are."
             )
-        return BallNode(
-            BalancedPresentation.from_letters(rank, group["relators"]),
-            str(group["hash"]),
+        mask = 0
+        for move_id in label["optimal_moves_to_origin"]:
+            mask |= self._bit_for[move_id]
+        self._append(
+            group["relators"],
+            bytes.fromhex(group["hash"]),
             int(label["distance_to_origin"]),
-            list(label["optimal_moves_to_origin"]),
+            mask,
         )
+
+    def _append(
+        self, relators: Iterable[Sequence[int]], digest: bytes, distance: int, moves_mask: int
+    ) -> int:
+        index = self._columns.append(relators, digest, distance, moves_mask)
+        self._index.insert(digest, index)
+        return index
+
+    def presentation(self, index: int) -> BalancedPresentation:
+        """Rebuild group ``index``'s presentation from its columns, for expansion."""
+        return BalancedPresentation.from_letters(self.rank, self._columns.relators_at(index))
 
     def merge(self, parent: int, records: list[NeighbourRecord]) -> int:
         """Record one group's inverse-move neighbours; return the count of new groups.
@@ -158,26 +171,18 @@ class OriginBall:
         One already at that distance gains another co-optimal move -- the same group is
         often one step from several groups in the shell above it.
         """
+        columns = self._columns
         added = 0
-        distance = self.nodes[parent].distance + 1
+        distance = columns.distance_at(parent) + 1
         for record in records:
-            forward = self._forward_for[record.move_id]
-            index = self._index.get(record.child_hash)
+            bit = self._bit_for[self._forward_for[record.move_id]]
+            digest = bytes.fromhex(record.child_hash)
+            index = self._index.get(digest)
             if index is None:
-                self._index[record.child_hash] = len(self.nodes)
-                self.nodes.append(
-                    BallNode(
-                        BalancedPresentation.from_letters(self.rank, record.letters),
-                        record.child_hash,
-                        distance,
-                        [forward],
-                    )
-                )
+                self._append(record.letters, digest, distance, bit)
                 added += 1
-                continue
-            node = self.nodes[index]
-            if node.distance == distance and forward not in node.optimal_moves:
-                node.optimal_moves.append(forward)
+            elif columns.distance_at(index) == distance:
+                columns.or_move(index, bit)
         return added
 
     @property
@@ -188,36 +193,71 @@ class OriginBall:
         the first unexpanded one has already contributed its neighbours -- which is what
         makes the shell that first unexpanded group belongs to complete.
         """
-        if self.expanded >= len(self.nodes):
-            return self.nodes[-1].distance
-        return self.nodes[self.expanded].distance
+        columns = self._columns
+        if self.expanded >= len(columns):
+            return columns.distance_at(len(columns) - 1)
+        return columns.distance_at(self.expanded)
 
     def max_distance(self) -> int:
-        return self.nodes[-1].distance
+        return self._columns.distance_at(len(self._columns) - 1)
 
     def max_length(self) -> int:
-        return max(node.presentation.total_length for node in self.nodes)
+        return self._columns.max_length()
+
+    def _moves_to_origin(self, index: int) -> list[int]:
+        """Decode a group's co-optimal forward moves from its bitmask, sorted."""
+        mask = self._columns.moves_at(index)
+        return [move for i, move in enumerate(self._forward_sorted) if mask >> i & 1]
 
     def _provenance(self) -> dict[str, Any]:
         return {
             "generator": GENERATOR,
             "moveset": self.moveset,
             "max_relator_length": self.max_relator_length,
-            "count": len(self.nodes),
+            "count": len(self),
             "expanded": self.expanded,
             "complete_depth": self.complete_depth,
             "max_distance": self.max_distance(),
         }
 
-    def write(self, groups_path: Path, annotations_path: Path) -> None:
+    def _group_entries(self) -> Any:
+        columns = self._columns
+        for index in range(len(columns)):
+            distance = columns.distance_at(index)
+            yield {
+                "hash": columns.digest_at(index).hex(),
+                "rank": self.rank,
+                "ac_trivial": True,
+                "source": SOURCE_TRIVIAL if distance == 0 else SOURCE_ORIGIN_BALL,
+                "relators": columns.relators_at(index),
+                "total_length": columns.total_length_at(index),
+            }
+
+    def _annotation_entries(self) -> Any:
+        columns = self._columns
+        for index in range(len(columns)):
+            yield annotation_entry(
+                columns.digest_at(index).hex(),
+                distance_to_origin=columns.distance_at(index),
+                moves_to_origin=self._moves_to_origin(index),
+            )
+
+    def write(self, groups_path: Path, annotations_path: Path, *, atomic: bool = True) -> None:
         """Rewrite both documents: the groups, and the distances that label them.
 
         Both arrays are handed to the writer as generators, so a checkpoint encodes one
         entry at a time rather than materializing millions of them beside the ball it is
         already holding.
+
+        ``atomic`` writes each document via a temp file renamed into place, so an
+        interrupted write never leaves a torn dataset behind. Setting it ``False`` writes
+        in place, which halves the peak disk a checkpoint needs (the old file is not held
+        alongside a temp copy) -- safe only when a durable copy is pushed elsewhere, as
+        the scheduler does to the bucket resume pulls from.
         """
+        writer = atomic_write_json if atomic else stream_write_json
         provenance = self._provenance()
-        atomic_write_json(
+        writer(
             groups_path,
             {
                 STATE_KEY: {"moveset": self.moveset, "expanded": self.expanded},
@@ -225,33 +265,18 @@ class OriginBall:
                 "schema_version": GROUPS_SCHEMA,
                 "rank": self.rank,
                 "move_catalog": MOVE_CATALOG,
-                "groups": (
-                    group_entry(
-                        node.presentation,
-                        ac_trivial=True,
-                        source=SOURCE_TRIVIAL if node.distance == 0 else SOURCE_ORIGIN_BALL,
-                        content_hash=node.content_hash,
-                    )
-                    for node in self.nodes
-                ),
+                "groups": self._group_entries(),
                 "provenance": {**provenance, "max_length": self.max_length()},
             },
         )
-        atomic_write_json(
+        writer(
             annotations_path,
             {
                 "schema_version": ANNOTATIONS_SCHEMA,
                 "rank": self.rank,
                 "moveset": self.moveset,
                 "move_catalog": UniversalCatalog(self.rank).version,
-                "annotations": (
-                    annotation_entry(
-                        node.content_hash,
-                        distance_to_origin=node.distance,
-                        moves_to_origin=sorted(node.optimal_moves),
-                    )
-                    for node in self.nodes
-                ),
-                "provenance": {**provenance, "reached_origin": len(self.nodes)},
+                "annotations": self._annotation_entries(),
+                "provenance": {**provenance, "reached_origin": len(self)},
             },
         )
