@@ -71,12 +71,24 @@ class _SupervisedRun:
         # The dataset has to have been generated under this run's bound: its labels point
         # down descents, and a descent is only a descent in the graph it was proven in.
         require_dataset_bound(groups, config.max_relator_tokens)
+
         # The capacity decides which moves the environment would let the model play, so
         # the labels are built for it: it is a source of the sidecar, not a reader of it.
+        # Building the sidecar over a large ball streams gigabytes and applies a move to
+        # every group, so it reports progress and fans that work out across `workers`.
+        def on_build(message: str, metrics: dict[str, Any]) -> None:
+            self.manager.emit(0, "sidecar", message, metrics)
+
         self.labels = SupervisedStore.open(
-            groups, annotations, split_file, config.moveset, config.max_relator_tokens
+            groups,
+            annotations,
+            split_file,
+            config.moveset,
+            config.max_relator_tokens,
+            workers=config.workers,
+            progress=on_build,
         )
-        self.instances = InstanceStore.open(groups, annotations)
+        self.instances = InstanceStore.open(groups, annotations, progress=on_build)
         self.config = config
         self.encoder = StateEncoder(self.config.max_relator_tokens)
         self.model = self._build_model()

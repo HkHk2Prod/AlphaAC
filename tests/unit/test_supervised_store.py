@@ -45,6 +45,51 @@ def _group_hashes(groups: Path) -> list[str]:
     return [entry["hash"] for entry in json.loads(groups.read_text())["groups"]]
 
 
+def test_parallel_build_matches_sequential(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fanning the build across worker processes must produce a byte-identical sidecar."""
+    import ac_zero.datasets.supervised_store as ss
+
+    # A tiny chunk turns a small dataset into many chunks, so `workers=2` genuinely spawns
+    # the process pool and reassembles results in order rather than running inline.
+    monkeypatch.setattr(ss, "_CHUNK", 40)
+    groups = tmp_path / "toy.groups.json"
+    grow_dataset(groups, GrowConfig(rank=2, target=300, max_relator_length=BOUND, workers=1))
+    annotate(groups, AnnotateConfig(moveset=MOVESET, workers=1))
+    write_split(groups, SplitConfig())
+    ann, spl = annotation_path(groups, MOVESET), split_path(groups)
+
+    seq = SupervisedStore.open(groups, ann, spl, MOVESET, BOUND, workers=1)
+    seq_deltas, seq_dist, seq_split = seq.deltas.copy(), seq.distances.copy(), seq.splits.copy()
+    del seq
+    sidecar_path(groups, MOVESET).unlink()  # force a rebuild rather than remap the cache
+
+    par = SupervisedStore.open(groups, ann, spl, MOVESET, BOUND, workers=2)
+    np.testing.assert_array_equal(par.deltas, seq_deltas)
+    np.testing.assert_array_equal(par.distances, seq_dist)
+    np.testing.assert_array_equal(par.splits, seq_split)
+
+
+def test_build_reports_progress(tmp_path: Path) -> None:
+    groups = tmp_path / "toy.groups.json"
+    grow_dataset(groups, GrowConfig(rank=2, target=200, max_relator_length=BOUND, workers=1))
+    annotate(groups, AnnotateConfig(moveset=MOVESET, workers=1))
+    write_split(groups, SplitConfig())
+    messages: list[str] = []
+
+    SupervisedStore.open(
+        groups,
+        annotation_path(groups, MOVESET),
+        split_path(groups),
+        MOVESET,
+        BOUND,
+        workers=1,
+        progress=lambda message, _metrics: messages.append(message),
+    )
+
+    assert any("scanning groups" in m for m in messages)
+    assert any("writing sidecar" in m for m in messages)
+
+
 def test_sidecar_naming(tmp_path: Path) -> None:
     path = sidecar_path(tmp_path / "train.groups.json", "strict-ac")
     assert path.name == "train.groups.json.strict-ac.supervised"

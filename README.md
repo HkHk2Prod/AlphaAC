@@ -315,10 +315,39 @@ uv run --frozen aczero train --config configs/experiments/supervised_pretrain.ya
 uv run --frozen aczero train --config configs/experiments/supervised_large.yaml
 ```
 
-Both need the group file, its annotations, and a split. A run writes the same
-artifacts as an RL run — run directory, `metrics.jsonl`, plots, and the Hugging
-Face checkpoint bundle — so fine-tuning is just pointing an AlphaZero/PPO config
-at the checkpoint it produced:
+Both need the group file, its annotations, and a split, and a supervised run
+provisions all three before it trains — you do not run `dataset split` by hand.
+The groups and annotations are refreshed from the Hugging Face bucket only when the
+local copy differs from it *by byte size*, so an up-to-date ball is not re-downloaded
+but a stale one is. The split is a local artifact (it is never kept in the bucket):
+it is regenerated whenever it is missing or was built from a different dataset —
+tracked by a tiny `<name>.split.meta.json` provenance sidecar — and otherwise left
+in place. Every one of these decisions is printed under the run's opening `dataset`
+lines, so the log shows exactly what was refreshed, skipped, or rebuilt.
+
+The first supervised run on a dataset also builds two memory-mapped sidecars beside it
+— the descent-label store and the instance store — by streaming the whole ball and
+applying every move to every group. On a 30M-group ball that is hundreds of millions of
+move applications, so it is fanned out across `training.workers` processes (0 = every
+physical core) and reports progress under a `sidecar` phase as it goes, rather than
+sitting silent for the better part of an hour. The sidecars are cached and fingerprinted,
+so every later run on the same dataset memory-maps them and starts at once.
+
+Rather than pay that cost inside the first `train`, precompute it ahead of the run with
+`dataset labels`, which provisions the dataset and builds both sidecars for a config —
+
+```bash
+uv run --frozen aczero dataset labels --config configs/experiments/supervised_large.yaml
+uv run --frozen aczero train         --config configs/experiments/supervised_large.yaml
+```
+
+The prebuild is a one-time step per dataset: once its sidecars exist, that `train` and
+every later run, seed, or fine-tune on the same ball starts immediately. `train` still
+builds them on demand if you skip the prebuild.
+
+A run writes the same artifacts as an RL run — run directory, `metrics.jsonl`,
+plots, and the Hugging Face checkpoint bundle — so fine-tuning is just pointing an
+AlphaZero/PPO config at the checkpoint it produced:
 
 ```yaml
 training:

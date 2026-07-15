@@ -9,7 +9,14 @@ from pathlib import Path
 import pytest
 
 from ac_zero.datasets.grow import GrowConfig, grow_dataset
-from ac_zero.datasets.split import SplitConfig, assign, split_path, write_split
+from ac_zero.datasets.split import (
+    SplitConfig,
+    assign,
+    split_is_current,
+    split_meta_path,
+    split_path,
+    write_split,
+)
 
 
 def _dataset(tmp_path: Path, target: int = 400) -> Path:
@@ -97,3 +104,43 @@ def test_an_empty_dataset_cannot_be_split(tmp_path: Path) -> None:
     empty.write_text(json.dumps({"rank": 2, "groups": []}), encoding="utf-8")
     with pytest.raises(ValueError, match="no groups"):
         write_split(empty, SplitConfig())
+
+
+def test_write_split_records_a_provenance_sidecar(tmp_path: Path) -> None:
+    groups = _dataset(tmp_path)
+    report = write_split(groups, SplitConfig())
+
+    meta = json.loads(split_meta_path(groups).read_text())
+    assert meta["source"] == groups.name
+    assert meta["source_bytes"] == groups.stat().st_size
+    assert meta["counts"]["total"] == report.total
+
+
+def test_split_is_current_tracks_the_dataset(tmp_path: Path) -> None:
+    groups = _dataset(tmp_path, target=200)
+
+    # No split yet.
+    ok, reason = split_is_current(groups)
+    assert not ok and "no split" in reason
+
+    write_split(groups, SplitConfig())
+    ok, _ = split_is_current(groups)
+    assert ok  # freshly built: matches
+
+    # Growing the dataset changes its byte size, so the old split is stale.
+    grow_dataset(groups, GrowConfig(rank=2, target=200, max_relator_length=6, workers=1))
+    ok, reason = split_is_current(groups)
+    assert not ok and "dataset changed" in reason
+
+    # Rebuilding makes it current again.
+    write_split(groups, SplitConfig())
+    assert split_is_current(groups)[0]
+
+
+def test_split_is_current_flags_a_missing_meta_sidecar(tmp_path: Path) -> None:
+    groups = _dataset(tmp_path, target=200)
+    write_split(groups, SplitConfig())
+    split_meta_path(groups).unlink()  # split present, provenance gone
+
+    ok, reason = split_is_current(groups)
+    assert not ok and "provenance" in reason

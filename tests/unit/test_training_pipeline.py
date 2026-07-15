@@ -525,6 +525,171 @@ def test_ensure_training_dataset_pulls_annotations(monkeypatch, tmp_path: Path) 
     reporter.close()
 
 
+def _supervised_dataset(tmp_path: Path) -> tuple[Path, Path]:
+    """A minimal groups file plus an annotations placeholder for provisioning tests."""
+    groups = tmp_path / "ball.groups.json"
+    groups.write_text(
+        json.dumps(
+            {
+                "rank": 2,
+                "groups": [
+                    {"hash": f"{i:064x}", "rank": 2, "relators": [[1], [2]]} for i in range(20)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    annotations = tmp_path / "ball.strict-ac.annotations.json"
+    annotations.write_text("{}", encoding="utf-8")
+    return groups, annotations
+
+
+def _supervised_config(groups: Path, annotations: Path) -> TrainingPipelineConfig:
+    from ac_zero.datasets.split import split_path
+
+    return TrainingPipelineConfig(
+        agent="supervised",
+        dataset_path=str(groups),
+        dataset_annotations_path=str(annotations),
+        dataset_split_path=str(split_path(groups)),
+        dataset_bucket="ns/bucket",
+    )
+
+
+def test_supervised_provisioning_skips_download_when_sizes_match(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from ac_zero.cli import _ensure_training_dataset
+    from ac_zero.datasets.split import split_is_current, split_path
+    from ac_zero.system.reporting import CliReporter
+
+    groups, annotations = _supervised_dataset(tmp_path)
+    # The bucket reports exactly the local sizes, so neither file is re-downloaded.
+    sizes = {groups.name: groups.stat().st_size, annotations.name: annotations.stat().st_size}
+    monkeypatch.setattr("ac_zero.cli.remote_size", lambda name, *, bucket: sizes.get(name))
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "ac_zero.cli.download_dataset",
+        lambda local, *, bucket, remote_name=None, missing_ok=False: calls.append(str(local)),
+    )
+    reporter = CliReporter("train", run_directory=str(tmp_path / "logs"))
+
+    _ensure_training_dataset(_supervised_config(groups, annotations), reporter)
+
+    assert calls == []  # matching sizes: nothing pulled
+    assert split_path(groups).exists()  # split was generated locally
+    assert split_is_current(groups)[0]
+    reporter.close()
+
+
+def test_supervised_provisioning_downloads_on_size_mismatch(monkeypatch, tmp_path: Path) -> None:
+    from ac_zero.cli import _ensure_training_dataset
+    from ac_zero.system.reporting import CliReporter
+
+    groups, annotations = _supervised_dataset(tmp_path)
+    # The bucket's groups file is a different size, so it is re-pulled; annotations match.
+    sizes = {groups.name: groups.stat().st_size + 1, annotations.name: annotations.stat().st_size}
+    monkeypatch.setattr("ac_zero.cli.remote_size", lambda name, *, bucket: sizes.get(name))
+    calls: list[str] = []
+
+    def _fake_download(local, *, bucket, remote_name=None, missing_ok=False):  # type: ignore[no-untyped-def]
+        calls.append(Path(local).name)
+        Path(local).write_text(groups.read_text(), encoding="utf-8")
+
+    monkeypatch.setattr("ac_zero.cli.download_dataset", _fake_download)
+    reporter = CliReporter("train", run_directory=str(tmp_path / "logs"))
+
+    _ensure_training_dataset(_supervised_config(groups, annotations), reporter)
+
+    assert calls == [groups.name]  # only the mismatched file was pulled
+    reporter.close()
+
+
+def test_supervised_provisioning_regenerates_a_stale_split(monkeypatch, tmp_path: Path) -> None:
+    from ac_zero.cli import _ensure_training_dataset
+    from ac_zero.datasets.split import SplitConfig, split_is_current, split_meta_path, write_split
+    from ac_zero.system.reporting import CliReporter
+
+    groups, annotations = _supervised_dataset(tmp_path)
+    write_split(groups, SplitConfig())
+    # Forge a stale provenance: pretend the split was built from a smaller dataset.
+    meta = json.loads(split_meta_path(groups).read_text())
+    meta["source_bytes"] = meta["source_bytes"] - 1
+    split_meta_path(groups).write_text(json.dumps(meta), encoding="utf-8")
+    assert not split_is_current(groups)[0]
+
+    sizes = {groups.name: groups.stat().st_size, annotations.name: annotations.stat().st_size}
+    monkeypatch.setattr("ac_zero.cli.remote_size", lambda name, *, bucket: sizes.get(name))
+    monkeypatch.setattr(
+        "ac_zero.cli.download_dataset",
+        lambda *a, **k: pytest.fail("no download expected when sizes match"),
+    )
+    reporter = CliReporter("train", run_directory=str(tmp_path / "logs"))
+
+    _ensure_training_dataset(_supervised_config(groups, annotations), reporter)
+
+    assert split_is_current(groups)[0]  # the stale split was rebuilt
+    reporter.close()
+
+
+def test_supervised_provisioning_errors_when_dataset_absent_everywhere(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from ac_zero.cli import _ensure_training_dataset
+    from ac_zero.datasets.split import split_path
+    from ac_zero.system.reporting import CliReporter
+
+    groups = tmp_path / "ball.groups.json"  # never created
+    monkeypatch.setattr("ac_zero.cli.remote_size", lambda name, *, bucket: None)
+    reporter = CliReporter("train", run_directory=str(tmp_path / "logs"))
+    config = TrainingPipelineConfig(
+        agent="supervised", dataset_path=str(groups), dataset_split_path=str(split_path(groups))
+    )
+
+    with pytest.raises(FileNotFoundError, match="absent both locally and from bucket"):
+        _ensure_training_dataset(config, reporter)
+    reporter.close()
+
+
+def test_dataset_labels_prebuilds_sidecars(monkeypatch, tmp_path: Path) -> None:
+    """`dataset labels` provisions and builds both sidecars so `train` maps them ready-made."""
+    import yaml
+
+    from ac_zero.cli import main
+    from ac_zero.datasets.annotate import AnnotateConfig, annotate, annotation_path
+    from ac_zero.datasets.grow import GrowConfig, grow_dataset
+    from ac_zero.datasets.instance_store import sidecar_path as instance_sidecar
+    from ac_zero.datasets.split import split_path
+    from ac_zero.datasets.supervised_store import sidecar_path as supervised_sidecar
+
+    groups = tmp_path / "toy.groups.json"
+    grow_dataset(groups, GrowConfig(rank=2, target=200, max_relator_length=6, workers=1))
+    annotate(groups, AnnotateConfig(moveset="strict-ac", workers=1))
+    config = tmp_path / "sl.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "agent": "supervised",
+                "moveset": "strict-ac",
+                "max_relator_tokens": 6,
+                "workers": 1,
+                "dataset": {
+                    "path": str(groups),
+                    "annotations": str(annotation_path(groups, "strict-ac")),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    # No bucket in the test: the local files are kept and the split is generated locally.
+    monkeypatch.setattr("ac_zero.cli.remote_size", lambda name, *, bucket: None)
+
+    assert main(["dataset", "labels", "--config", str(config)]) == 0
+    assert supervised_sidecar(groups, "strict-ac").exists()
+    assert instance_sidecar(groups).exists()
+    assert split_path(groups).exists()  # provisioning generated the split it needs
+
+
 def test_training_callbacks_adds_uploader_only_when_requested(tmp_path: Path) -> None:
     from ac_zero.cli import _training_callbacks
     from ac_zero.training.checkpointing.hub_checkpoints import PeriodicCheckpointUploader
