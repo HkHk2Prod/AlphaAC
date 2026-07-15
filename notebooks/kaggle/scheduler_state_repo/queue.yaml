@@ -32,11 +32,12 @@ tasks:
     moveset: strict-ac
     max_relator_length: 48
     target: 100000000
-    # Every 4 hours the run rewrites both documents and pushes them to the bucket. That
-    # push is the session's only durable output -- /kaggle/working dies with the container
-    # -- so this is how much expansion an interruption may cost, and nothing is written in
-    # between: a checkpoint rewrites the whole ball, and that cost grows with it.
-    checkpoint_hours: 4
+    # Every N hours the run rewrites both documents (in place, no atomic temp) and pushes
+    # them to the bucket. That push is the session's only durable output -- the container
+    # dies with the session -- so this is how much expansion an interruption may cost. No
+    # `output` key: the notebook stages the ball on /kaggle/tmp (60 GB) by default, which
+    # a pinned /kaggle/working path (20 GB) would defeat.
+    checkpoint_hours: 0.5
     workers: 0
 # The length-first grow and the annotation pass that gave it distances. Retired in favour
 # of `ball-main`: its distances were only ever upper bounds (a shortest path can run
