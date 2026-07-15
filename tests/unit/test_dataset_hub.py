@@ -24,34 +24,14 @@ class _Item:
         self.size = size
 
 
-class _EntryNotFoundError(Exception):
-    """Stand-in for `huggingface_hub.errors.EntryNotFoundError`."""
-
-
-class _HfHubHTTPError(Exception):
-    """Stand-in for `huggingface_hub.errors.HfHubHTTPError`."""
-
-
-_errors = types.ModuleType("huggingface_hub.errors")
-_errors.EntryNotFoundError = _EntryNotFoundError  # type: ignore[attr-defined]
-_errors.HfHubHTTPError = _HfHubHTTPError  # type: ignore[attr-defined]
-
-
 def _install_fake(monkeypatch: pytest.MonkeyPatch, tree: list[_Item]) -> dict:
     """Register a fake `huggingface_hub` module; return a call-record dict."""
     record: dict = {}
     module = types.ModuleType("huggingface_hub")
 
-    def list_bucket_tree(bucket: str, recursive: bool = False):  # type: ignore[no-untyped-def]
-        record["list"] = {"bucket": bucket, "recursive": recursive}
-        return list(tree)
-
-    def get_bucket_file_metadata(bucket: str, remote_path: str):  # type: ignore[no-untyped-def]
-        record["metadata"] = {"bucket": bucket, "remote_path": remote_path}
-        for item in tree:
-            if getattr(item, "type", "file") == "file" and item.path == remote_path:
-                return types.SimpleNamespace(size=item.size)
-        raise _errors.EntryNotFoundError(f"{remote_path} not found")
+    def list_bucket_tree(bucket: str, prefix: str | None = None, *, recursive: bool = False):  # type: ignore[no-untyped-def]
+        record["list"] = {"bucket": bucket, "prefix": prefix, "recursive": recursive}
+        return [it for it in tree if prefix is None or it.path.startswith(prefix)]
 
     def batch_bucket_files(bucket: str, add=None, delete=None, copy=None):  # type: ignore[no-untyped-def]
         record["add"] = {"bucket": bucket, "add": add}
@@ -69,14 +49,12 @@ def _install_fake(monkeypatch: pytest.MonkeyPatch, tree: list[_Item]) -> dict:
         record["progress_disabled"] = True
 
     module.list_bucket_tree = list_bucket_tree  # type: ignore[attr-defined]
-    module.get_bucket_file_metadata = get_bucket_file_metadata  # type: ignore[attr-defined]
     module.batch_bucket_files = batch_bucket_files  # type: ignore[attr-defined]
     module.download_bucket_files = download_bucket_files  # type: ignore[attr-defined]
     module.utils = types.SimpleNamespace(  # type: ignore[attr-defined]
         disable_progress_bars=disable_progress_bars
     )
     monkeypatch.setitem(sys.modules, "huggingface_hub", module)
-    monkeypatch.setitem(sys.modules, "huggingface_hub.errors", _errors)
     return record
 
 
@@ -194,12 +172,20 @@ def test_remote_size_returns_bytes_or_none(monkeypatch: pytest.MonkeyPatch) -> N
     assert hub.remote_size("sub") is None  # directory entries are not files
 
 
-def test_remote_size_uses_the_targeted_metadata_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A single per-file metadata request, not a recursive walk of the whole bucket tree.
+def test_remote_size_scopes_tree_listing_to_one_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A prefix-scoped listing, not an unscoped recursive walk of the whole bucket tree.
     record = _install_fake(monkeypatch, [_Item("ball.groups.json", size=1234)])
     assert hub.remote_size("ball.groups.json", bucket="ns/b") == 1234
-    assert record["metadata"] == {"bucket": "ns/b", "remote_path": "ball.groups.json"}
-    assert "list" not in record  # the recursive tree was never listed
+    assert record["list"] == {"bucket": "ns/b", "prefix": "ball.groups.json", "recursive": True}
+
+
+def test_remote_size_ignores_a_prefix_sibling(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A prefix match on a sibling path must not be mistaken for the requested file.
+    _install_fake(
+        monkeypatch,
+        [_Item("ball.groups.json.bak", size=1), _Item("ball.groups.json", size=1234)],
+    )
+    assert hub.remote_size("ball.groups.json") == 1234
 
 
 def test_remote_size_retries_past_a_hung_metadata_call(monkeypatch: pytest.MonkeyPatch) -> None:
