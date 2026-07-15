@@ -134,7 +134,7 @@ def grow_ball(
                 "moveset": config.moveset,
                 "max_relator_length": config.max_relator_length,
                 "target": config.target,
-                "start_groups": len(ball.nodes),
+                "start_groups": len(ball),
                 "complete_depth": ball.complete_depth,
             },
         )
@@ -154,11 +154,11 @@ def grow_ball(
 
         def submit_next() -> bool:
             nonlocal claimed
-            if claimed >= len(ball.nodes):
+            if claimed >= len(ball):
                 return False
-            batch = list(range(claimed, min(claimed + config.batch_size, len(ball.nodes))))
+            batch = list(range(claimed, min(claimed + config.batch_size, len(ball))))
             claimed = batch[-1] + 1
-            inflight.append((batch, pool.submit_batch([ball.nodes[i].presentation for i in batch])))
+            inflight.append((batch, pool.submit_batch([ball.presentation(i) for i in batch])))
             return True
 
         def refill() -> None:
@@ -188,7 +188,7 @@ def grow_ball(
                     {
                         "added": added,
                         "target": config.target,
-                        "groups": len(ball.nodes),
+                        "groups": len(ball),
                         "complete_depth": ball.complete_depth,
                         "distance": ball.max_distance(),
                     },
@@ -200,11 +200,11 @@ def grow_ball(
                 ball.write(groups_path, annotations_path)
                 next_checkpoint = time.monotonic() + checkpoint_s
                 if progress is not None:
-                    progress("checkpoint", {"groups": len(ball.nodes), "added": added})
+                    progress("checkpoint", {"groups": len(ball), "added": added})
 
     ball.write(groups_path, annotations_path)
     report = BallReport(
-        total=len(ball.nodes),
+        total=len(ball),
         added=added,
         expanded=expanded,
         complete_depth=ball.complete_depth,

@@ -8,6 +8,7 @@ network access and no real `huggingface_hub` install is required.
 from __future__ import annotations
 
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -219,3 +220,63 @@ def test_missing_dependency_raises_install_hint(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setitem(sys.modules, "huggingface_hub", None)
     with pytest.raises(RuntimeError, match="pip install ac-zero\\[hub\\]"):
         hub.remote_exists("train_rank2.json")
+
+
+def _fast_retry(
+    monkeypatch: pytest.MonkeyPatch, *, timeout: float = 0.2, attempts: int = 3
+) -> None:
+    """Shrink the download deadline/backoff so a hang test runs in a fraction of a second."""
+    monkeypatch.setattr(hub, "_DOWNLOAD_TIMEOUT_S", timeout)
+    monkeypatch.setattr(hub, "_DOWNLOAD_ATTEMPTS", attempts)
+    monkeypatch.setattr(hub, "_DOWNLOAD_BACKOFF_S", 0.0)
+
+
+def test_download_retries_past_a_hung_transfer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A transfer that overruns its deadline is abandoned and the next attempt succeeds."""
+    _fast_retry(monkeypatch)
+    target = tmp_path / "train_rank2.json"
+    calls = {"n": 0}
+
+    def flaky(remote_name, local_path, bucket, missing_ok):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            time.sleep(10)  # first attempt "hangs" past the 0.2s deadline
+        Path(local_path).write_text("{}", encoding="utf-8")
+        return Path(local_path)
+
+    monkeypatch.setattr(hub, "_download_once", flaky)
+    result = hub.download_file("train_rank2.json", target)
+
+    assert result == target
+    assert target.is_file()
+    assert calls["n"] == 2  # the hung first attempt, then a clean retry
+
+
+def test_download_raises_when_every_attempt_hangs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A transfer that never responds fails fast instead of blocking the caller forever."""
+    _fast_retry(monkeypatch, attempts=2)
+    monkeypatch.setattr(hub, "_download_once", lambda *a, **k: time.sleep(10))
+
+    with pytest.raises(TimeoutError, match="not responding"):
+        hub.download_file("train_rank2.json", tmp_path / "x.json")
+
+
+def test_download_propagates_fetch_errors_without_retrying(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An error the fetch itself raises (e.g. a missing required object) is not retried."""
+    _fast_retry(monkeypatch)
+    calls = {"n": 0}
+
+    def boom(*args, **kwargs):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        raise FileNotFoundError("absent")
+
+    monkeypatch.setattr(hub, "_download_once", boom)
+    with pytest.raises(FileNotFoundError):
+        hub.download_file("train_rank2.json", tmp_path / "x.json")
+    assert calls["n"] == 1  # propagated on the first attempt, not retried three times
