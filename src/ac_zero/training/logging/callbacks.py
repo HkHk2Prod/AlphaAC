@@ -28,6 +28,9 @@ __all__ = [
 ]
 
 # Metrics the training graph sink tracks; small enough to render as ASCII bars.
+# The list spans both kinds of run -- the RL backends emit the self-play series and
+# the supervised run the ``val_*`` ones. A metric a run never emits records no values
+# and is simply left out of its graphs, so neither kind shows the other's rows.
 _TRAINING_GRAPH_METRICS = (
     "total_loss",
     "policy_loss",
@@ -36,6 +39,11 @@ _TRAINING_GRAPH_METRICS = (
     "episodes",
     "mean_return",
     "success_rate",
+    # Supervised: the per-epoch validation scores, led by the descent accuracy the
+    # run selects its best checkpoint on.
+    "val_descent_accuracy",
+    "val_mean_delta",
+    "val_policy_loss",
 )
 
 

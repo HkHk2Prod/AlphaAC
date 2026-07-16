@@ -41,4 +41,4 @@ training:
   grad_clip: 1.0
   eval_batches: 32
   checkpoint_every: 1
-  run_directory: runs/train/supervised_large
+  run_directory: runs/train/supervised_rel48_100m

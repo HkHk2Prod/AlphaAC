@@ -155,7 +155,7 @@ class TransformerPolicyValueModel(TrainablePolicyValueModel):
     This is the architecture the supervised stage scales up: ``embed_dim``,
     ``ff_dim``, ``num_layers`` and ``num_heads`` are the knobs that take it from the
     few-thousand-parameter CPU baseline to the ~100M-parameter model trained
-    directly on the dataset (see ``configs/experiments/supervised_large.yaml``).
+    directly on the dataset (see ``configs/experiments/supervised_rel48_100m.yaml``).
     """
 
     architecture = "transformer"

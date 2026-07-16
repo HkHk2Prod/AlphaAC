@@ -305,14 +305,18 @@ probability taken from the moves that descend). The value head is regressed on
 `2 * gamma**distance - 1` at the same time, so a pretrained critic is worth
 something to an RL run rather than starting from noise.
 
-The two intended uses are the two committed configs:
+The committed configs are one ladder over the same `rel48` rank-2 ball, named for the
+model they train — `_pretrain` (0.8M), `_2m`, `_14m`, `_100m`. The first is meant as an
+RL warm start; the rest scale up towards using the model as the solver outright:
 
 ```bash
-# 1. Pretrain a small model, then fine-tune it with RL
-uv run --frozen aczero train --config configs/experiments/supervised_pretrain.yaml
+# Pretrain a small model, then fine-tune it with RL
+uv run --frozen aczero train --config configs/experiments/supervised_rel48_pretrain.yaml
 
-# 2. Train a ~99M-parameter transformer to be the solver outright (wants a GPU)
-uv run --frozen aczero train --config configs/experiments/supervised_large.yaml
+# Scale up: 2.2M runs on a CPU, 14.2M and 99.2M want a GPU
+uv run --frozen aczero train --config configs/experiments/supervised_rel48_2m.yaml
+uv run --frozen aczero train --config configs/experiments/supervised_rel48_14m.yaml
+uv run --frozen aczero train --config configs/experiments/supervised_rel48_100m.yaml
 ```
 
 Both need the group file, its annotations, and a split, and a supervised run
@@ -337,8 +341,8 @@ Rather than pay that cost inside the first `train`, precompute it ahead of the r
 `dataset labels`, which provisions the dataset and builds both sidecars for a config —
 
 ```bash
-uv run --frozen aczero dataset labels --config configs/experiments/supervised_large.yaml
-uv run --frozen aczero train         --config configs/experiments/supervised_large.yaml
+uv run --frozen aczero dataset labels --config configs/experiments/supervised_rel48_100m.yaml
+uv run --frozen aczero train         --config configs/experiments/supervised_rel48_100m.yaml
 ```
 
 The prebuild is a one-time step per dataset: once its sidecars exist, that `train` and
@@ -351,7 +355,7 @@ AlphaZero/PPO config at the checkpoint it produced:
 
 ```yaml
 training:
-  warm_start: runs/train/supervised_pretrain/model_checkpoint/best.json
+  warm_start: runs/train/supervised_rel48_pretrain/model_checkpoint/best.json
 ```
 
 Each epoch is `training.optimizer_updates` minibatches of Adam, scored afterwards
