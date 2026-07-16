@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,33 @@ def test_scheduler_notebook_jobs_stop_in_time_to_flush_their_output() -> None:
     assert '"--minutes", str(JOB_BUDGET_MIN)' not in source
     assert '"--minutes", str(budget_min(TRAIN_FLUSH_MARGIN_MIN))' in source
     assert '"--minutes", str(budget_min(BALL_FLUSH_MARGIN_MIN))' in source
+
+
+def test_scheduler_notebook_train_margin_covers_an_iteration_as_well_as_the_flush() -> None:
+    """Training's margin must absorb the overshoot before the flush, not just the flush.
+
+    The budget is only noticed at an iteration boundary, so the iteration in flight when
+    it expires runs to completion first. At 10 min the margin was smaller than a single
+    PPO iteration: the overshoot ate it and the checkpoint write was terminated.
+    """
+    source = _code_source(_load(SCHEDULER_NOTEBOOK))
+    match = re.search(r"^TRAIN_FLUSH_MARGIN_MIN = (\d+)", source, re.MULTILINE)
+    assert match, "scheduler notebook no longer sets TRAIN_FLUSH_MARGIN_MIN"
+    assert int(match.group(1)) >= 25
+
+
+def test_scheduler_notebook_delegates_the_job_run_to_the_tested_runner() -> None:
+    """The exit classification lives in JobRunner, where it is unit-tested.
+
+    Inline in the cell it was untestable, and it silently reported every deadline-stopped
+    run as failed (the job's -SIGTERM read as a job error).
+    """
+    source = _code_source(_load(SCHEDULER_NOTEBOOK))
+    assert "from ac_zero.scheduler.job import JobRunner" in source
+    assert "JobRunner(COMMAND, stop_event=stop_event, deadline_hit=deadline_hit).run()" in source
+    # The cell must not second-guess the runner by re-reading the return code itself.
+    assert "proc.terminate()" not in source
+    assert "job exited with code" not in source
 
 
 def test_scheduler_notebook_ball_and_training_push_on_a_timed_cadence() -> None:
