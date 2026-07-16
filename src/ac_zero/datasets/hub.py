@@ -57,15 +57,6 @@ def _hub() -> Any:
     return huggingface_hub
 
 
-def _hub_errors() -> Any:
-    """The ``huggingface_hub.errors`` module, imported lazily like :func:`_hub`."""
-    try:
-        import huggingface_hub.errors as errors
-    except ImportError as exc:
-        raise RuntimeError(_INSTALL_HINT) from exc
-    return errors
-
-
 def _disable_progress_bars(hub: Any) -> None:
     """Turn off the hub's per-file transfer bars.
 
@@ -89,23 +80,22 @@ def remote_exists(remote_name: str, *, bucket: str = DEFAULT_BUCKET) -> bool:
 
 
 def _remote_size_once(remote_name: str, bucket: str) -> int | None:
-    """One metadata fetch for a single bucket path; ``None`` when it is absent.
+    """The real byte size of a single bucket path; ``None`` when it is absent.
 
-    Uses the per-file metadata endpoint rather than walking the whole bucket tree: the
-    bucket also holds every run's checkpoint tree, so a recursive listing is slow and,
-    with no deadline, can wedge a run at startup. This asks only about the one path.
+    Lists the tree scoped to ``remote_name`` rather than walking the whole bucket (the
+    bucket also holds every run's checkpoint tree, so an unscoped recursive listing is
+    slow and, with no deadline, can wedge a run at startup) and rather than the per-file
+    metadata endpoint. ``get_bucket_file_metadata`` reads ``Content-Length`` from the
+    resolve endpoint, which for a Xet-backed file is the size of the ~1 KB Xet pointer,
+    not the reconstructed file -- so a 29 GB dataset reports ~1 KB and every freshness
+    check sees a mismatch and re-downloads. The tree listing carries the true object
+    size, and a ``prefix`` scopes it to the one path so it stays as cheap as a single
+    metadata fetch.
     """
-    hub = _hub()
-    errors = _hub_errors()
-    try:
-        meta = hub.get_bucket_file_metadata(bucket, remote_name)
-    except errors.EntryNotFoundError:
-        return None
-    except errors.HfHubHTTPError as exc:
-        if getattr(getattr(exc, "response", None), "status_code", None) == 404:
-            return None
-        raise
-    return int(meta.size)
+    for item in _hub().list_bucket_tree(bucket, prefix=remote_name, recursive=True):
+        if getattr(item, "type", "file") == "file" and item.path == remote_name:
+            return int(item.size)
+    return None
 
 
 def remote_size(remote_name: str, *, bucket: str = DEFAULT_BUCKET) -> int | None:

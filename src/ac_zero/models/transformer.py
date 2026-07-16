@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 from ac_zero.models.batch import EncodedBatch
 from ac_zero.models.features import vocabulary_size
@@ -104,18 +105,38 @@ class _TransformerTrunk(nn.Module):
     rather than softmaxing a row of ``-inf``.
     """
 
-    def __init__(self, vocab: int, embed_dim: int, ff_dim: int, layers: int, heads: int) -> None:
+    def __init__(
+        self,
+        vocab: int,
+        embed_dim: int,
+        ff_dim: int,
+        layers: int,
+        heads: int,
+        grad_checkpoint: bool = False,
+    ) -> None:
         super().__init__()
         self.embedding = nn.Embedding(vocab, embed_dim, padding_idx=0)
         self.blocks = nn.ModuleList(_EncoderBlock(embed_dim, ff_dim, heads) for _ in range(layers))
+        # Recompute each block's activations during backward instead of storing them.
+        # A deep, wide trunk is activation-bound long before it is parameter-bound, so
+        # this is what lets the ~100M-parameter config train at a real batch size on a
+        # 16 GB GPU; it costs a second forward per block, so it stays off by default and
+        # the large supervised config opts in.
+        self._grad_checkpoint = grad_checkpoint
 
     def forward(self, batch: EncodedBatch) -> torch.Tensor:
         size = batch.size
         mask = batch.mask.reshape(size, -1)
         mask = mask | ~mask.any(dim=1, keepdim=True)
         x = self.embedding(batch.tokens.reshape(size, -1))
+        # Checkpointing only earns its recompute when a graph is being built for backward;
+        # under `no_grad` inference it would recompute for nothing, so gate on grad state.
+        checkpointing = self._grad_checkpoint and torch.is_grad_enabled()
         for block in self.blocks:
-            x = block(x, mask)
+            if checkpointing:
+                x = checkpoint(block, x, mask, use_reentrant=False)
+            else:
+                x = block(x, mask)
         weights = mask.unsqueeze(-1).to(x.dtype)
         pooled: torch.Tensor = (x * weights).sum(dim=1) / weights.sum(dim=1)
         return pooled
@@ -148,6 +169,7 @@ class TransformerPolicyValueModel(TrainablePolicyValueModel):
         ff_dim: int = 16,
         num_layers: int = 2,
         num_heads: int = 1,
+        grad_checkpoint: int = 0,
     ) -> None:
         super().__init__(
             seed=seed,
@@ -156,6 +178,9 @@ class TransformerPolicyValueModel(TrainablePolicyValueModel):
             ff_dim=ff_dim,
             num_layers=num_layers,
             num_heads=num_heads,
+            # A 0/1 flag rather than a size, but it rides the same `model_config` channel
+            # and so is stored and serialized alongside the other hyperparameters.
+            grad_checkpoint=grad_checkpoint,
         )
 
     def _build_trunk(self, batch: EncodedBatch) -> tuple[nn.Module, int]:
@@ -166,5 +191,6 @@ class TransformerPolicyValueModel(TrainablePolicyValueModel):
             self._hp["ff_dim"],
             self._hp["num_layers"],
             self._hp["num_heads"],
+            grad_checkpoint=bool(self._hp.get("grad_checkpoint", 0)),
         )
         return trunk, embed

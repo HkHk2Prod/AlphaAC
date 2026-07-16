@@ -20,6 +20,11 @@ model_config:
   ff_dim: 3072
   num_layers: 14
   num_heads: 12
+  # Recompute each block's activations in the backward pass instead of holding all 14
+  # blocks' intermediates at once. At batch_size 256 the stored activations otherwise
+  # dwarf the ~16 GB of a Kaggle GPU; checkpointing trades a ~25% slower step for fitting
+  # the real batch size. Costs nothing at inference (gated on the backward graph).
+  grad_checkpoint: true
 dataset:
   path: data/generated/ball_rank2_rel48.groups.json
   annotations: data/generated/ball_rank2_rel48.strict-ac.annotations.json
