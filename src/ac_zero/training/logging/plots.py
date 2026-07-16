@@ -18,13 +18,19 @@ class PlotSpec:
 
 
 # The figures rendered after a run. The fields match the per-update metric rows
-# the training pipeline records, so plotting needs no extra bookkeeping.
+# the training pipeline records, so plotting needs no extra bookkeeping. The specs
+# span both kinds of run: a figure whose series are all absent from the rows is
+# skipped, so an RL run writes no validation figure and a supervised run no
+# self-play one.
 TRAINING_PLOTS: tuple[PlotSpec, ...] = (
     PlotSpec(
         "loss_curves.png",
         "Training loss",
         "optimizer_step",
-        ("total_loss", "policy_loss", "value_loss"),
+        # The supervised run's validation losses share the axis with the training
+        # losses they are meant to be read against -- the gap between them is the
+        # point.
+        ("total_loss", "policy_loss", "value_loss", "val_policy_loss", "val_value_loss"),
         ylabel="loss",
     ),
     PlotSpec(
@@ -32,6 +38,12 @@ TRAINING_PLOTS: tuple[PlotSpec, ...] = (
         "Self-play progress",
         "optimizer_step",
         ("mean_return", "success_rate"),
+    ),
+    PlotSpec(
+        "validation.png",
+        "Validation (supervised)",
+        "optimizer_step",
+        ("val_descent_accuracy", "val_mean_delta", "val_unknown_rate"),
     ),
 )
 

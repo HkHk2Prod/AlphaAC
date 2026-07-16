@@ -35,10 +35,37 @@ _ROWS = [
 def test_render_training_plots_writes_expected_pngs(tmp_path: Path) -> None:
     paths = render_training_plots(_ROWS, tmp_path)
     names = {path.name for path in paths}
+    # An RL run carries no `val_*` series, so it gets no supervised validation figure.
     assert names == {"loss_curves.png", "selfplay_progress.png"}
     for path in paths:
         # A real PNG file with content, written under the requested directory.
         assert path.parent == tmp_path
+        assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+_SUPERVISED_ROWS = [
+    {
+        "optimizer_step": 100 * step,
+        "total_loss": 2.5 - step,
+        "policy_loss": 2.4 - step,
+        "value_loss": 0.1,
+        "val_policy_loss": 2.6 - step,
+        "val_descent_accuracy": 0.2 * step,
+        "val_mean_delta": -0.2 * step,
+        "val_unknown_rate": 0.05,
+    }
+    for step in (1, 2, 3)
+]
+
+
+def test_render_training_plots_draws_the_supervised_validation_curves(tmp_path: Path) -> None:
+    # A supervised run has no self-play, so that figure is skipped -- but its
+    # validation scores (what the run picks its best checkpoint on) get a figure,
+    # and its validation loss shares the axis with the training loss.
+    paths = render_training_plots(_SUPERVISED_ROWS, tmp_path)
+    names = {path.name for path in paths}
+    assert names == {"loss_curves.png", "validation.png"}
+    for path in paths:
         assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 

@@ -19,6 +19,11 @@ from ac_zero.training.logging.events import LogLevel, TrainingEvent
 # iteration line so a bundled summary reports return, success, and loss together.
 _LOSS_KEYS = ("total_loss", "policy_loss", "value_loss")
 
+# The phases that carry an ``iteration`` metric and so get a bundled progress line,
+# mapped to the label that names the unit they count: RL self-play iterations and
+# supervised epochs are the same kind of event on the console.
+_ITERATION_PHASES = {"self_play": "iter", "epoch": "epoch"}
+
 # The subset of each milestone phase's metrics worth showing on its console line;
 # the rest (histograms, per-component breakdowns) stay in the JSONL record.
 _MILESTONE_FIELDS: dict[str, tuple[str, ...]] = {
@@ -26,13 +31,21 @@ _MILESTONE_FIELDS: dict[str, tuple[str, ...]] = {
     # Show where episodes start from: `source` (dataset vs scramble) plus, for a
     # grown dataset, how many groups are in play -- so the terminal confirms a run
     # is seeded from the HF dataset rather than random scrambles.
-    "dataset": ("source", "groups_used", "annotated"),
+    # The supervised run describes the same event with its own keys -- the labelled
+    # group count and the split sizes it will train, score, and test on.
+    "dataset": ("source", "groups_used", "annotated", "groups", "train", "val", "test"),
     "navigation": ("success_rate", "progress_rate", "alpha"),
     "curriculum": ("L_max", "frontier_episode_fraction"),
     "length_cap": ("L_max", "direction", "max_moves"),
     "budget": ("iteration",),
     "certificate": ("certificate_verified",),
     "completed": ("optimizer_updates", "replay_size", "total_loss"),
+    # The supervised run's non-epoch milestones: the sidecar build (minutes of
+    # streaming before the first epoch), the model it trained, and the single
+    # touch of the held-out test split.
+    "sidecar": ("groups", "file", "workers"),
+    "model": ("parameters",),
+    "test": ("test_descent_accuracy", "test_mean_delta", "test_policy_loss", "test_groups"),
 }
 
 # Milestones important enough to surface even at the ``quiet`` level: the run's
@@ -78,16 +91,17 @@ class ConsoleSummaryLogger:
             return self._start_report(event)
         if not self._iterations:
             return self._milestone(event) if event.phase in _QUIET_MILESTONES else None
-        if event.phase == "self_play" and "iteration" in event.metrics:
+        if event.phase in _ITERATION_PHASES and "iteration" in event.metrics:
             return self._iteration_line(event)
         if event.phase in _MILESTONE_FIELDS:
             return self._milestone(event)
         return None
 
     def _iteration_line(self, event: TrainingEvent) -> str:
-        """Bundle one iteration's episodes into a single return/success/loss line."""
+        """Bundle one iteration's episodes (or one supervised epoch) into a single line."""
         metrics = event.metrics
-        parts = [f"iter {int(metrics['iteration']):>5}"]
+        label = _ITERATION_PHASES[event.phase]
+        parts = [f"{label} {int(metrics['iteration']):>5}"]
         if "episodes" in metrics:
             parts.append(f"eps={int(metrics['episodes'])}")
         if "mean_return" in metrics:
@@ -96,10 +110,18 @@ class ConsoleSummaryLogger:
             parts.append(f"success={float(metrics['success_rate']):.2f}")
         if "total_loss" in self._loss:
             parts.append(f"loss={self._loss['total_loss']:.4f}")
+        # The supervised run has no return or success rate to report: its epoch is scored
+        # on the validation split, so its line carries the validation metrics instead.
+        if "val_descent_accuracy" in metrics:
+            parts.append(f"val_acc={float(metrics['val_descent_accuracy']):.3f}")
+        if "val_policy_loss" in metrics:
+            parts.append(f"val_loss={float(metrics['val_policy_loss']):.4f}")
         if "replay_size" in metrics:
             parts.append(f"replay={int(metrics['replay_size'])}")
         elif "examples" in metrics:
             parts.append(f"examples={int(metrics['examples'])}")
+        elif "optimizer_step" in metrics:
+            parts.append(f"steps={int(metrics['optimizer_step'])}")
         # The run's dynamic learning parameters, folded onto the same line so their
         # current value is visible every iteration: the navigation shaping weight
         # ``alpha`` and the distance curriculum's ceiling ``L_max`` (each present

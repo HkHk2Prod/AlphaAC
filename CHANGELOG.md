@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **The supervised run is no longer silent.** It emitted a per-epoch event all along, but
+  nothing rendered it: at the default `summary` verbosity the terminal sink is muted and
+  `ConsoleSummaryLogger` only recognised RL's `self_play` iteration line plus a fixed list
+  of milestone phases, and `epoch` was in neither — so an SL run printed its start banner
+  and then nothing at all until the final graph, however many hours later. `self_play` and
+  `epoch` now share the bundled progress line, rendered with the metrics the run actually
+  has (validation accuracy and loss, not return and replay size), and `sidecar`, `model`,
+  `test`, and the supervised `dataset` event get their own milestone lines. The sidecar
+  build is the one that mattered most: on a large ball it runs for minutes before the first
+  epoch, and with nothing on the terminal it read as a hang.
+- **The supervised graphs show what the run is scored on.** The graph metrics and plot
+  specs were RL-shaped, so an SL run graphed only its three training losses — while
+  `val_descent_accuracy`, the score it selects its best checkpoint on, appeared in no graph
+  at all. The validation scores now get an ASCII series and a `validation.png`, and the
+  validation loss shares `loss_curves.png` with the training loss it is meant to be read
+  against. Both lists are shared between the two kinds of run: a series a run never emits
+  is simply left out of its graphs, so RL writes no validation figure and SL no self-play
+  one.
+- **A supervised run reports its own failure.** `execute()` wrapped the run in a bare
+  `finally: close()` with no `except`, so unlike the RL pipeline a crash mid-epoch closed
+  the logs and reached the user as a bare traceback, with nothing in the event log saying
+  the run had failed. It now emits an `error` event and re-raises.
 - **The supervised configs are a ladder, named for the model.**
   `supervised_pretrain.yaml` and `supervised_large.yaml` become
   `supervised_rel48_pretrain.yaml` (0.8M) and `supervised_rel48_100m.yaml` (99.2M), joined

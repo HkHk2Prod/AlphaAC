@@ -278,6 +278,9 @@ class _SupervisedRun:
                 final_graph_path=str(self.dirs.artifacts / "final_graphs.txt"),
                 plot_paths=plots,
             )
+        except Exception as exc:
+            self.manager.emit_error("error", "supervised pipeline failed", exc)
+            raise
         finally:
             self.manager.close()
 
