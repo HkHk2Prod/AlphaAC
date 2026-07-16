@@ -69,6 +69,35 @@ def test_checkpoint_round_trip_is_exact(name: str) -> None:
     assert before.value == pytest.approx(after.value)
 
 
+def test_transformer_grad_checkpointing_matches_plain_path() -> None:
+    """Checkpointing recomputes activations; the logits, values, and grads are unchanged."""
+    encoding, _, action_count, _ = _fixture()
+    encodings = [encoding] * 4
+    outputs = []
+    first_grads = []
+    for grad_checkpoint in (0, 1):
+        model = create_trainable_model("transformer", seed=0, grad_checkpoint=grad_checkpoint)
+        logits, values = model.forward(model.encode(encodings), action_count)
+        (logits.pow(2).mean() + values.pow(2).mean()).backward()
+        params = model.parameters()
+        outputs.append((logits.detach().numpy(), values.detach().numpy()))
+        first_grads.append(params[0].grad.numpy().copy())
+
+    assert model._net.trunk._grad_checkpoint is True  # the flag reached the trunk
+    assert np.allclose(outputs[0][0], outputs[1][0], atol=1e-6)
+    assert np.allclose(outputs[0][1], outputs[1][1], atol=1e-6)
+    assert np.allclose(first_grads[0], first_grads[1], atol=1e-6)
+
+
+def test_transformer_grad_checkpoint_flag_survives_serialization() -> None:
+    encoding, mask, _, target = _fixture()
+    model = create_trainable_model("transformer", seed=0, grad_checkpoint=1)
+    example = _Example(encoding, mask, target, 0.5)
+    model.train_batch([example], learning_rate=0.1, value_loss_weight=1.0)
+    restored = model_from_json(model.to_json())
+    assert restored.to_json()["hyperparameters"]["grad_checkpoint"] == 1
+
+
 def test_deepsets_is_permutation_invariant() -> None:
     instance = generate_solvable(rank=2, depth=2, seed=4)
     presentation = instance.presentation
