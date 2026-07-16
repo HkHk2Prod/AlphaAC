@@ -1,0 +1,40 @@
+# A ~14M-parameter transformer on the dataset's descent labels -- the middle rung between
+# supervised_rel48_2m.yaml and the 99M supervised_rel48_100m.yaml.
+#
+# Sizing (rank 2, 12 strict-AC actions): 8 blocks of d=384 / ff=1536 / 6 heads is 14.2M
+# parameters. The run logs the exact count under the `model` event.
+#
+# This wants a GPU. `device: auto` takes one when the machine has it (Kaggle) and falls
+# back to the CPU otherwise, where it will be slow but correct. At this width the stored
+# activations fit a 16 GB GPU at batch_size 256, so gradient checkpointing is left off.
+rank: 2
+agent: supervised
+model: transformer
+moveset: strict-ac
+# The relator bound: the longest relator a group may carry. It is the encoder's grid
+# width, the length bound the environment masks moves by, and the bound the dataset was
+# grown under -- one number, because they have to be the same number. The run is refused
+# on a dataset generated under any other.
+max_relator_tokens: 48
+model_config:
+  embed_dim: 384
+  ff_dim: 1536
+  num_layers: 8
+  num_heads: 6
+dataset:
+  path: data/generated/ball_rank2_rel48.groups.json
+  annotations: data/generated/ball_rank2_rel48.strict-ac.annotations.json
+  split: data/generated/ball_rank2_rel48.split.json
+training:
+  device: auto
+  iterations: 150           # epochs
+  optimizer_updates: 500    # minibatches per epoch
+  batch_size: 256
+  learning_rate: 0.0004
+  value_loss_weight: 0.5
+  gamma: 0.99               # sets the value target: 2 * gamma**distance - 1
+  target_temperature: 1.0
+  grad_clip: 1.0
+  eval_batches: 32
+  checkpoint_every: 1
+  run_directory: runs/train/supervised_rel48_14m

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The supervised configs are a ladder, named for the model.**
+  `supervised_pretrain.yaml` and `supervised_large.yaml` become
+  `supervised_rel48_pretrain.yaml` (0.8M) and `supervised_rel48_100m.yaml` (99.2M), joined
+  by `supervised_rel48_2m.yaml` (2.2M, CPU-usable) and `supervised_rel48_14m.yaml` (14.2M).
+  The old pair named a role and a vibe; the rung between "underfits" and "wants a GPU" had
+  nothing in it, and neither name said which ball it was cut for.
 - **`dataset ball` checkpoints on the clock, and a checkpoint is a push.** The interval
   is now `--checkpoint-hours` (default 4) instead of a group count: what a checkpoint
   buys is a bound on the *work* an interruption can destroy, which is measured in time,
