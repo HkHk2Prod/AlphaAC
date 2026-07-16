@@ -43,7 +43,9 @@ from ac_zero.datasets.digest_index import (
 )
 from ac_zero.datasets.json_stream import iter_json_array
 
-SCHEMA_VERSION = "aczero-instances-v1"
+# v2 stores `hash_prefixes` in native byte order (see `digest_index.prefixes`); a v1
+# sidecar's big-endian column would keep every distance lookup on the O(n) path.
+SCHEMA_VERSION = "aczero-instances-v2"
 # Relator letters are signed generator indices, so an int8 column holds any rank a
 # balanced presentation could realistically use.
 _MAX_RANK = 127

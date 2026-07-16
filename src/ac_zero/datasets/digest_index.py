@@ -6,8 +6,9 @@ strings costs hundreds of bytes per entry on the heap; these columns cost 32. Th
 digests are sorted by their leading 8 bytes, so a whole query array resolves in one
 vectorized binary search and the full 32 bytes settle the rare prefix collision.
 
-Stored big-endian: integer order over the 8-byte prefix is then identical to
+Read big-endian: integer order over the 8-byte prefix is then identical to
 lexicographic byte order, so the sort a binary search needs is the natural one.
+The prefixes are *stored* in native byte order, though -- see :func:`prefixes`.
 """
 
 from __future__ import annotations
@@ -31,8 +32,19 @@ def digest_array(digests: bytearray | bytes) -> NDArray[np.uint8]:
 
 
 def prefixes(digests: NDArray[np.uint8]) -> NDArray[np.uint64]:
-    """View each digest's leading 8 bytes as a big-endian integer."""
-    return np.ascontiguousarray(digests[:, :8]).view(">u8").ravel()
+    """Read each digest's leading 8 bytes as a big-endian integer, stored natively.
+
+    The big-endian *interpretation* is what makes integer order match lexicographic
+    byte order, but the result is cast to native ``uint64`` rather than left as a
+    ``>u8`` view. Only the byte order of the storage changes; every value, and so
+    the sort order, is identical.
+
+    That cast is not cosmetic. NumPy has no fast path for a byte-swapped array, so
+    `searchsorted` against a ``>u8`` column silently degrades from an O(log n)
+    binary search into an O(n) pass that byteswaps the whole column on every call
+    -- 228 ms per lookup on a 16M-group ball, against 3 us here.
+    """
+    return np.ascontiguousarray(digests[:, :8]).view(">u8").ravel().astype(np.uint64)
 
 
 def sorted_lookup(

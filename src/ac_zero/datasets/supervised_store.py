@@ -58,7 +58,9 @@ from ac_zero.system.parallel import describe_worker_pool, imap_ordered, resolve_
 ProgressCallback = Callable[[str, dict[str, Any]], None]
 _LOG_EVERY = 1_000_000
 
-SCHEMA_VERSION = "aczero-supervised-v1"
+# v2 stores `hash_prefixes` in native byte order (see `digest_index.prefixes`); a v1
+# sidecar's big-endian column would keep every distance lookup on the O(n) path.
+SCHEMA_VERSION = "aczero-supervised-v2"
 # No neighbour distance is known for this move: its child is outside the grown region
 # (or the group's own distance is unknown). Distinct from any real delta.
 DELTA_UNKNOWN = np.iinfo(np.int16).min
