@@ -17,10 +17,21 @@ import yaml  # type: ignore[import-untyped]
 from ac_zero.scheduler.backend import StateBackend, StateConflict
 from ac_zero.scheduler.models import Lease, Queue, SchedulerState, utc_now
 
-QUEUE_PATH = "queue.yaml"
-STATE_PATH = "scheduler_state.json"
-LEASE_PATH = "locks/scheduler_lease.json"
-RUNTIME_CONFIG_LATEST = "runtime_configs/latest/runtime_config.json"
+# All scheduler state lives under one bucket folder, kept apart from the datasets
+# and model checkpoints that share the bucket.
+QUEUE_PREFIX = "queue"
+QUEUE_PATH = f"{QUEUE_PREFIX}/queue.yaml"
+STATE_PATH = f"{QUEUE_PREFIX}/scheduler_state.json"
+LEASE_PATH = f"{QUEUE_PREFIX}/locks/scheduler_lease.json"
+RUNTIME_CONFIG_LATEST = f"{QUEUE_PREFIX}/runtime_configs/latest/runtime_config.json"
+RUNS_DIR = f"{QUEUE_PREFIX}/runs"
+# The most recent run record, overwritten each heartbeat for a quick "what's live" read.
+LATEST_RUN_PATH = f"{RUNS_DIR}/latest.json"
+
+
+def run_path(run_id: str) -> str:
+    """The bucket path of one run's status/heartbeat record: ``queue/runs/<run_id>.json``."""
+    return f"{RUNS_DIR}/{run_id}.json"
 
 
 class StateError(RuntimeError):
@@ -158,8 +169,11 @@ class LeaseError(RuntimeError):
 
 
 __all__ = [
+    "LATEST_RUN_PATH",
     "LEASE_PATH",
     "QUEUE_PATH",
+    "QUEUE_PREFIX",
+    "RUNS_DIR",
     "RUNTIME_CONFIG_LATEST",
     "STATE_PATH",
     "LeaseError",
@@ -167,4 +181,5 @@ __all__ = [
     "StateConflict",
     "StateError",
     "StateStore",
+    "run_path",
 ]

@@ -15,6 +15,7 @@ import pytest
 import ac_zero.scheduler.backend as backend
 from ac_zero.scheduler import notebook as nb
 from ac_zero.scheduler.backend import MemoryStateBackend
+from ac_zero.scheduler.store import QUEUE_PATH
 
 
 def test_load_runtime_config_reads_file(tmp_path: Path) -> None:
@@ -86,8 +87,8 @@ def test_reporter_started_and_finished_publish_run_files(monkeypatch: pytest.Mon
     reporter, mem = _reporter(monkeypatch)
     reporter.started()
     reporter.finished(status="failed", error="boom")
-    run_file = mem.read_text("runs/r1.json")
-    latest = mem.read_text("runs/latest.json")
+    run_file = mem.read_text("queue/runs/r1.json")
+    latest = mem.read_text("queue/runs/latest.json")
     assert run_file is not None and latest is not None
     record = json.loads(latest)
     assert record["status"] == "failed" and record["error"] == "boom"
@@ -96,18 +97,18 @@ def test_reporter_started_and_finished_publish_run_files(monkeypatch: pytest.Mon
 
 
 def test_should_stop_true_when_task_inactive(monkeypatch: pytest.MonkeyPatch) -> None:
-    reporter, _ = _reporter(monkeypatch, {"queue.yaml": "tasks:\n  - id: gen\n    active: false\n"})
+    reporter, _ = _reporter(monkeypatch, {QUEUE_PATH: "tasks:\n  - id: gen\n    active: false\n"})
     assert reporter.should_stop() is True
 
 
 def test_should_stop_true_on_stop_after_current_iteration(monkeypatch: pytest.MonkeyPatch) -> None:
     body = "tasks:\n  - id: gen\n    active: true\n    stop_after_current_iteration: true\n"
-    reporter, _ = _reporter(monkeypatch, {"queue.yaml": body})
+    reporter, _ = _reporter(monkeypatch, {QUEUE_PATH: body})
     assert reporter.should_stop() is True
 
 
 def test_should_stop_false_when_active(monkeypatch: pytest.MonkeyPatch) -> None:
-    reporter, _ = _reporter(monkeypatch, {"queue.yaml": "tasks:\n  - id: gen\n    active: true\n"})
+    reporter, _ = _reporter(monkeypatch, {QUEUE_PATH: "tasks:\n  - id: gen\n    active: true\n"})
     assert reporter.should_stop() is False
 
 

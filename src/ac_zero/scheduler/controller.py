@@ -23,7 +23,13 @@ from ac_zero.scheduler.runtime import (
     patch_kernel_metadata,
 )
 from ac_zero.scheduler.selection import Decision, run_is_live, select_launches
-from ac_zero.scheduler.store import RUNTIME_CONFIG_LATEST, Snapshot, StateConflict, StateStore
+from ac_zero.scheduler.store import (
+    RUNTIME_CONFIG_LATEST,
+    Snapshot,
+    StateConflict,
+    StateStore,
+    run_path,
+)
 
 Logger = Callable[[str], None]
 MAX_DECISION_HISTORY = 20
@@ -104,7 +110,7 @@ def _reconcile(
 
 
 def _read_run_file(store: StateStore, run_id: str) -> dict[str, Any] | None:
-    raw = store.backend.read_text(f"runs/{run_id}.json")
+    raw = store.backend.read_text(run_path(run_id))
     if raw is None:
         return None
     try:
