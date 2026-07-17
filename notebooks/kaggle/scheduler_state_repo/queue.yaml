@@ -74,6 +74,14 @@ tasks:
     moveset: strict-ac
     max_depth: 0
     workers: 0
+# Pretraining ablation: four models (alphazero/ppo x residual_mlp/transformer), each run as
+# TWO twin tasks -- one seeded from the supervised-pretrained checkpoint, one trained from
+# zero -- so the pair isolates pretraining's impact. The from-zero twin drops
+# `pretrained_checkpoint` and pins its own `checkpoint_name` (`...-scratch`) so it never
+# chains into the pretrained twin's checkpoint lineage on the bucket. All eight share
+# priority 50, so with `max_total_active: 5` the scheduler's oldest-launch-first ordering
+# rotates them fairly through the five Kaggle slots (three always wait, taking a freed slot
+# the moment a run finishes).
 - id: train-alphazero-strict-navigation
   mode: training
   notebook_slug: hkhk2prod/alphaac-train-alphazero
@@ -121,6 +129,47 @@ tasks:
       # resumes this task's own RL checkpoint instead (it wins once it exists).
       pretrained_checkpoint: pretrained-rank2-residual_mlp-rel48
       workers: 0
+- id: train-alphazero-strict-navigation-scratch
+  mode: training
+  notebook_slug: hkhk2prod/alphaac-train-alphazero-scratch
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 50
+  max_runtime_minutes: 600
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    agent: alphazero
+    model: residual_mlp
+    model_config:
+      embed_dim: 64
+      hidden_dim: 256
+    moveset: strict-ac
+    max_relator_tokens: 48
+    seed: 0
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
+      max_difficulty: null
+    training:
+      reward_mode: navigation
+      gamma: 0.99
+      iterations: 100000000
+      episodes_per_iteration: 24
+      optimizer_updates: 8
+      batch_size: 64
+      replay_capacity: 4096
+      learning_rate: 0.02
+      value_loss_weight: 1.0
+      mcts_simulations: 128
+      c_puct: 1.5
+      checkpoint_every: 25
+      # From-zero twin of `train-alphazero-strict-navigation`: identical config, no
+      # `pretrained_checkpoint`, and its own lineage so it never inherits the pretrained
+      # run's checkpoints. The pair measures pretraining's impact.
+      checkpoint_name: rank2-alphazero-residual_mlp-strict_ac-navigation-scratch
+      workers: 0
 - id: train-ppo-strict-navigation
   mode: training
   notebook_slug: hkhk2prod/alphaac-train-ppo
@@ -163,6 +212,45 @@ tasks:
       # First run seeds from this supervised-pretrained model on HF; every later run
       # resumes this task's own RL checkpoint instead (it wins once it exists).
       pretrained_checkpoint: pretrained-rank2-residual_mlp-rel48
+      workers: 0
+- id: train-ppo-strict-navigation-scratch
+  mode: training
+  notebook_slug: hkhk2prod/alphaac-train-ppo-scratch
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 50
+  max_runtime_minutes: 600
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    agent: ppo
+    model: residual_mlp
+    model_config:
+      embed_dim: 64
+      hidden_dim: 256
+    moveset: strict-ac
+    max_relator_tokens: 48
+    seed: 0
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
+      max_difficulty: null
+    training:
+      reward_mode: navigation
+      gamma: 0.99
+      iterations: 100000000
+      episodes_per_iteration: 32
+      batch_size: 64
+      ppo_epochs: 4
+      ppo_lambda: 0.95
+      ppo_clip: 0.2
+      entropy_coef: 0.01
+      value_loss_weight: 0.5
+      learning_rate: 0.02
+      checkpoint_every: 25
+      # From-zero twin of `train-ppo-strict-navigation` (see the alphazero scratch task).
+      checkpoint_name: rank2-ppo-residual_mlp-strict_ac-navigation-scratch
       workers: 0
 - id: train-alphazero-strict-navigation-transformer
   mode: training
@@ -213,6 +301,47 @@ tasks:
       # resumes this task's own RL checkpoint instead (it wins once it exists).
       pretrained_checkpoint: pretrained-rank2-transformer-rel48
       workers: 0
+- id: train-alphazero-strict-navigation-transformer-scratch
+  mode: training
+  notebook_slug: hkhk2prod/alphaac-train-alphazero-transformer-scratch
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 50
+  max_runtime_minutes: 600
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    agent: alphazero
+    model: transformer
+    model_config:
+      embed_dim: 128
+      ff_dim: 512
+      num_layers: 4
+      num_heads: 4
+    moveset: strict-ac
+    max_relator_tokens: 48
+    seed: 0
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
+      max_difficulty: null
+    training:
+      reward_mode: navigation
+      gamma: 0.99
+      iterations: 100000000
+      episodes_per_iteration: 24
+      optimizer_updates: 8
+      batch_size: 64
+      replay_capacity: 4096
+      learning_rate: 0.02
+      value_loss_weight: 1.0
+      mcts_simulations: 128
+      c_puct: 1.5
+      checkpoint_every: 25
+      # From-zero twin of `train-alphazero-strict-navigation-transformer` (see above).
+      checkpoint_name: rank2-alphazero-transformer-strict_ac-navigation-scratch
+      workers: 0
 - id: train-ppo-strict-navigation-transformer
   mode: training
   notebook_slug: hkhk2prod/alphaac-train-ppo-transformer
@@ -257,6 +386,47 @@ tasks:
       # First run seeds from this supervised-pretrained model on HF; every later run
       # resumes this task's own RL checkpoint instead (it wins once it exists).
       pretrained_checkpoint: pretrained-rank2-transformer-rel48
+      workers: 0
+- id: train-ppo-strict-navigation-transformer-scratch
+  mode: training
+  notebook_slug: hkhk2prod/alphaac-train-ppo-transformer-scratch
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 50
+  max_runtime_minutes: 600
+  stop_after_current_iteration: false
+  config:
+    rank: 2
+    agent: ppo
+    model: transformer
+    model_config:
+      embed_dim: 128
+      ff_dim: 512
+      num_layers: 4
+      num_heads: 4
+    moveset: strict-ac
+    max_relator_tokens: 48
+    seed: 0
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
+      max_difficulty: null
+    training:
+      reward_mode: navigation
+      gamma: 0.99
+      iterations: 100000000
+      episodes_per_iteration: 32
+      batch_size: 64
+      ppo_epochs: 4
+      ppo_lambda: 0.95
+      ppo_clip: 0.2
+      entropy_coef: 0.01
+      value_loss_weight: 0.5
+      learning_rate: 0.02
+      checkpoint_every: 25
+      # From-zero twin of `train-ppo-strict-navigation-transformer` (see above).
+      checkpoint_name: rank2-ppo-transformer-strict_ac-navigation-scratch
       workers: 0
 - id: solve-greedy-strict
   mode: solve
