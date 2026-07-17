@@ -27,6 +27,7 @@ from ac_zero.datasets.grow import GrowConfig, grow_dataset
 from ac_zero.datasets.hub import DEFAULT_BUCKET, download_dataset, remote_size, upload_dataset
 from ac_zero.datasets.instance_store import InstanceStore
 from ac_zero.datasets.publish import publish_to_bucket
+from ac_zero.datasets.remote_paths import dataset_remote_name
 from ac_zero.datasets.split import SplitConfig, split_is_current, split_path, write_split
 from ac_zero.datasets.summary import write_annotation_summary, write_dataset_summary
 from ac_zero.datasets.supervised_store import SupervisedStore
@@ -106,7 +107,8 @@ def main(argv: list[str] | None = None) -> int:
     ds.add_argument(
         "--remote-name",
         default="",
-        help="`upload`/`download`: bucket file name (default: the local basename)",
+        help="`upload`/`download`: explicit bucket path (default: the dataset's folder, "
+        "derived from the filename, e.g. datasets/rank2/rel-48/)",
     )
     ds.add_argument(
         "--max-relator-length",
@@ -569,7 +571,7 @@ def _provision_supervised_dataset(
 def _sync_bucket_file(local: Path, bucket: str, reporter: CliReporter, *, required: bool) -> None:
     """Download ``local`` from the bucket only when the local copy differs from it by size."""
     reporter.progress("dataset", "checking bucket for current size", {"name": local.name})
-    remote = remote_size(local.name, bucket=bucket)
+    remote = remote_size(dataset_remote_name(local.name), bucket=bucket)
     local_bytes = local.stat().st_size if local.exists() else None
     if remote is None:
         if local_bytes is None:

@@ -10,11 +10,6 @@ from typing import Any
 # Markdown reports live beside their dataset by stem: ``train.groups.summary.md``.
 SUMMARY_SUFFIX = ".summary.md"
 
-# Summaries are published to their own folder in the Hugging Face bucket, keyed by
-# the dataset name so they are easy to find: the generation and annotation Kaggle
-# notebooks push ``datasets_summaries/train_rank2.groups.summary.md`` and friends.
-SUMMARIES_PREFIX = "datasets_summaries"
-
 
 @dataclass(frozen=True, slots=True)
 class Distribution:
@@ -287,8 +282,3 @@ def write_annotation_summary(annotation_path: str | Path, summary_dir: str | Pat
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(report, encoding="utf-8")
     return target
-
-
-def summary_remote_name(summary_path: str | Path) -> str:
-    """The Hugging Face bucket object name for a summary: ``datasets_summaries/<file>``."""
-    return f"{SUMMARIES_PREFIX}/{Path(summary_path).name}"

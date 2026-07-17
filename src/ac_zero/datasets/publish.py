@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ac_zero.datasets.hub import DEFAULT_BUCKET, upload_dataset
-from ac_zero.datasets.summary import summary_remote_name
+from ac_zero.datasets.remote_paths import dataset_remote_name
 
 # ``write_dataset_summary`` / ``write_annotation_summary``: both ``(path, dir) -> Path``.
 SummaryWriter = Callable[[str | Path, str | Path], Path]
@@ -73,10 +73,11 @@ def publish_to_bucket(
 
     ``summary_writer`` is ``write_dataset_summary`` or ``write_annotation_summary``
     (both take ``(path, summary_dir)``); pass ``None`` to upload the data file
-    alone. The data file uploads under its basename and the summary under
-    ``datasets_summaries/<name>``. ``upload=False`` still writes the summary but
-    skips the bucket, so a local-only run keeps its report. Uploads never raise;
-    inspect the returned outcomes for per-file errors.
+    alone. Both the data file and its summary are filed into the dataset's bucket
+    folder by name (see :func:`ac_zero.datasets.remote_paths.dataset_remote_name`),
+    so a summary lands beside the annotations it describes. ``upload=False`` still
+    writes the summary but skips the bucket, so a local-only run keeps its report.
+    Uploads never raise; inspect the returned outcomes for per-file errors.
     """
     data_path = Path(data_path)
     summary_path: Path | None = None
@@ -86,7 +87,7 @@ def publish_to_bucket(
         summary_path = summary_writer(data_path, summary_dir)
     if not upload:
         return PublishResult(summary_path, [])
-    pairs: list[tuple[str | Path, str]] = [(data_path, data_path.name)]
+    pairs: list[tuple[str | Path, str]] = [(data_path, dataset_remote_name(data_path.name))]
     if summary_path is not None:
-        pairs.append((summary_path, summary_remote_name(summary_path)))
+        pairs.append((summary_path, dataset_remote_name(summary_path.name)))
     return PublishResult(summary_path, _upload_each(pairs, bucket=bucket))

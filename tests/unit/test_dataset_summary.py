@@ -6,7 +6,6 @@ from ac_zero.datasets.summary import (
     summarize,
     summarize_annotations,
     summary_path_for,
-    summary_remote_name,
     write_annotation_summary,
     write_dataset_summary,
 )
@@ -182,9 +181,3 @@ def test_write_annotation_summary_targets_summary_dir(tmp_path) -> None:
     assert written.read_text(encoding="utf-8").startswith(
         "# Annotation summary: train_rank2.groups.strict-ac.annotations.json"
     )
-
-
-def test_summary_remote_name_uses_the_summaries_folder() -> None:
-    # The bucket keeps summaries in their own folder, keyed by the dataset name.
-    remote = summary_remote_name("/kaggle/working/train_rank2.groups.summary.md")
-    assert remote == "datasets_summaries/train_rank2.groups.summary.md"
