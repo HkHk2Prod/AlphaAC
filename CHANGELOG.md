@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Pretrained models pipeline: pretrain locally, fine-tune on Kaggle from Hugging Face.**
+  Supervised pretraining now stops when it stops learning: `training.early_stopping_patience`
+  (with `early_stopping_min_delta`) ends a run once its validation descent accuracy has not
+  improved for that many epochs in a row, instead of running a fixed epoch count. The two
+  `_pretrain` configs (a transformer and a new `_pretrain_mlp` residual MLP — one per
+  architecture the RL pipeline runs) pin a fixed `checkpoint_name`, so
+  `aczero train --config … --upload-checkpoints` always lands the model at the same HF
+  bucket prefix. A Kaggle RL task then names it in `training.pretrained_checkpoint`: on the
+  task's first run — before it has a checkpoint of its own — RL seeds from that pretrained
+  model; on every later run it resumes its own RL checkpoint instead (the RL checkpoint wins
+  once it exists, so the pretrained model only ever seeds run one). The RL tasks'
+  `model_config` is aligned to the matching `_pretrain` config so the weights load.
+
 - **The supervised run is no longer silent.** It emitted a per-epoch event all along, but
   nothing rendered it: at the default `summary` verbosity the terminal sink is muted and
   `ConsoleSummaryLogger` only recognised RL's `self_play` iteration line plus a fixed list

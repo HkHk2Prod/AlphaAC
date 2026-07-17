@@ -622,7 +622,11 @@ def _warm_start_from_hf(
 
     The lineage name is `config.checkpoint_name` when set, else the identity name
     the run would upload under, so download and upload address the same bucket
-    prefix. When no checkpoint exists yet the run simply trains from scratch.
+    prefix. When this task has no checkpoint of its own yet -- its first run -- and it
+    names a `pretrained_checkpoint`, seed from that supervised-pretrained model instead;
+    every later run finds this task's own checkpoint above, so the RL checkpoint always
+    wins once it exists and the pretrained model only ever seeds run one. With neither on
+    the bucket the run trains from scratch.
     """
     name = config.checkpoint_name or derive_checkpoint_name(config)
     reporter.progress(
@@ -630,12 +634,29 @@ def _warm_start_from_hf(
     )
     dest = Path(config.run_directory) / "warm_start.json"
     path = download_best_checkpoint(name, dest, bucket=bucket, missing_ok=True)
-    if path is None:
+    if path is not None:
+        return replace(config, warm_start=str(path))
+    if config.pretrained_checkpoint:
+        pretrained = config.pretrained_checkpoint
+        reporter.progress(
+            "checkpoint",
+            "no run checkpoint yet; seeding first run from the pretrained checkpoint",
+            {"bucket": bucket, "pretrained": pretrained},
+        )
+        pretrained_dest = Path(config.run_directory) / "pretrained_warm_start.json"
+        pretrained_path = download_best_checkpoint(
+            pretrained, pretrained_dest, bucket=bucket, missing_ok=True
+        )
+        if pretrained_path is not None:
+            return replace(config, warm_start=str(pretrained_path))
         reporter.warning(
-            "checkpoint", "no checkpoint on bucket; training from scratch", {"name": name}
+            "checkpoint",
+            "pretrained checkpoint absent from bucket; training from scratch",
+            {"name": pretrained},
         )
         return config
-    return replace(config, warm_start=str(path))
+    reporter.warning("checkpoint", "no checkpoint on bucket; training from scratch", {"name": name})
+    return config
 
 
 def _training_callbacks(

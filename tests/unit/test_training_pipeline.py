@@ -187,6 +187,23 @@ def test_config_reads_warm_start_and_checkpoint_name_from_mapping() -> None:
     assert TrainingPipelineConfig().checkpoint_name is None
 
 
+def test_config_reads_pretrained_checkpoint_and_early_stopping_from_mapping() -> None:
+    config = TrainingPipelineConfig.from_mapping(
+        {
+            "training": {
+                "pretrained_checkpoint": "pretrained-rank2-transformer-rel48",
+                "early_stopping_patience": 8,
+                "early_stopping_min_delta": 0.002,
+            }
+        }
+    )
+    assert config.pretrained_checkpoint == "pretrained-rank2-transformer-rel48"
+    assert config.early_stopping_patience == 8
+    assert config.early_stopping_min_delta == pytest.approx(0.002)
+    assert TrainingPipelineConfig().pretrained_checkpoint is None
+    assert TrainingPipelineConfig().early_stopping_patience == 0
+
+
 def test_training_pipeline_model_is_invariant_to_worker_count(tmp_path: Path) -> None:
     def _run(workers: int, name: str) -> dict:
         config = TrainingPipelineConfig(

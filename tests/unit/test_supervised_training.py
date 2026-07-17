@@ -275,6 +275,37 @@ def test_the_checkpoint_warm_starts_an_rl_run(tmp_path: Path) -> None:
     assert summary.checkpoint_restored
 
 
+def test_early_stopping_ends_the_run_before_the_epoch_cap(tmp_path: Path) -> None:
+    """A `min_delta` no epoch can clear makes every epoch past the first a non-improvement,
+    so `patience` of those in a row stops the run well short of `iterations`."""
+    groups = _dataset(tmp_path)
+    config = _config(
+        tmp_path,
+        groups,
+        iterations=20,
+        early_stopping_patience=2,
+        early_stopping_min_delta=1.0,  # unreachable: accuracy is in [0, 1]
+    )
+    summary = run_training_pipeline(config, seed=0)
+    # epoch 1 sets the best; epochs 2 and 3 fail to improve -> stop at epoch 3.
+    assert summary.iterations == 3
+    assert (Path(summary.checkpoint_bundle_dir) / "best.json").exists()
+
+
+def test_early_stopping_off_runs_every_epoch(tmp_path: Path) -> None:
+    groups = _dataset(tmp_path)
+    summary = run_training_pipeline(_config(tmp_path, groups, iterations=4), seed=0)
+    assert summary.iterations == 4  # patience defaults to 0, i.e. disabled
+
+
+def test_early_stopping_settings_are_validated(tmp_path: Path) -> None:
+    groups = _dataset(tmp_path)
+    with pytest.raises(ValueError, match="early_stopping_patience must be non-negative"):
+        _config(tmp_path, groups, early_stopping_patience=-1).validate()
+    with pytest.raises(ValueError, match="early_stopping_min_delta must be non-negative"):
+        _config(tmp_path, groups, early_stopping_min_delta=-0.1).validate()
+
+
 def test_a_supervised_config_needs_its_labels() -> None:
     with pytest.raises(ValueError, match=r"set dataset\.path"):
         TrainingPipelineConfig(agent="supervised").validate()

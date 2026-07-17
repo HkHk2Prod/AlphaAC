@@ -95,6 +95,13 @@ class TrainingPipelineConfig:
     # checkpoint, by descent accuracy). The held-out test split is scored once, at the
     # end of the run, and never steers training.
     eval_batches: int = 32
+    # Supervised early stopping (ignored by the RL backends, which have no validation
+    # split). Stop after ``early_stopping_patience`` consecutive epochs whose validation
+    # descent accuracy fails to beat the best so far by at least ``early_stopping_min_delta``
+    # -- so pretraining runs until the model stops improving instead of a fixed epoch count.
+    # ``0`` disables it and runs all ``iterations`` epochs.
+    early_stopping_patience: int = 0
+    early_stopping_min_delta: float = 0.0
     mcts_simulations: int = 16
     c_puct: float = 1.5
     # PPO backend hyperparameters (ignored by the AlphaZero backend). Rollout
@@ -140,6 +147,13 @@ class TrainingPipelineConfig:
     # Override for the Hugging Face checkpoint name; ``None`` derives it from the
     # task/model identity (see ``training.checkpoint_name.derive_checkpoint_name``).
     checkpoint_name: str | None = None
+    # HF checkpoint lineage to seed the *first* run of this task from, when it has no
+    # checkpoint of its own on the bucket yet -- a supervised-pretrained model this RL run
+    # fine-tunes. Once the task has pushed its own (RL) best, that one wins on every later
+    # run: the pretrained checkpoint only ever seeds run one. Consulted by the CLI's
+    # ``--download-checkpoint`` path (``_warm_start_from_hf``); ``None`` means start from
+    # scratch when no run checkpoint exists.
+    pretrained_checkpoint: str | None = None
     # Self-play episodes are independent, so they fan out across this many worker
     # processes. The default 0 autodetects and uses every CPU core; set 1 to keep
     # the run in-process, or a negative count to leave that many cores free.
@@ -265,9 +279,24 @@ class TrainingPipelineConfig:
             run_directory=str(
                 training.get("run_directory", data.get("run_directory", defaults.run_directory))
             ),
+            early_stopping_patience=int(
+                training.get(
+                    "early_stopping_patience",
+                    data.get("early_stopping_patience", defaults.early_stopping_patience),
+                )
+            ),
+            early_stopping_min_delta=float(
+                training.get(
+                    "early_stopping_min_delta",
+                    data.get("early_stopping_min_delta", defaults.early_stopping_min_delta),
+                )
+            ),
             warm_start=_optional_str(training.get("warm_start", data.get("warm_start"))),
             checkpoint_name=_optional_str(
                 training.get("checkpoint_name", data.get("checkpoint_name"))
+            ),
+            pretrained_checkpoint=_optional_str(
+                training.get("pretrained_checkpoint", data.get("pretrained_checkpoint"))
             ),
             workers=int(training.get("workers", data.get("workers", defaults.workers))),
         )
@@ -373,6 +402,10 @@ class TrainingPipelineConfig:
             raise ValueError("grad_clip must be non-negative (0 disables clipping)")
         if self.eval_batches <= 0:
             raise ValueError("eval_batches must be positive")
+        if self.early_stopping_patience < 0:
+            raise ValueError("early_stopping_patience must be non-negative (0 disables it)")
+        if self.early_stopping_min_delta < 0.0:
+            raise ValueError("early_stopping_min_delta must be non-negative")
 
 
 def _dict_value(data: dict[str, Any], key: str) -> dict[str, Any]:
@@ -444,6 +477,8 @@ def run_description(
         report["time_limit_s"] = config.time_limit_s
     if config.warm_start is not None:
         report["warm_start"] = config.warm_start
+    if config.pretrained_checkpoint is not None:
+        report["pretrained_checkpoint"] = config.pretrained_checkpoint
     for key, value in (
         ("dataset_path", config.dataset_path),
         ("dataset_annotations_path", config.dataset_annotations_path),

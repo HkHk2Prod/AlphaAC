@@ -306,18 +306,25 @@ probability taken from the moves that descend). The value head is regressed on
 something to an RL run rather than starting from noise.
 
 The committed configs are one ladder over the same `rel48` rank-2 ball, named for the
-model they train — `_pretrain` (0.8M), `_2m`, `_14m`, `_100m`. The first is meant as an
-RL warm start; the rest scale up towards using the model as the solver outright:
+model they train — `_pretrain` (a 0.8M transformer) and `_pretrain_mlp` (a residual MLP)
+are the RL warm starts, one per architecture the RL pipeline runs; `_2m`, `_14m`, `_100m`
+scale the transformer up towards using the model as the solver outright:
 
 ```bash
-# Pretrain a small model, then fine-tune it with RL
+# Pretrain the two models the RL pipeline uses, then fine-tune each with RL
 uv run --frozen aczero train --config configs/experiments/supervised_rel48_pretrain.yaml
+uv run --frozen aczero train --config configs/experiments/supervised_rel48_pretrain_mlp.yaml
 
 # Scale up: 2.2M runs on a CPU, 14.2M and 99.2M want a GPU
 uv run --frozen aczero train --config configs/experiments/supervised_rel48_2m.yaml
 uv run --frozen aczero train --config configs/experiments/supervised_rel48_14m.yaml
 uv run --frozen aczero train --config configs/experiments/supervised_rel48_100m.yaml
 ```
+
+The two `_pretrain` configs set `training.early_stopping_patience`, so a pretraining run
+trains until its **validation descent accuracy stops improving** for that many epochs in a
+row (rather than a fixed epoch count), then stops — the best checkpoint is always the one
+kept, so stopping early loses nothing.
 
 Both need the group file, its annotations, and a split, and a supervised run
 provisions all three before it trains — you do not run `dataset split` by hand.
@@ -358,6 +365,33 @@ training:
   warm_start: runs/train/supervised_rel48_pretrain/model_checkpoint/best.json
 ```
 
+### Pretrain locally, fine-tune on Kaggle
+
+The same handoff works across machines through Hugging Face, which is how the Kaggle RL
+tasks pick up a warm start. Pretrain locally and push the checkpoint to the bucket:
+
+```bash
+uv run --frozen aczero train \
+  --config configs/experiments/supervised_rel48_pretrain.yaml --upload-checkpoints
+```
+
+Each `_pretrain` config pins a fixed `training.checkpoint_name`
+(`pretrained-rank2-transformer-rel48`, `pretrained-rank2-residual_mlp-rel48`), so the
+model always lands at the same bucket prefix. A Kaggle RL task then names that string in
+`training.pretrained_checkpoint`:
+
+```yaml
+training:
+  pretrained_checkpoint: pretrained-rank2-transformer-rel48
+```
+
+On the task's **first** run — when it has no checkpoint of its own on the bucket yet — RL
+seeds from that pretrained model. On every **later** run it finds the task's own RL
+checkpoint and resumes from that instead: the RL checkpoint wins once it exists, so the
+pretrained model only ever seeds run one. The pretrained model and the RL task must share
+`model`/`model_config` and `max_relator_tokens` for the weights to load, so the RL task's
+`model_config` is set to match its `_pretrain` config's.
+
 Each epoch is `training.optimizer_updates` minibatches of Adam, scored afterwards
 on a fixed sample of the validation split. The metrics are stated in terms of the
 distance, not the loss: **`val_descent_accuracy`** is how often the model's
@@ -366,8 +400,11 @@ top-ranked move actually reduces the distance to the origin, and
 checkpoint is chosen by descent accuracy. Every trainable group has at least one
 descending move by construction, so a perfect model scores `1.0` and `-1.0`. The
 test split is scored exactly once, after the final epoch, and never steers
-training. Unlike the RL loops, the supervised stage trains on **every distance the
-dataset contains** — there is no difficulty ceiling and no curriculum.
+training. `val_descent_accuracy` is also the early-stopping signal: with
+`training.early_stopping_patience` set, a run stops once that many epochs pass without it
+improving by at least `early_stopping_min_delta`. Unlike the RL loops, the supervised
+stage trains on **every distance the dataset contains** — there is no difficulty ceiling
+and no curriculum.
 
 Only **expanded** groups carry a label. An unexpanded frontier group — one
 discovered as a neighbour but never itself expanded — has no recorded transitions,
