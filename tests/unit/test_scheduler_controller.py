@@ -12,7 +12,13 @@ from subprocess import CompletedProcess
 from ac_zero.scheduler.backend import MemoryStateBackend
 from ac_zero.scheduler.controller import SchedulerConfig, run_tick
 from ac_zero.scheduler.kaggle import KaggleClient
-from ac_zero.scheduler.store import StateStore
+from ac_zero.scheduler.store import (
+    LEASE_PATH,
+    QUEUE_PATH,
+    RUNTIME_CONFIG_LATEST,
+    STATE_PATH,
+    StateStore,
+)
 
 NOW = "2026-07-08T12:00:00Z"
 
@@ -97,7 +103,7 @@ def _silent(_: str) -> None:
 
 def test_launch_pushes_and_decrements_remaining_runs(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
-    store, _ = _store({"queue.yaml": _queue_yaml(nb, remaining_runs="3")})
+    store, _ = _store({QUEUE_PATH: _queue_yaml(nb, remaining_runs="3")})
     fake = FakeKaggleRunner()
     report = run_tick(store, KaggleClient(runner=fake), _config(), now=NOW, log=_silent)
 
@@ -113,7 +119,7 @@ def test_launch_pushes_and_decrements_remaining_runs(tmp_path: Path) -> None:
 
 def test_remaining_runs_reaching_zero_deactivates(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
-    store, _ = _store({"queue.yaml": _queue_yaml(nb, remaining_runs="1")})
+    store, _ = _store({QUEUE_PATH: _queue_yaml(nb, remaining_runs="1")})
     run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
     snap = store.load()
     assert snap.queue.tasks[0].remaining_runs == 0
@@ -122,7 +128,7 @@ def test_remaining_runs_reaching_zero_deactivates(tmp_path: Path) -> None:
 
 def test_infinite_remaining_runs_never_decrements(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
-    store, _ = _store({"queue.yaml": _queue_yaml(nb, remaining_runs="null")})
+    store, _ = _store({QUEUE_PATH: _queue_yaml(nb, remaining_runs="null")})
     run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
     snap = store.load()
     assert snap.queue.tasks[0].remaining_runs is None
@@ -131,7 +137,7 @@ def test_infinite_remaining_runs_never_decrements(tmp_path: Path) -> None:
 
 def test_launch_failure_does_not_decrement(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
-    store, _ = _store({"queue.yaml": _queue_yaml(nb, remaining_runs="3")})
+    store, _ = _store({QUEUE_PATH: _queue_yaml(nb, remaining_runs="3")})
     report = run_tick(
         store, KaggleClient(runner=FakeKaggleRunner(push_rc=1)), _config(), now=NOW, log=_silent
     )
@@ -144,7 +150,7 @@ def test_launch_failure_does_not_decrement(tmp_path: Path) -> None:
 
 def test_later_failure_status_does_not_restore_remaining_runs(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
-    store, _ = _store({"queue.yaml": _queue_yaml(nb, remaining_runs="2")})
+    store, _ = _store({QUEUE_PATH: _queue_yaml(nb, remaining_runs="2")})
     # Tick 1: launch (remaining 2 -> 1), run is now active.
     run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
     assert store.load().queue.tasks[0].remaining_runs == 1
@@ -163,7 +169,7 @@ def test_later_failure_status_does_not_restore_remaining_runs(tmp_path: Path) ->
 
 def test_dry_run_does_not_mutate_state(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
-    store, backend = _store({"queue.yaml": _queue_yaml(nb, remaining_runs="3")})
+    store, backend = _store({QUEUE_PATH: _queue_yaml(nb, remaining_runs="3")})
     head_before = backend.head_sha()
     fake = FakeKaggleRunner()
     report = run_tick(store, KaggleClient(runner=fake), _config(dry_run=True), now=NOW, log=_silent)
@@ -186,8 +192,8 @@ def test_foreign_live_lease_prevents_launch(tmp_path: Path) -> None:
     }
     store, _ = _store(
         {
-            "queue.yaml": _queue_yaml(nb, remaining_runs="3"),
-            "locks/scheduler_lease.json": json.dumps(lease),
+            QUEUE_PATH: _queue_yaml(nb, remaining_runs="3"),
+            LEASE_PATH: json.dumps(lease),
         }
     )
     fake = FakeKaggleRunner()
@@ -202,8 +208,8 @@ def test_paused_scheduler_does_not_launch(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
     store, _ = _store(
         {
-            "queue.yaml": _queue_yaml(nb, remaining_runs="3"),
-            "scheduler_state.json": json.dumps({"scheduler_paused": True}),
+            QUEUE_PATH: _queue_yaml(nb, remaining_runs="3"),
+            STATE_PATH: json.dumps({"scheduler_paused": True}),
         }
     )
     fake = FakeKaggleRunner()
@@ -216,8 +222,8 @@ def test_stop_launching_drains_without_killing(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
     store, _ = _store(
         {
-            "queue.yaml": _queue_yaml(nb, remaining_runs="3"),
-            "scheduler_state.json": json.dumps({"stop_launching": True}),
+            QUEUE_PATH: _queue_yaml(nb, remaining_runs="3"),
+            STATE_PATH: json.dumps({"stop_launching": True}),
         }
     )
     fake = FakeKaggleRunner()
@@ -228,7 +234,7 @@ def test_stop_launching_drains_without_killing(tmp_path: Path) -> None:
 
 def test_runtime_config_injected_into_notebook_and_archived(tmp_path: Path) -> None:
     nb = _notebook_dir(tmp_path)
-    store, backend = _store({"queue.yaml": _queue_yaml(nb, remaining_runs="null")})
+    store, backend = _store({QUEUE_PATH: _queue_yaml(nb, remaining_runs="null")})
     run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
     # The config rides inside the pushed notebook (kaggle push uploads only the .ipynb).
     notebook = json.loads((nb / "runner.ipynb").read_text())
@@ -237,5 +243,5 @@ def test_runtime_config_injected_into_notebook_and_archived(tmp_path: Path) -> N
     injected = "".join(first["source"])
     assert "runtime_config.json" in injected and "generation" in injected
     # ...and is archived to the state repo for auditing.
-    archived = backend.read_text("runtime_configs/latest/runtime_config.json")
+    archived = backend.read_text(RUNTIME_CONFIG_LATEST)
     assert archived is not None and json.loads(archived)["task_id"] == "gen"

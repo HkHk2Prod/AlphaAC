@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from ac_zero.scheduler.models import utc_now
+from ac_zero.scheduler.store import LATEST_RUN_PATH, QUEUE_PATH, run_path
 
 # Kaggle's dataset mount path has moved across CLI generations: classic
 # `/kaggle/input/<slug>/` vs the 2.x `/kaggle/input/datasets/<owner>/<slug>/`.
@@ -116,7 +117,7 @@ class RunReporter:
             record["extra"] = extra
         payload = json.dumps(record, indent=2) + "\n"
         self._backend.commit(
-            {f"runs/{self.run_id}.json": payload, "runs/latest.json": payload},
+            {run_path(self.run_id): payload, LATEST_RUN_PATH: payload},
             message=f"{status} {self.run_id}",
             parent_sha=None,
         )
@@ -146,7 +147,7 @@ class RunReporter:
         import yaml  # type: ignore[import-untyped]
 
         try:
-            raw = self._backend.read_text("queue.yaml")
+            raw = self._backend.read_text(QUEUE_PATH)
         except Exception:
             return False
         if raw is None:

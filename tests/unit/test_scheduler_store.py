@@ -8,7 +8,15 @@ import pytest
 import yaml  # type: ignore[import-untyped]
 
 from ac_zero.scheduler.backend import MemoryStateBackend, StateConflict
-from ac_zero.scheduler.store import LeaseError, StateError, StateStore
+from ac_zero.scheduler.store import (
+    LATEST_RUN_PATH,
+    LEASE_PATH,
+    QUEUE_PATH,
+    STATE_PATH,
+    LeaseError,
+    StateError,
+    StateStore,
+)
 
 QUEUE = """
 version: 1
@@ -24,7 +32,7 @@ tasks:
 
 
 def _store(files: dict[str, str] | None = None) -> tuple[StateStore, MemoryStateBackend]:
-    backend = MemoryStateBackend(files if files is not None else {"queue.yaml": QUEUE})
+    backend = MemoryStateBackend(files if files is not None else {QUEUE_PATH: QUEUE})
     return StateStore(backend), backend
 
 
@@ -44,13 +52,13 @@ def test_missing_queue_raises_clear_error() -> None:
 
 
 def test_malformed_queue_yaml_fails_clearly() -> None:
-    store, _ = _store(files={"queue.yaml": "version: 1\ntasks: : ["})
-    with pytest.raises(StateError, match=r"malformed queue\.yaml"):
+    store, _ = _store(files={QUEUE_PATH: "version: 1\ntasks: : ["})
+    with pytest.raises(StateError, match=r"malformed queue/queue\.yaml"):
         store.load()
 
 
 def test_queue_without_tasks_key_fails_clearly() -> None:
-    store, _ = _store(files={"queue.yaml": "version: 1\nlimits: {}"})
+    store, _ = _store(files={QUEUE_PATH: "version: 1\nlimits: {}"})
     with pytest.raises(StateError, match="expected a mapping with a 'tasks' list"):
         store.load()
 
@@ -70,7 +78,7 @@ def test_save_with_stale_base_sha_conflicts() -> None:
     store, backend = _store()
     snap = store.load()
     # Someone else commits after we read -> our base_sha is now stale.
-    backend.commit({"queue.yaml": QUEUE}, message="other", parent_sha=None)
+    backend.commit({QUEUE_PATH: QUEUE}, message="other", parent_sha=None)
     with pytest.raises(StateConflict):
         store.save(snap, message="ours")
 
@@ -78,8 +86,8 @@ def test_save_with_stale_base_sha_conflicts() -> None:
 def test_extra_files_are_committed() -> None:
     store, backend = _store()
     snap = store.load()
-    store.save(snap, message="test", extra_files={"runs/latest.json": "{}\n"})
-    assert backend.read_text("runs/latest.json") == "{}\n"
+    store.save(snap, message="test", extra_files={LATEST_RUN_PATH: "{}\n"})
+    assert backend.read_text(LATEST_RUN_PATH) == "{}\n"
 
 
 def test_lease_acquire_and_reject_foreign_live_lease() -> None:
@@ -98,9 +106,7 @@ def test_expired_lease_is_stealable() -> None:
         "acquired_at": "2020-01-01T00:00:00Z",
         "expires_at": "2020-01-01T00:00:00Z",
     }
-    backend.commit(
-        {"locks/scheduler_lease.json": json.dumps(expired)}, message="seed", parent_sha=None
-    )
+    backend.commit({LEASE_PATH: json.dumps(expired)}, message="seed", parent_sha=None)
     lease = store.acquire_lease(owner="owner-2", github_run_id="2", ttl_minutes=30)
     assert lease.owner == "owner-2"
     assert store.owns_lease("owner-2")
@@ -116,5 +122,5 @@ def test_release_lease_makes_it_no_longer_owned() -> None:
 def test_saved_state_is_valid_json_and_yaml() -> None:
     store, backend = _store()
     store.save(store.load(), message="test")
-    yaml.safe_load(backend.read_text("queue.yaml"))
-    json.loads(backend.read_text("scheduler_state.json"))
+    yaml.safe_load(backend.read_text(QUEUE_PATH))
+    json.loads(backend.read_text(STATE_PATH))
