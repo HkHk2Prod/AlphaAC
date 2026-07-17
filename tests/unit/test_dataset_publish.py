@@ -39,9 +39,10 @@ def test_publish_writes_summary_and_uploads_data_and_summary(monkeypatch, tmp_pa
 
     assert result.summary_path == tmp_path / "train_rank2.groups.summary.md"
     assert result.summary_path.exists()
+    # Data file and its groups summary both land in the dataset's bucket folder.
     assert {remote for remote, _ in calls} == {
-        "train_rank2.groups.json",
-        "datasets_summaries/train_rank2.groups.summary.md",
+        "datasets/rank2/rel-unbounded/train_rank2.groups.json",
+        "datasets/rank2/rel-unbounded/train_rank2.groups.summary.md",
     }
     assert {bucket for _, bucket in calls} == {"ns/bucket"}
     assert len(result.uploaded_uris) == 2
@@ -69,7 +70,9 @@ def test_publish_without_summary_writer_uploads_only_the_data_file(
     result = publish_to_bucket(data)
 
     assert result.summary_path is None
-    assert [remote for remote, _ in calls] == ["train_rank2.groups.json"]
+    assert [remote for remote, _ in calls] == [
+        "datasets/rank2/rel-unbounded/train_rank2.groups.json"
+    ]
 
 
 def test_publish_is_lenient_when_an_upload_fails(monkeypatch, tmp_path: Path) -> None:

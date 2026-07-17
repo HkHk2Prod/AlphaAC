@@ -32,9 +32,11 @@ def test_cli_grow_uploads_dataset_and_summary_by_default(monkeypatch, tmp_path: 
     assert main(["dataset", "grow", "--output", str(dataset_path), "--target", "15"]) == 0
 
     assert {bucket for _, bucket in calls} == {cli.DEFAULT_BUCKET}
+    # `grown` carries no rank marker, so it stays at the bucket root (the fallback);
+    # a conforming ``ball_rank2_rel48`` name would fold into ``datasets/rank2/rel-48/``.
     assert {remote for remote, _ in calls} == {
         "grown.json",
-        "datasets_summaries/grown.summary.md",
+        "grown.summary.md",
     }
 
 
@@ -93,7 +95,8 @@ def test_cli_annotate_writes_and_uploads_its_summary(monkeypatch, tmp_path: Path
     summary_path = tmp_path / "data/summaries/grown.universal.annotations.summary.md"
     assert summary_path.exists()
     assert {bucket for _, bucket in calls} == {cli.DEFAULT_BUCKET}
+    # `grown` has no rank marker, so its files stay at the bucket root (the fallback).
     assert {remote for remote, _ in calls} == {
         "grown.universal.annotations.json",
-        "datasets_summaries/grown.universal.annotations.summary.md",
+        "grown.universal.annotations.summary.md",
     }

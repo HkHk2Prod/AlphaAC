@@ -67,8 +67,10 @@ def test_upload_dataset_calls_batch_and_returns_uri(
 
     uri = hub.upload_dataset(local, bucket="ns/bucket")
 
-    assert uri == "hf://buckets/ns/bucket/train_rank2.json"
-    assert record["add"] == {"bucket": "ns/bucket", "add": [(str(local), "train_rank2.json")]}
+    # The remote name is derived from the filename: train_rank2.json is filed by rank.
+    remote = "datasets/rank2/rel-unbounded/train_rank2.json"
+    assert uri == f"hf://buckets/ns/bucket/{remote}"
+    assert record["add"] == {"bucket": "ns/bucket", "add": [(str(local), remote)]}
 
 
 def test_upload_uses_default_bucket_and_custom_remote_name(
@@ -115,17 +117,19 @@ def test_upload_missing_file_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 def test_download_dataset_writes_local_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    record = _install_fake(monkeypatch, [_Item("train_rank2.json")])
+    remote = "datasets/rank2/rel-unbounded/train_rank2.json"
+    record = _install_fake(monkeypatch, [_Item(remote)])
     target = tmp_path / "sub" / "train_rank2.json"
 
     result = hub.download_dataset(target, bucket="ns/bucket")
 
     assert result == target
     assert target.is_file()  # parent dir was created and the file written
-    # An absent object must raise rather than silently leave `target` unwritten.
+    # The remote name is derived from the filename; an absent object must raise
+    # rather than silently leave `target` unwritten.
     assert record["download"] == {
         "bucket": "ns/bucket",
-        "files": [("train_rank2.json", str(target))],
+        "files": [(remote, str(target))],
         "raise_on_missing_files": True,
     }
 
@@ -146,7 +150,7 @@ def test_download_missing_ok_returns_none_when_absent(
 def test_download_missing_ok_fetches_when_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _install_fake(monkeypatch, [_Item("train_rank2.json")])
+    _install_fake(monkeypatch, [_Item("datasets/rank2/rel-unbounded/train_rank2.json")])
     target = tmp_path / "train_rank2.json"
 
     result = hub.download_dataset(target, missing_ok=True)

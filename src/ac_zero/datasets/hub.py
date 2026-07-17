@@ -21,6 +21,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+from ac_zero.datasets.remote_paths import dataset_remote_name
+
 # Bucket holding the AlphaAC training datasets (namespace/bucket-name).
 DEFAULT_BUCKET = "HkHk2Prod/alphaac-data"
 
@@ -143,14 +145,16 @@ def upload_dataset(
 ) -> str:
     """Upload a local dataset file to the bucket and return its ``hf://`` URI.
 
-    ``remote_name`` defaults to the local file's basename, so the bucket mirrors
-    the on-disk name (e.g. ``train_rank2.json``).
+    ``remote_name`` defaults to the file's folder in the bucket, derived from its
+    name (see :func:`ac_zero.datasets.remote_paths.dataset_remote_name`) -- e.g.
+    ``ball_rank2_rel48.groups.json`` lands under ``datasets/rank2/rel-48/``. Pass
+    ``remote_name`` to place the file at an explicit path instead.
     """
     hub = _hub()
     local = Path(local_path)
     if not local.is_file():
         raise FileNotFoundError(f"dataset not found: {local}")
-    name = remote_name or local.name
+    name = remote_name or dataset_remote_name(local.name)
     hub.batch_bucket_files(bucket, add=[(str(local), name)])
     return f"hf://buckets/{bucket}/{name}"
 
@@ -164,13 +168,16 @@ def download_dataset(
 ) -> Path | None:
     """Download a dataset file from the bucket to ``local_path``.
 
-    ``remote_name`` defaults to the local file's basename. With
-    ``missing_ok=True`` this returns ``None`` instead of raising when the file
-    is absent from the bucket -- used by the notebook's "resume the run if a
-    dataset already exists" first pass.
+    ``remote_name`` defaults to the file's folder in the bucket, derived from its
+    name (see :func:`ac_zero.datasets.remote_paths.dataset_remote_name`), so a run
+    pulls ``ball_rank2_rel48.groups.json`` from ``datasets/rank2/rel-48/`` while
+    writing it under its bare on-disk name. With ``missing_ok=True`` this returns
+    ``None`` instead of raising when the file is absent from the bucket -- used by
+    the notebook's "resume the run if a dataset already exists" first pass.
     """
     local = Path(local_path)
-    return download_file(remote_name or local.name, local, bucket=bucket, missing_ok=missing_ok)
+    remote = remote_name or dataset_remote_name(local.name)
+    return download_file(remote, local, bucket=bucket, missing_ok=missing_ok)
 
 
 def upload_files(pairs: list[tuple[str | Path, str]], *, bucket: str = DEFAULT_BUCKET) -> None:
