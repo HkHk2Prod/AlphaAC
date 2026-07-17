@@ -21,7 +21,7 @@ tasks:
   mode: ball
   notebook_slug: hkhk2prod/alphaac-ball
   notebook_dir: notebooks/kaggle
-  active: true
+  active: false
   remaining_runs: null
   accelerator: cpu
   priority: 100
@@ -88,6 +88,11 @@ tasks:
     rank: 2
     agent: alphazero
     model: residual_mlp
+    # Matches the residual_mlp `supervised_rel48_pretrain_mlp.yaml` so its pretrained
+    # weights load on this task's first run (see `training.pretrained_checkpoint`).
+    model_config:
+      embed_dim: 64
+      hidden_dim: 256
     moveset: strict-ac
     max_relator_tokens: 48
     seed: 0
@@ -112,6 +117,9 @@ tasks:
       # while 0 (never) would push nothing at all. 25 keeps the uploader fed with a fresh
       # bundle while writing 25x less.
       checkpoint_every: 25
+      # First run seeds from this supervised-pretrained model on HF; every later run
+      # resumes this task's own RL checkpoint instead (it wins once it exists).
+      pretrained_checkpoint: pretrained-rank2-residual_mlp-rel48
       workers: 0
 - id: train-ppo-strict-navigation
   mode: training
@@ -127,6 +135,10 @@ tasks:
     rank: 2
     agent: ppo
     model: residual_mlp
+    # Matches the residual_mlp `supervised_rel48_pretrain_mlp.yaml` (see below).
+    model_config:
+      embed_dim: 64
+      hidden_dim: 256
     moveset: strict-ac
     max_relator_tokens: 48
     seed: 0
@@ -148,6 +160,9 @@ tasks:
       # See `checkpoint_every` on the alphazero task above: the event feeds the 4-hourly
       # push, so it must fire -- just not every iteration.
       checkpoint_every: 25
+      # First run seeds from this supervised-pretrained model on HF; every later run
+      # resumes this task's own RL checkpoint instead (it wins once it exists).
+      pretrained_checkpoint: pretrained-rank2-residual_mlp-rel48
       workers: 0
 - id: train-alphazero-strict-navigation-transformer
   mode: training
@@ -163,6 +178,13 @@ tasks:
     rank: 2
     agent: alphazero
     model: transformer
+    # Matches the transformer `supervised_rel48_pretrain.yaml` so its pretrained weights
+    # load on this task's first run (see `training.pretrained_checkpoint`).
+    model_config:
+      embed_dim: 128
+      ff_dim: 512
+      num_layers: 4
+      num_heads: 4
     moveset: strict-ac
     max_relator_tokens: 48
     seed: 0
@@ -187,6 +209,9 @@ tasks:
       # while 0 (never) would push nothing at all. 25 keeps the uploader fed with a fresh
       # bundle while writing 25x less.
       checkpoint_every: 25
+      # First run seeds from this supervised-pretrained model on HF; every later run
+      # resumes this task's own RL checkpoint instead (it wins once it exists).
+      pretrained_checkpoint: pretrained-rank2-transformer-rel48
       workers: 0
 - id: train-ppo-strict-navigation-transformer
   mode: training
@@ -202,6 +227,12 @@ tasks:
     rank: 2
     agent: ppo
     model: transformer
+    # Matches the transformer `supervised_rel48_pretrain.yaml` (see below).
+    model_config:
+      embed_dim: 128
+      ff_dim: 512
+      num_layers: 4
+      num_heads: 4
     moveset: strict-ac
     max_relator_tokens: 48
     seed: 0
@@ -223,6 +254,9 @@ tasks:
       # See `checkpoint_every` on the alphazero task above: the event feeds the 4-hourly
       # push, so it must fire -- just not every iteration.
       checkpoint_every: 25
+      # First run seeds from this supervised-pretrained model on HF; every later run
+      # resumes this task's own RL checkpoint instead (it wins once it exists).
+      pretrained_checkpoint: pretrained-rank2-transformer-rel48
       workers: 0
 - id: solve-greedy-strict
   mode: solve

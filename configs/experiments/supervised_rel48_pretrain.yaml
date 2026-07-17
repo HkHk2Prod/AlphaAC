@@ -1,12 +1,16 @@
-# Supervised pretraining of a small model, to be fine-tuned by an RL run afterwards.
+# Supervised pretraining of the transformer used by the RL pipeline, to be fine-tuned by
+# an RL run afterwards. Run it on a local machine and push the result to Hugging Face:
 #
-# The model learns, for each group in the dataset, which move reduces its distance to
-# the trivial group. The checkpoint this writes is an ordinary policy/value checkpoint,
-# so an AlphaZero or PPO config picks it up with:
+#   aczero train --config configs/experiments/supervised_rel48_pretrain.yaml \
+#       --upload-checkpoints
 #
-#   training:
-#     warm_start: runs/train/supervised_rel48_pretrain/model_checkpoint/best.json
-#     max_relator_tokens must match the value below, or the weights will not load.
+# The model learns, for each group in the dataset, which move reduces its distance to the
+# trivial group. The checkpoint this writes is an ordinary policy/value checkpoint, so an
+# AlphaZero or PPO config picks it up as a warm start. It uploads under the fixed
+# `checkpoint_name` below (`model_checkpoints/pretrained-rank2-transformer-rel48/best.json`
+# on HF); a Kaggle RL task names that same string in `training.pretrained_checkpoint` to
+# seed its first run from it. `max_relator_tokens` and `model`/`model_config` must match
+# the RL task's, or the weights will not load.
 rank: 2
 agent: supervised
 model: transformer
@@ -27,7 +31,7 @@ dataset:
   split: data/generated/ball_rank2_rel48.split.json
 training:
   device: auto
-  iterations: 50            # epochs
+  iterations: 200           # upper bound on epochs; early stopping ends it sooner
   optimizer_updates: 200    # minibatches per epoch
   batch_size: 128
   learning_rate: 0.001
@@ -37,4 +41,12 @@ training:
   grad_clip: 1.0
   eval_batches: 20
   checkpoint_every: 1
+  # Stop once the validation descent accuracy has not improved by `min_delta` for
+  # `patience` epochs in a row -- the run trains until it stops learning, not for a fixed
+  # count. The best checkpoint is always the one uploaded, so stopping early loses nothing.
+  early_stopping_patience: 12
+  early_stopping_min_delta: 0.001
+  # Fixed HF lineage name so the pretrained model always lands at the same bucket prefix
+  # and RL tasks can name it. Kept out of the identity hash on purpose.
+  checkpoint_name: pretrained-rank2-transformer-rel48
   run_directory: runs/train/supervised_rel48_pretrain

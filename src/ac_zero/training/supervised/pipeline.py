@@ -122,6 +122,8 @@ class _SupervisedRun:
         self.completed_epochs = 0
         self.final_loss = SupervisedLoss(0.0, 0.0, 0.0)
         self.best_accuracy: float | None = None
+        # Consecutive epochs with no validation improvement, for early stopping.
+        self.no_improve = 0
         # Drawn once in `execute`, so every epoch scores the same validation groups.
         self.validation: list[LabelledBatch] = []
         self.deadline = (
@@ -159,8 +161,12 @@ class _SupervisedRun:
             "labels": str(self.labels.path),
         }
 
-    def _epoch(self, epoch: int) -> None:
-        """Run one epoch of minibatch updates, then score the validation sample."""
+    def _epoch(self, epoch: int) -> float:
+        """Run one epoch of minibatch updates, then score the validation sample.
+
+        Returns the epoch's validation descent accuracy so ``execute`` can drive early
+        stopping off it.
+        """
         for _ in range(self.config.optimizer_updates):
             self.final_loss = self.trainer.step("train", self.config.batch_size, self.rng)
             self.optimizer_step += 1
@@ -176,12 +182,37 @@ class _SupervisedRun:
         }
         self.metrics_rows.append(row)
         self.manager.emit(epoch, "epoch", "trained on labelled groups", row)
-        self.best_accuracy = (
-            metrics.descent_accuracy
-            if self.best_accuracy is None
-            else max(self.best_accuracy, metrics.descent_accuracy)
-        )
         self._save_checkpoint(epoch, metrics.descent_accuracy)
+        return metrics.descent_accuracy
+
+    def _stop_early(self, epoch: int, accuracy: float) -> bool:
+        """Track the best validation accuracy and stop after ``patience`` idle epochs.
+
+        An epoch improves only if it beats the best so far by at least
+        ``early_stopping_min_delta``; ``patience`` such non-improving epochs in a row end
+        the run. ``patience`` of 0 disables early stopping. The best checkpoint is already
+        kept current by the bundle, so stopping here loses no model.
+        """
+        min_delta = self.config.early_stopping_min_delta
+        if self.best_accuracy is None or accuracy > self.best_accuracy + min_delta:
+            self.best_accuracy = accuracy
+            self.no_improve = 0
+        else:
+            self.no_improve += 1
+        patience = self.config.early_stopping_patience
+        if not patience or self.no_improve < patience:
+            return False
+        self.manager.emit(
+            epoch,
+            "early_stop",
+            "no validation improvement; stopping early",
+            {
+                "epoch": epoch,
+                "best_descent_accuracy": self.best_accuracy,
+                "patience": patience,
+            },
+        )
+        return True
 
     def _save_checkpoint(self, epoch: int, accuracy: float) -> None:
         if epoch % self.config.checkpoint_every:
@@ -226,8 +257,10 @@ class _SupervisedRun:
                 "val", self.config.eval_batches, self.config.batch_size, self.seed
             )
             for epoch in range(1, self.config.iterations + 1):
-                self._epoch(epoch)
+                accuracy = self._epoch(epoch)
                 self.completed_epochs = epoch
+                if self._stop_early(epoch, accuracy):
+                    break
                 if self.deadline is not None and time.monotonic() >= self.deadline:
                     self.manager.emit(
                         epoch,

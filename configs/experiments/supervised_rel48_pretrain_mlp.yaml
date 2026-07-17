@@ -1,0 +1,40 @@
+# Supervised pretraining of the residual_mlp used by the RL pipeline, to be fine-tuned by
+# an RL run afterwards. Run it on a local machine and push the result to Hugging Face:
+#
+#   aczero train --config configs/experiments/supervised_rel48_pretrain_mlp.yaml \
+#       --upload-checkpoints
+#
+# The transformer twin of this run is `supervised_rel48_pretrain.yaml`. It uploads under
+# the fixed `checkpoint_name` below
+# (`model_checkpoints/pretrained-rank2-residual_mlp-rel48/best.json` on HF); a Kaggle RL
+# residual_mlp task names that same string in `training.pretrained_checkpoint` to seed its
+# first run from it. `max_relator_tokens` and `model`/`model_config` must match the RL
+# task's, or the weights will not load.
+rank: 2
+agent: supervised
+model: residual_mlp
+moveset: strict-ac
+max_relator_tokens: 48
+model_config:
+  embed_dim: 64
+  hidden_dim: 256
+dataset:
+  path: data/generated/ball_rank2_rel48.groups.json
+  annotations: data/generated/ball_rank2_rel48.strict-ac.annotations.json
+  split: data/generated/ball_rank2_rel48.split.json
+training:
+  device: auto
+  iterations: 200           # upper bound on epochs; early stopping ends it sooner
+  optimizer_updates: 200    # minibatches per epoch
+  batch_size: 128
+  learning_rate: 0.001
+  value_loss_weight: 0.5
+  gamma: 0.99               # sets the value target: 2 * gamma**distance - 1
+  target_temperature: 1.0
+  grad_clip: 1.0
+  eval_batches: 20
+  checkpoint_every: 1
+  early_stopping_patience: 12
+  early_stopping_min_delta: 0.001
+  checkpoint_name: pretrained-rank2-residual_mlp-rel48
+  run_directory: runs/train/supervised_rel48_pretrain_mlp
