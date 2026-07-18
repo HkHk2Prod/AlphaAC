@@ -47,9 +47,21 @@ def derive_checkpoint_name(config: TrainingPipelineConfig) -> str:
     Example: ``rank2-ppo-residual_mlp-strict_ac-length_reduction_and_goal-1a2b3c``.
     The same task/model configuration always yields the same name; a change to
     any hashed task field yields a new one.
+
+    ``checkpoint_name_suffix`` splits one such task into parallel lineages that
+    are otherwise identical -- the pretraining ablation's ``pretrained``/``scratch``
+    twins, whose configs differ only in a field the name does not read. It lands
+    in the readable part, before the hash, so the hash stays the trailing element
+    and *both* lineages still fork together when a hashed task field changes.
+    Pinning a literal ``checkpoint_name`` instead would give the twins distinct
+    names but silently freeze them across such a change.
     """
     readable = "-".join(
-        [f"rank{config.rank}", *(_slug(getattr(config, field)) for field in _READABLE_FIELDS)]
+        [
+            f"rank{config.rank}",
+            *(_slug(getattr(config, field)) for field in _READABLE_FIELDS),
+            *([_slug(config.checkpoint_name_suffix)] if config.checkpoint_name_suffix else []),
+        ]
     )
     payload = {field: getattr(config, field) for field in _HASHED_FIELDS}
     digest = hashlib.sha1(
