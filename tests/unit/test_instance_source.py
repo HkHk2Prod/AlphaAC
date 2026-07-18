@@ -197,58 +197,6 @@ def test_potential_reward_mode_seeds_only_from_known_distance_groups(tmp_path: P
     assert {source.sample(seed).content_hash for seed in range(50)} == {present.content_hash}
 
 
-def _distance_dataset(tmp_path: Path, distances: list[int | None]) -> DatasetSource:
-    """A dataset whose four groups carry the given distances to origin (None = absent)."""
-    presentations = _presentations([1, 2, 3, 4])
-    dataset = tmp_path / "train.groups.json"
-    annotations = tmp_path / "train.universal.annotations.json"
-    _write_groups(dataset, presentations)
-    _write_annotations(
-        annotations,
-        {p.content_hash: {"origin": d} for p, d in zip(presentations, distances, strict=True)},
-        moveset="universal",
-    )
-    source = DatasetSource.from_file(dataset, annotations, max_relator_tokens=BOUND)
-    source._by_hash = {p.content_hash: d for p, d in zip(presentations, distances, strict=True)}
-    return source
-
-
-def test_max_distance_sampling_only_returns_problems_at_or_below_lmax(tmp_path: Path) -> None:
-    # Sanity checks 3 & 4: the sampler caps L at max_distance and imposes no lower
-    # bound -- every distance from 1 up to L_max is eligible.
-    source = _distance_dataset(tmp_path, [1, 2, 3, 8])
-    seen = {source.sample(seed, max_distance=3).content_hash for seed in range(80)}
-    distances = {source._by_hash[h] for h in seen}
-    assert distances == {1, 2, 3}  # 1 (well below L_max) included; 8 (> L_max) excluded
-
-
-def test_max_distance_sampling_excludes_unreachable_and_trivial(tmp_path: Path) -> None:
-    # Distance 0 is the destination itself (trivial) and None is unreachable; both
-    # must be excluded even though they satisfy L <= L_max.
-    source = _distance_dataset(tmp_path, [0, None, 2, 3])
-    seen = {source.sample(seed, max_distance=5).content_hash for seed in range(80)}
-    assert {source._by_hash[h] for h in seen} == {2, 3}
-
-
-def test_max_distance_sampling_raises_when_no_eligible_problems(tmp_path: Path) -> None:
-    source = _distance_dataset(tmp_path, [5, 6, 7, 8])
-    with pytest.raises(ValueError, match="0 < distance_to_origin <= 3"):
-        source.sample(0, max_distance=3)
-
-
-def test_max_distance_sampling_is_seed_deterministic(tmp_path: Path) -> None:
-    source = _distance_dataset(tmp_path, [1, 2, 3, 4])
-    assert (
-        source.sample(11, max_distance=4).content_hash
-        == source.sample(11, max_distance=4).content_hash
-    )
-
-
-def test_scramble_source_rejects_distance_curriculum_sampling() -> None:
-    with pytest.raises(ValueError, match="distance-annotated dataset"):
-        ScrambleSource(rank=2, depth=3).sample(0, max_distance=2)
-
-
 def test_scramble_source_has_no_potentials() -> None:
     assert ScrambleSource(rank=2, depth=3).potentials == {}
 

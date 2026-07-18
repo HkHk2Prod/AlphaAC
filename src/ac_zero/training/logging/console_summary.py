@@ -35,8 +35,6 @@ _MILESTONE_FIELDS: dict[str, tuple[str, ...]] = {
     # group count and the split sizes it will train, score, and test on.
     "dataset": ("source", "groups_used", "annotated", "groups", "train", "val", "test"),
     "navigation": ("success_rate", "progress_rate", "alpha"),
-    "curriculum": ("L_max", "frontier_episode_fraction"),
-    "length_cap": ("L_max", "direction", "max_moves"),
     "budget": ("iteration",),
     "certificate": ("certificate_verified",),
     "completed": ("optimizer_updates", "replay_size", "total_loss"),
@@ -49,8 +47,8 @@ _MILESTONE_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 # Milestones important enough to surface even at the ``quiet`` level: the run's
-# terminal state plus every distance-curriculum length-cap change.
-_QUIET_MILESTONES = ("completed", "budget", "length_cap")
+# terminal state.
+_QUIET_MILESTONES = ("completed", "budget")
 
 
 class ConsoleSummaryLogger:
@@ -122,16 +120,11 @@ class ConsoleSummaryLogger:
             parts.append(f"examples={int(metrics['examples'])}")
         elif "optimizer_step" in metrics:
             parts.append(f"steps={int(metrics['optimizer_step'])}")
-        # The run's dynamic learning parameters, folded onto the same line so their
+        # The run's one dynamic learning parameter, folded onto the same line so its
         # current value is visible every iteration: the navigation shaping weight
-        # ``alpha`` and the distance curriculum's ceiling ``L_max`` (each present
-        # only when its mechanism is active for this run).
+        # ``alpha``, present only on a navigation run.
         if "alpha" in metrics:
             parts.append(f"alpha={float(metrics['alpha']):.3f}")
-        if "L_max" in metrics:
-            parts.append(f"L_max={int(metrics['L_max'])}")
-        if "frontier_success" in metrics:
-            parts.append(f"frontier_success={float(metrics['frontier_success']):.3f}")
         return "  ".join(parts)
 
     def _start_report(self, event: TrainingEvent) -> str:

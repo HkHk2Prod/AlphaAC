@@ -33,7 +33,7 @@ def test_episode_worker_initializer_pins_torch_to_one_thread() -> None:
     try:
         torch.set_num_threads(max(2, original))
         model_state = create_trainable_model("residual_mlp", seed=0).to_json()
-        pipeline_episodes._init_episode_worker(_config(), model_state, None, None)
+        pipeline_episodes._init_episode_worker(_config(), model_state, None)
         assert torch.get_num_threads() == 1
     finally:
         torch.set_num_threads(original)
@@ -44,7 +44,7 @@ def test_rollout_worker_initializer_pins_torch_to_one_thread() -> None:
     try:
         torch.set_num_threads(max(2, original))
         model_state = create_trainable_model("residual_mlp", seed=0).to_json()
-        ppo._init_rollout_worker(_config(), model_state, None, None)
+        ppo._init_rollout_worker(_config(), model_state, None)
         assert torch.get_num_threads() == 1
     finally:
         torch.set_num_threads(original)

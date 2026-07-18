@@ -108,9 +108,9 @@ class RunCheckpointer:
                 "step": optimizer_step,
                 "learning_rate": self._config.learning_rate,
             },
-            # Adaptive across-episode state (shaping alpha + distance curriculum)
-            # so a warm-started run resumes them continuously instead of resetting
-            # to config initials. Empty when neither mechanism is active.
+            # Adaptive across-episode state (the navigation shaping alpha) so a
+            # warm-started run resumes it continuously instead of resetting to the
+            # config initial. Empty off the navigation reward.
             "learning_state": learning_state,
             "replay_size": replay_size,
             "loss": asdict(loss),

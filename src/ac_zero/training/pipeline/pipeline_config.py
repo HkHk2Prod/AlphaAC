@@ -7,7 +7,6 @@ from ac_zero.environment.navigation_reward import RewardConfig
 from ac_zero.environment.rewards import REWARD_MODES
 from ac_zero.moves.universal import MOVE_SET_NAMES
 from ac_zero.training.logging.events import Verbosity
-from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculumConfig
 
 # The training backends `agent:` selects between.
 AGENTS = ("alphazero", "ppo", "supervised")
@@ -22,8 +21,7 @@ class TrainingPipelineConfig:
     # Optional grown group dataset to seed self-play from instead of random
     # scrambles. `dataset_path` points at a downloaded ``.groups.json`` file;
     # `dataset_annotations_path` is its companion ``.<moveset>.annotations.json``,
-    # which carries the per-group distance to origin the curriculum reads.
-    # `dataset_max_difficulty`
+    # which carries the per-group distance to origin. `dataset_max_difficulty`
     # caps which groups are used by their distance to origin (None = all);
     # `dataset_bucket` names the Hugging Face bucket the CLI/notebook pulls from.
     dataset_path: str | None = None
@@ -53,12 +51,12 @@ class TrainingPipelineConfig:
     # alpha updater (ignored by other reward modes). Parsed from a `reward:`
     # sub-mapping in the experiment YAML.
     reward_config: RewardConfig = field(default_factory=RewardConfig)
-    # Dynamic max-distance curriculum for the "navigation" reward: caps the
-    # sampled problem distance ``L`` at ``L_max`` and grows it as the policy
-    # solves the frontier. Independent of the alpha updater above; parsed from a
-    # `curriculum:` sub-mapping in the experiment YAML. Active only when the
-    # instance source carries distance annotations (a grown dataset).
-    curriculum_config: DistanceCurriculumConfig = field(default_factory=DistanceCurriculumConfig)
+    # Fallback self-play horizon for a sampled problem whose distance to the
+    # destination is unknown (a scramble, or a dataset group off the annotated
+    # graph), where the default `3 * L + 6` rule cannot be formed. A deliberately
+    # large cutoff so an unmeasured problem is still given room to solve rather
+    # than truncated early.
+    unknown_distance_max_moves: int = 512
     # Reward discount applied to every training pipeline: the AlphaZero
     # return-to-go targets and the PPO GAE returns/advantages alike. `gamma < 1`
     # weights nearer rewards more, so shorter paths to the goal are preferred; it
@@ -187,8 +185,11 @@ class TrainingPipelineConfig:
                 training.get("goal_reward", data.get("goal_reward", defaults.goal_reward))
             ),
             reward_config=_reward_config(training.get("reward", data.get("reward"))),
-            curriculum_config=_curriculum_config(
-                training.get("curriculum", data.get("curriculum"))
+            unknown_distance_max_moves=int(
+                training.get(
+                    "unknown_distance_max_moves",
+                    data.get("unknown_distance_max_moves", defaults.unknown_distance_max_moves),
+                )
             ),
             gamma=float(training.get("gamma", data.get("gamma", defaults.gamma))),
             model=str(data.get("model", defaults.model)),
@@ -316,9 +317,10 @@ class TrainingPipelineConfig:
             )
         if self.reward_mode not in REWARD_MODES:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
+        if self.unknown_distance_max_moves < 1:
+            raise ValueError("unknown_distance_max_moves must be at least 1")
         if self.reward_mode == "navigation":
             self.reward_config.validate()
-            self.curriculum_config.validate()
             if not self.dataset_annotations_path:
                 raise ValueError(
                     "reward_mode 'navigation' needs dataset.annotations for the "
@@ -419,17 +421,13 @@ def run_description(
     config: TrainingPipelineConfig,
     seed: int,
     training_model: str,
-    *,
-    distance_curriculum_active: bool = False,
 ) -> dict[str, float | int | bool | str]:
     """Every parameter that shapes the trained model, for the opening run log.
 
     Named up front so a run is reproducible from its first event alone: the core
     knobs, the active agent's backend hyperparameters, the dataset/instance
-    source, the distance-curriculum constants when it runs
-    (``distance_curriculum_active``, any dataset-seeded run), and -- under the
-    navigation reward -- the reward-shaping constants. Only the keys that actually
-    apply to this run are emitted.
+    source, and -- under the navigation reward -- the reward-shaping constants.
+    Only the keys that actually apply to this run are emitted.
     """
     report: dict[str, float | int | bool | str] = {
         "seed": seed,
@@ -488,9 +486,6 @@ def run_description(
     ):
         if value is not None:
             report[key] = value
-    if distance_curriculum_active:
-        for name, field_value in asdict(config.curriculum_config).items():
-            report[f"curriculum.{name}"] = field_value
     if config.reward_mode == "navigation":
         for name, field_value in asdict(config.reward_config).items():
             report[f"reward.{name}"] = field_value
@@ -513,23 +508,6 @@ def _reward_config(value: Any) -> RewardConfig:
         return defaults
     fields = {f: getattr(defaults, f) for f in RewardConfig.__dataclass_fields__}
     return RewardConfig(**{f: float(value[f]) for f in fields if f in value})
-
-
-def _curriculum_config(value: Any) -> DistanceCurriculumConfig:
-    """Build a `DistanceCurriculumConfig`, overriding only the keys present.
-
-    Each field is coerced to its default's type (int ceilings/counts, float
-    fractions/thresholds) so YAML scalars land as the dataclass expects.
-    """
-    defaults = DistanceCurriculumConfig()
-    if not isinstance(value, dict):
-        return defaults
-    overrides: dict[str, Any] = {}
-    for name in DistanceCurriculumConfig.__dataclass_fields__:
-        if name in value:
-            coerce = int if isinstance(getattr(defaults, name), int) else float
-            overrides[name] = coerce(value[name])
-    return DistanceCurriculumConfig(**overrides)
 
 
 def _optional_str(value: Any) -> str | None:

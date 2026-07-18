@@ -40,13 +40,8 @@ Summary = Mapping[str, float | int | bool | str]
 class InstanceSource(Protocol):
     """Supplies the starting presentation for one episode, given its seed."""
 
-    def sample(self, seed: int, max_distance: int | None = None) -> BalancedPresentation:
-        """Return the presentation to start the episode seeded by ``seed``.
-
-        ``max_distance`` restricts the draw to problems whose shortest-path
-        distance ``L`` satisfies ``0 < L <= max_distance`` (the distance
-        curriculum's ceiling); ``None`` draws from the unrestricted distribution.
-        """
+    def sample(self, seed: int) -> BalancedPresentation:
+        """Return the presentation to start the episode seeded by ``seed``."""
         ...
 
     @property
@@ -66,12 +61,7 @@ class ScrambleSource:
     rank: int
     depth: int
 
-    def sample(self, seed: int, max_distance: int | None = None) -> BalancedPresentation:
-        if max_distance is not None:
-            raise ValueError(
-                "the scramble source carries no distances; the distance curriculum "
-                "needs a distance-annotated dataset (reward_mode 'navigation')"
-            )
+    def sample(self, seed: int) -> BalancedPresentation:
         return generate_solvable(self.rank, self.depth, seed).presentation
 
     @property
@@ -92,17 +82,13 @@ class DatasetSource:
     ) -> None:
         """Bind the source to a mapped dataset and the group indices it may sample.
 
-        ``selected`` is ``None`` when no curriculum filter applies, so an unfiltered
-        run does not hand every worker its own copy of the identity permutation.
+        ``selected`` is ``None`` when no filter applies, so an unfiltered run does
+        not hand every worker its own copy of the identity permutation.
         """
         self._store = store
         self._selected = selected
         self._count = store.count if selected is None else int(selected.size)
         self._summary: dict[str, float | int | bool | str] = dict(summary)
-        # Eligible index arrays are keyed by ``max_distance``; the curriculum uses
-        # only a handful of distinct ceilings over a run, so this stays tiny while
-        # sparing every episode an O(groups) rescan of the distance column.
-        self._eligible_cache: dict[int, NDArray[np.int64]] = {}
 
     @classmethod
     def from_file(
@@ -118,7 +104,7 @@ class DatasetSource:
 
         Presentations come from the ``.groups.json`` at ``path``. The per-group
         distances live in the separate ``annotations_path`` file: ``max_difficulty``
-        caps ``distance_to_origin`` (a coarse curriculum knob, ``None`` = all), and
+        caps ``distance_to_origin`` (``None`` = all), and
         ``require_potential`` keeps only groups whose ``distance_to_origin`` is known
         (the potential reward's start states). ``max_relator_tokens`` is not a filter
         but a contract: the dataset must have been *generated* under that bound, or
@@ -135,46 +121,13 @@ class DatasetSource:
             raise ValueError(f"group dataset at {groups} has no groups{constraint}")
         return cls(store, selected, _summarize(groups, store, selected, max_difficulty))
 
-    def sample(self, seed: int, max_distance: int | None = None) -> BalancedPresentation:
+    def sample(self, seed: int) -> BalancedPresentation:
         # `Random.choice` over a sequence draws exactly this index, so seeding is
         # unchanged from when the selection was a materialized list of presentations.
-        if max_distance is not None:
-            eligible = self._eligible(max_distance)
-            index = int(eligible[random.Random(seed).randrange(int(eligible.size))])
-            return self._store.presentation(index)
         index = random.Random(seed).randrange(self._count)
         if self._selected is not None:
             index = int(self._selected[index])
         return self._store.presentation(index)
-
-    def _eligible(self, max_distance: int) -> NDArray[np.int64]:
-        """Group indices with a known ``0 < distance_to_origin <= max_distance``.
-
-        Only the *lower* bound is fixed (at zero, excluding the trivial group and
-        unreachable/unannotated groups); ``max_distance`` is the curriculum's sole
-        upper cap. Raises when no group qualifies so a mis-set ceiling fails loudly
-        rather than starving self-play.
-        """
-        cached = self._eligible_cache.get(max_distance)
-        if cached is not None:
-            return cached
-        distances = self._store.distances
-        if distances is None:
-            raise ValueError("distance-curriculum sampling needs a distance-annotated dataset")
-        base = (
-            self._selected
-            if self._selected is not None
-            else np.arange(self._store.count, dtype=np.int64)
-        )
-        base_distances = distances[base]
-        eligible = base[(base_distances > 0) & (base_distances <= max_distance)]
-        if not eligible.size:
-            raise ValueError(
-                f"group dataset at {self._store.path} has no reachable groups with "
-                f"0 < distance_to_origin <= {max_distance}"
-            )
-        self._eligible_cache[max_distance] = eligible
-        return eligible
 
     @property
     def potentials(self) -> Mapping[str, int]:
@@ -249,7 +202,7 @@ def _summarize(
     """Build the log summary for a mapped group dataset.
 
     ``store.count`` groups live in the file and ``annotated`` of them carry a known
-    distance to origin; ``selected`` are the ones left after the curriculum filter,
+    distance to origin; ``selected`` are the ones left after the difficulty filter,
     or ``None`` when it kept them all.
     """
     distances = store.distances

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **The distance curriculum is gone; alpha is the one difficulty knob, and it is now
+  plotted.** `L_max` and the shaping weight `alpha` were conjugate controls on the same
+  thing — how hard a problem the agent is asked to solve — one by capping which distances
+  self-play sampled, the other by scaling how much of the path to the destination it was
+  credited for. Keeping both meant two hysteresis loops chasing one signal. The whole
+  `DistanceCurriculum` (its config block, `L_max` sampling ceiling, frontier-success EMA,
+  and `curriculum`/`curriculum_episode`/`length_cap` events) is removed: self-play now
+  draws from the dataset's full distribution and alpha alone adapts. The horizon fallback
+  the curriculum config happened to carry moves out with it, to
+  `training.unknown_distance_max_moves` (same 512 default). `alpha` is recorded on every
+  metrics row and rendered as `shaping_alpha.png`, so a run's difficulty schedule is
+  visible as a curve rather than only as a number on the terminal line. Best-checkpoint
+  selection on navigation now uses the batch success EMA throughout, instead of the
+  frontier EMA that reset on every ceiling change.
+
 - **Pretrained models pipeline: pretrain locally, fine-tune on Kaggle from Hugging Face.**
   Supervised pretraining now stops when it stops learning: `training.early_stopping_patience`
   (with `early_stopping_min_delta`) ends a run once its validation descent accuracy has not
