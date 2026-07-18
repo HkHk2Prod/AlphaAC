@@ -76,13 +76,15 @@ tasks:
     workers: 0
 # Pretraining ablation: four models (alphazero/ppo x residual_mlp/transformer), each run as
 # TWO twin tasks -- one seeded from the supervised-pretrained checkpoint, one trained from
-# zero -- so the pair isolates pretraining's impact. The from-zero twin drops
-# `pretrained_checkpoint` and pins its own `checkpoint_name` (`...-scratch`) so it never
-# chains into the pretrained twin's checkpoint lineage on the bucket. All eight share
+# zero -- so the pair isolates pretraining's impact. The twins' configs are identical in
+# every field the checkpoint name reads, so each sets a `checkpoint_name_suffix`
+# (`pretrained` / `scratch`) to split them into separate lineages on the bucket; the suffix
+# lands before the identity hash, so both still fork together if a task-defining field
+# changes. All eight share
 # priority 50, so with `max_total_active: 5` the scheduler's oldest-launch-first ordering
 # rotates them fairly through the five Kaggle slots (three always wait, taking a freed slot
 # the moment a run finishes).
-- id: train-alphazero-strict-navigation
+- id: train-alphazero-strict-navigation-pretrained
   mode: training
   notebook_slug: hkhk2prod/alphaac-train-alphazero
   notebook_dir: notebooks/kaggle
@@ -128,6 +130,10 @@ tasks:
       # First run seeds from this supervised-pretrained model on HF; every later run
       # resumes this task's own RL checkpoint instead (it wins once it exists).
       pretrained_checkpoint: pretrained-rank2-residual_mlp-rel48
+      # Names this arm's lineage `...-pretrained-<hash>`, symmetric with its `-scratch`
+      # twin. A suffix (not a pinned `checkpoint_name`) so both arms keep the identity
+      # hash and fork together if a task-defining field changes.
+      checkpoint_name_suffix: pretrained
       workers: 0
 - id: train-alphazero-strict-navigation-scratch
   mode: training
@@ -165,12 +171,12 @@ tasks:
       mcts_simulations: 128
       c_puct: 1.5
       checkpoint_every: 25
-      # From-zero twin of `train-alphazero-strict-navigation`: identical config, no
-      # `pretrained_checkpoint`, and its own lineage so it never inherits the pretrained
-      # run's checkpoints. The pair measures pretraining's impact.
-      checkpoint_name: rank2-alphazero-residual_mlp-strict_ac-navigation-scratch
+      # From-zero twin of `train-alphazero-strict-navigation-pretrained`: identical
+      # config, no `pretrained_checkpoint`, and its own lineage so it never inherits the
+      # pretrained run's checkpoints. The pair measures pretraining's impact.
+      checkpoint_name_suffix: scratch
       workers: 0
-- id: train-ppo-strict-navigation
+- id: train-ppo-strict-navigation-pretrained
   mode: training
   notebook_slug: hkhk2prod/alphaac-train-ppo
   notebook_dir: notebooks/kaggle
@@ -212,6 +218,8 @@ tasks:
       # First run seeds from this supervised-pretrained model on HF; every later run
       # resumes this task's own RL checkpoint instead (it wins once it exists).
       pretrained_checkpoint: pretrained-rank2-residual_mlp-rel48
+      # See the alphazero/residual_mlp pretrained task: suffix, not a pinned name.
+      checkpoint_name_suffix: pretrained
       workers: 0
 - id: train-ppo-strict-navigation-scratch
   mode: training
@@ -249,10 +257,10 @@ tasks:
       value_loss_weight: 0.5
       learning_rate: 0.02
       checkpoint_every: 25
-      # From-zero twin of `train-ppo-strict-navigation` (see the alphazero scratch task).
-      checkpoint_name: rank2-ppo-residual_mlp-strict_ac-navigation-scratch
+      # From-zero twin of `train-ppo-strict-navigation-pretrained` (see the alphazero one).
+      checkpoint_name_suffix: scratch
       workers: 0
-- id: train-alphazero-strict-navigation-transformer
+- id: train-alphazero-strict-navigation-transformer-pretrained
   mode: training
   notebook_slug: hkhk2prod/alphaac-train-alphazero-transformer
   notebook_dir: notebooks/kaggle
@@ -300,6 +308,8 @@ tasks:
       # First run seeds from this supervised-pretrained model on HF; every later run
       # resumes this task's own RL checkpoint instead (it wins once it exists).
       pretrained_checkpoint: pretrained-rank2-transformer-rel48
+      # See the alphazero/residual_mlp pretrained task: suffix, not a pinned name.
+      checkpoint_name_suffix: pretrained
       workers: 0
 - id: train-alphazero-strict-navigation-transformer-scratch
   mode: training
@@ -340,9 +350,9 @@ tasks:
       c_puct: 1.5
       checkpoint_every: 25
       # From-zero twin of `train-alphazero-strict-navigation-transformer` (see above).
-      checkpoint_name: rank2-alphazero-transformer-strict_ac-navigation-scratch
+      checkpoint_name_suffix: scratch
       workers: 0
-- id: train-ppo-strict-navigation-transformer
+- id: train-ppo-strict-navigation-transformer-pretrained
   mode: training
   notebook_slug: hkhk2prod/alphaac-train-ppo-transformer
   notebook_dir: notebooks/kaggle
@@ -386,6 +396,8 @@ tasks:
       # First run seeds from this supervised-pretrained model on HF; every later run
       # resumes this task's own RL checkpoint instead (it wins once it exists).
       pretrained_checkpoint: pretrained-rank2-transformer-rel48
+      # See the alphazero/residual_mlp pretrained task: suffix, not a pinned name.
+      checkpoint_name_suffix: pretrained
       workers: 0
 - id: train-ppo-strict-navigation-transformer-scratch
   mode: training
@@ -426,7 +438,7 @@ tasks:
       learning_rate: 0.02
       checkpoint_every: 25
       # From-zero twin of `train-ppo-strict-navigation-transformer` (see above).
-      checkpoint_name: rank2-ppo-transformer-strict_ac-navigation-scratch
+      checkpoint_name_suffix: scratch
       workers: 0
 - id: solve-greedy-strict
   mode: solve

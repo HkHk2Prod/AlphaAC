@@ -145,6 +145,13 @@ class TrainingPipelineConfig:
     # Override for the Hugging Face checkpoint name; ``None`` derives it from the
     # task/model identity (see ``training.checkpoint_name.derive_checkpoint_name``).
     checkpoint_name: str | None = None
+    # Splits one task's identity into parallel lineages that are otherwise identical --
+    # the pretraining ablation's `pretrained`/`scratch` twins, which differ only in
+    # `pretrained_checkpoint` and so would derive the *same* name and chain into one
+    # lineage. Appended to the derived name before its hash, so both twins keep the
+    # hash and fork together when a task-defining field changes. Prefer this to pinning
+    # a literal `checkpoint_name`, which is what freezes a lineage across such a change.
+    checkpoint_name_suffix: str | None = None
     # HF checkpoint lineage to seed the *first* run of this task from, when it has no
     # checkpoint of its own on the bucket yet -- a supervised-pretrained model this RL run
     # fine-tunes. Once the task has pushed its own (RL) best, that one wins on every later
@@ -296,6 +303,9 @@ class TrainingPipelineConfig:
             checkpoint_name=_optional_str(
                 training.get("checkpoint_name", data.get("checkpoint_name"))
             ),
+            checkpoint_name_suffix=_optional_str(
+                training.get("checkpoint_name_suffix", data.get("checkpoint_name_suffix"))
+            ),
             pretrained_checkpoint=_optional_str(
                 training.get("pretrained_checkpoint", data.get("pretrained_checkpoint"))
             ),
@@ -319,6 +329,11 @@ class TrainingPipelineConfig:
             raise ValueError(f"reward_mode must be one of {REWARD_MODES}")
         if self.unknown_distance_max_moves < 1:
             raise ValueError("unknown_distance_max_moves must be at least 1")
+        if self.checkpoint_name_suffix and self.checkpoint_name:
+            raise ValueError(
+                "checkpoint_name_suffix refines the *derived* name, but checkpoint_name "
+                "pins one outright and so would silently ignore it; set only one"
+            )
         if self.reward_mode == "navigation":
             self.reward_config.validate()
             if not self.dataset_annotations_path:

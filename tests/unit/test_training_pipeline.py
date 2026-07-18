@@ -1090,3 +1090,11 @@ def test_present_plots_reports_paths_without_opening_when_headless(monkeypatch) 
     # Both plots are reported, but no viewer is launched without an interactive tty.
     assert [metrics["path"] for _, metrics in reported] == ["a.png", "b.png"]
     assert opened == []
+
+
+def test_config_reads_checkpoint_name_suffix_from_mapping() -> None:
+    config = TrainingPipelineConfig.from_mapping(
+        {"training": {"checkpoint_name_suffix": "pretrained"}}
+    )
+    assert config.checkpoint_name_suffix == "pretrained"
+    assert TrainingPipelineConfig().checkpoint_name_suffix is None
