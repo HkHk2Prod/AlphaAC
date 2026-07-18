@@ -12,7 +12,6 @@ from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.models.registry import create_trainable_model
 from ac_zero.training.checkpointing.checkpointing import CheckpointManager
-from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculumConfig
 from ac_zero.training.pipeline.instance_source import build_instance_source
 from ac_zero.training.pipeline.pipeline import run_training_pipeline
 from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
@@ -54,7 +53,7 @@ def _ppo_config(**overrides: object) -> TrainingPipelineConfig:
         scramble_depth=2,
         # Scrambles carry no distance, so self-play uses the unknown-distance
         # fallback horizon; cap it small here to keep the test's episodes short.
-        curriculum_config=DistanceCurriculumConfig(unknown_distance_max_moves=6),
+        unknown_distance_max_moves=6,
         model="residual_mlp",
         iterations=1,
         episodes_per_iteration=4,
@@ -219,8 +218,7 @@ def test_cli_train_selects_the_ppo_backend(monkeypatch, tmp_path: Path) -> None:
                 "  count: 3",
                 "  depth: 2",
                 "training:",
-                "  curriculum:",
-                "    unknown_distance_max_moves: 6",
+                "  unknown_distance_max_moves: 6",
                 "  iterations: 1",
                 "  episodes_per_iteration: 3",
                 "  batch_size: 3",

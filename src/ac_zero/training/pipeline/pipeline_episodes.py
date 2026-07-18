@@ -46,10 +46,7 @@ class EpisodeMetrics:
 
     ``nav`` carries the navigation reward's per-episode aggregate (progress,
     success, component sums) that feeds the alpha updater and the evaluation
-    metrics; ``None`` for other reward modes. ``start_distance`` is the episode's
-    problem distance ``L`` to the destination -- what the distance curriculum folds
-    over -- set for every dataset episode with a known distance regardless of reward
-    mode (``None`` for a scramble or an off-graph, unannotated group).
+    metrics; ``None`` for other reward modes.
     """
 
     total_return: float
@@ -57,7 +54,6 @@ class EpisodeMetrics:
     success: bool
     moves: int
     nav: EpisodeStats | None = None
-    start_distance: int | None = None
 
 
 def batch_return_and_success(episodes: list[EpisodeMetrics]) -> tuple[float, float]:
@@ -147,7 +143,6 @@ def collect_episodes(
     iteration: int,
     source: InstanceSource,
     alpha: float | None = None,
-    max_distance: int | None = None,
 ) -> list[tuple[list[ReplayExample], EpisodeMetrics]]:
     """Collect one iteration's self-play episodes, fanning out across processes.
 
@@ -156,16 +151,14 @@ def collect_episodes(
     identical whether one or many worker processes are used. ``source`` is the
     run's instance source, reused across iterations. Workers open their own handle
     on it, which memory-maps the same dataset sidecar rather than parsing the
-    dataset again (see :mod:`ac_zero.datasets.instance_store`). ``max_distance`` is
-    the distance curriculum's ceiling this batch was sampled under (``None`` off
-    the curriculum), held constant for the batch like ``alpha``.
+    dataset again (see :mod:`ac_zero.datasets.instance_store`).
     """
     episode_seeds = [
         seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)
     ]
     if resolve_worker_count(config.workers) <= 1:
         return [
-            _collect_episode(config, encoder, episode_seed, model, source, alpha, max_distance)
+            _collect_episode(config, encoder, episode_seed, model, source, alpha)
             for episode_seed in episode_seeds
         ]
     return parallel_map(
@@ -173,7 +166,7 @@ def collect_episodes(
         episode_seeds,
         workers=config.workers,
         initializer=_init_episode_worker,
-        initargs=(config, model.to_json(), alpha, max_distance),
+        initargs=(config, model.to_json(), alpha),
     )
 
 
@@ -185,24 +178,20 @@ _WORKER_ENCODER: StateEncoder | None = None
 _WORKER_MODEL: PolicyValueModel | None = None
 _WORKER_SOURCE: InstanceSource | None = None
 _WORKER_ALPHA: float | None = None
-_WORKER_MAX_DISTANCE: int | None = None
 
 
 def _init_episode_worker(
     config: TrainingPipelineConfig,
     model_state: dict[str, Any],
     alpha: float | None,
-    max_distance: int | None,
 ) -> None:
-    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL, _WORKER_SOURCE
-    global _WORKER_ALPHA, _WORKER_MAX_DISTANCE
+    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL, _WORKER_SOURCE, _WORKER_ALPHA
     use_single_torch_thread()
     _WORKER_CONFIG = config
     _WORKER_ENCODER = StateEncoder(config.max_relator_tokens)
     _WORKER_MODEL = model_from_json(model_state)
     _WORKER_SOURCE = build_instance_source(config)
     _WORKER_ALPHA = alpha
-    _WORKER_MAX_DISTANCE = max_distance
 
 
 def _episode_worker(episode_seed: int) -> tuple[list[ReplayExample], EpisodeMetrics]:
@@ -215,7 +204,6 @@ def _episode_worker(episode_seed: int) -> tuple[list[ReplayExample], EpisodeMetr
         _WORKER_MODEL,
         _WORKER_SOURCE,
         _WORKER_ALPHA,
-        _WORKER_MAX_DISTANCE,
     )
 
 
@@ -226,15 +214,14 @@ def _collect_episode(
     model: PolicyValueModel,
     source: InstanceSource,
     alpha: float | None = None,
-    max_distance: int | None = None,
 ) -> tuple[list[ReplayExample], EpisodeMetrics]:
     # A per-episode RNG seeded from the episode seed keeps action sampling
     # independent of execution order, so episodes can run in parallel and still
     # reproduce exactly.
     rng = random.Random(episode_seed)
-    presentation = source.sample(episode_seed, max_distance)
-    start_distance, max_moves = episode_distance_and_moves(
-        source, presentation, config.curriculum_config.unknown_distance_max_moves
+    presentation = source.sample(episode_seed)
+    _, max_moves = episode_distance_and_moves(
+        source, presentation, config.unknown_distance_max_moves
     )
     env = build_env(config, presentation, source, alpha, max_moves)
     mcts = PUCTMCTS(
@@ -281,7 +268,6 @@ def _collect_episode(
         success=terminated,
         moves=len(pending),
         nav=nav,
-        start_distance=start_distance,
     )
 
 

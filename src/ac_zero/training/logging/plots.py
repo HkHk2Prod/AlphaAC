@@ -40,6 +40,16 @@ TRAINING_PLOTS: tuple[PlotSpec, ...] = (
         ("mean_return", "success_rate"),
     ),
     PlotSpec(
+        "shaping_alpha.png",
+        "Navigation shaping weight",
+        "optimizer_step",
+        # The navigation reward's one adaptive knob: it rises while the policy makes
+        # little progress, falls once it progresses without solving, and anneals as
+        # success sets in -- so its trace reads as the run's difficulty schedule.
+        ("alpha",),
+        ylabel="alpha",
+    ),
+    PlotSpec(
         "validation.png",
         "Validation (supervised)",
         "optimizer_step",

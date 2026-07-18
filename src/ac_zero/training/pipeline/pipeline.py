@@ -17,8 +17,7 @@ from ac_zero.training.checkpointing.checkpoint_name import derive_checkpoint_nam
 from ac_zero.training.checkpointing.checkpoint_writer import RunCheckpointer
 from ac_zero.training.logging.callbacks import CallbackManager, default_training_callbacks
 from ac_zero.training.logging.events import LogLevel, Verbosity
-from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculum
-from ac_zero.training.navigation.navigation_metrics import log_curriculum, log_navigation
+from ac_zero.training.navigation.navigation_metrics import log_navigation
 from ac_zero.training.pipeline.instance_source import build_instance_source
 from ac_zero.training.pipeline.pipeline_artifacts import render_plots, write_fixture_certificate
 from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig, run_description
@@ -120,19 +119,9 @@ class _TrainingRun:
         self.alpha_updater = (
             AlphaUpdater(config.reward_config) if config.reward_mode == "navigation" else None
         )
-        # Separate from the alpha updater (it caps which problems are sampled, not
-        # the shaping weight): on by default for any dataset-seeded run, since an
-        # easy-to-hard sampling schedule helps every reward mode, not just
-        # navigation. Meaningful only when the source carries per-group distances,
-        # so a scramble-seeded run (no potentials) leaves it off.
-        self.distance_curriculum = (
-            DistanceCurriculum(config.curriculum_config)
-            if bool(self._instance_source.potentials)
-            else None
-        )
-        # Continue the adaptive shaping weight and curriculum ceiling from the
-        # warm-start checkpoint so a resumed lineage does not snap alpha/L_max
-        # back to their config initials mid-training.
+        # Continue the adaptive shaping weight from the warm-start checkpoint so a
+        # resumed lineage does not snap alpha back to its config initial
+        # mid-training.
         self._restore_learning_state()
         self.ppo = (
             PPOTrainer(config, self.encoder, self._instance_source)
@@ -164,7 +153,7 @@ class _TrainingRun:
             return None
         data = json.loads(Path(self.config.warm_start).read_text(encoding="utf-8"))
         # Kept so the adaptive learning state can be restored once the alpha
-        # updater and distance curriculum exist (see _restore_learning_state).
+        # updater exists (see _restore_learning_state).
         self._warm_start_payload = data
         self.model = model_from_json(data.get("model_state", data))
         iteration, metric = data.get("iteration"), data.get("checkpoint_metric")
@@ -176,13 +165,12 @@ class _TrainingRun:
         return self.config.warm_start
 
     def _restore_learning_state(self) -> None:
-        """Continue alpha/L_max from the warm-start checkpoint when it carried them.
+        """Continue alpha from the warm-start checkpoint when it carried one.
 
-        Reads the ``learning_state`` block the checkpointer now writes and applies
-        each half to the mechanism it belongs to, but only when both the snapshot
-        and the live run have that mechanism active. A checkpoint from before this
-        field existed (or one that ran without the curriculum) leaves the fresh
-        objects at their config initials -- the pre-existing behavior.
+        Reads the ``learning_state`` block the checkpointer writes, but only when
+        both the snapshot and the live run run the navigation reward. A checkpoint
+        from before this field existed leaves the fresh updater at its config
+        initial -- the pre-existing behavior.
         """
         payload = self._warm_start_payload
         if not payload:
@@ -192,24 +180,16 @@ class _TrainingRun:
         if alpha_state is not None and self.alpha_updater is not None:
             self.alpha_updater.load_state_dict(alpha_state)
             print(f"[warm-start] resumed shaping alpha at {self.alpha_updater.alpha:.4f}")
-        curriculum_state = state.get("distance_curriculum")
-        if curriculum_state is not None and self.distance_curriculum is not None:
-            self.distance_curriculum.load_state_dict(curriculum_state)
-            print(f"[warm-start] resumed curriculum L_max at {self.distance_curriculum.L_max}")
 
     def _learning_state(self) -> dict[str, Any]:
         """The adaptive across-episode state to persist in the next checkpoint.
 
-        Each mechanism contributes its snapshot only while active, so a scramble
-        run (no curriculum) or a non-navigation run (no alpha) writes an empty or
-        partial block that :meth:`_restore_learning_state` restores symmetrically.
+        Empty for a non-navigation run, which carries no alpha to advance, so
+        :meth:`_restore_learning_state` restores nothing from it.
         """
-        state: dict[str, Any] = {}
-        if self.alpha_updater is not None:
-            state["alpha_updater"] = self.alpha_updater.state_dict()
-        if self.distance_curriculum is not None:
-            state["distance_curriculum"] = self.distance_curriculum.state_dict()
-        return state
+        if self.alpha_updater is None:
+            return {}
+        return {"alpha_updater": self.alpha_updater.state_dict()}
 
     def _record_iteration_stats(self, mean_return: float, success_rate: float) -> None:
         """Track the latest self-play stats and the EMAs used to pick the best model."""
@@ -228,54 +208,21 @@ class _TrainingRun:
         """The navigation shaping weight this iteration's episodes run at."""
         return None if self.alpha_updater is None else self.alpha_updater.alpha
 
-    def _current_max_distance(self) -> int | None:
-        """The distance ceiling ``L_max`` this iteration's problems are sampled under."""
-        if self.distance_curriculum is None:
-            return None
-        return self.distance_curriculum.current_L_max()
+    def _dynamic_params(self) -> dict[str, float | int]:
+        """The run's dynamic learning parameters, for the iteration line and metrics rows.
 
-    def _dynamic_params(self, L_max_episode: int | None) -> dict[str, float | int]:
-        """Current values of the run's dynamic learning parameters for the iteration line.
-
-        Reported every iteration so their live value is visible on the terminal.
-        Each key is present only when its mechanism is active for this run, so a
-        plain scramble run adds nothing:
-
-        - ``alpha`` -- the navigation reward's shaping weight (navigation runs only;
-          the ``potential``/other modes carry no alpha to advance).
-        - ``L_max`` -- the distance curriculum's ceiling this batch sampled under.
-        - ``frontier_success`` -- the curriculum's rolling frontier-success EMA, the
-          signal that drives ``L_max`` up or down; present for every dataset run once
-          a frontier episode has seeded it, so a ``potential`` run reports it too.
+        Just the navigation reward's shaping weight ``alpha`` -- the run's one
+        adaptive knob -- reported every iteration so its live value is visible on
+        the terminal, and folded into every metrics row so the rendered plots show
+        how it moved over the run. Empty off navigation, where there is no alpha to
+        advance and the alpha figure is therefore skipped.
         """
-        params: dict[str, float | int] = {}
         alpha = self._current_alpha()
-        if alpha is not None:
-            params["alpha"] = alpha
-        if L_max_episode is not None:
-            params["L_max"] = L_max_episode
-        if self.distance_curriculum is not None:
-            ema = self.distance_curriculum.frontier_success_ema
-            if ema is not None:
-                params["frontier_success"] = ema
-        return params
+        return {} if alpha is None else {"alpha": alpha}
 
     def _checkpoint_metric(self) -> float | None:
-        """Best-model metric, favoring success rate over shaped return.
-
-        Under the distance curriculum it is the success rate at the *current*
-        frontier once estimated; that resets on each ``L_max`` change, so it falls
-        back to the batch success EMA in the gap, and to the return EMA off
-        navigation.
-        """
-        if self.alpha_updater is None:
-            return self.return_ema
-        if (
-            self.distance_curriculum is not None
-            and self.distance_curriculum.frontier_success_ema is not None
-        ):
-            return self.distance_curriculum.frontier_success_ema
-        return self.success_ema
+        """Best-model metric: the success EMA on navigation, the return EMA elsewhere."""
+        return self.success_ema if self.alpha_updater is not None else self.return_ema
 
     def _finalize_navigation(self, iteration: int, episodes: list[EpisodeMetrics]) -> None:
         """Advance alpha from the batch and log per-episode + aggregate nav metrics."""
@@ -290,34 +237,9 @@ class _TrainingRun:
             self._progress_level(iteration),
         )
 
-    def _finalize_curriculum(
-        self, iteration: int, episodes: list[EpisodeMetrics], L_max_episode: int | None
-    ) -> None:
-        """Advance the distance curriculum from the batch and log its metrics.
-
-        Separate from :meth:`_finalize_navigation` so ``L_max`` and alpha never
-        touch each other's state (they only share the episode batch).
-        """
-        if self.distance_curriculum is None or L_max_episode is None:
-            return
-        log_curriculum(
-            self.manager,
-            iteration * 100 + 70,
-            iteration,
-            self.distance_curriculum,
-            episodes,
-            L_max_episode,
-            self._progress_level(iteration),
-        )
-
     def execute(self) -> TrainingPipelineSummary:
         try:
-            description = run_description(
-                self.config,
-                self.seed,
-                self.model.architecture,
-                distance_curriculum_active=self.distance_curriculum is not None,
-            )
+            description = run_description(self.config, self.seed, self.model.architecture)
             self.manager.emit(0, "start", "starting training pipeline", description)
             self.manager.emit(
                 1, "dataset", "self-play instance source", dict(self._instance_source.describe())
@@ -401,15 +323,11 @@ class _TrainingRun:
         if self.ppo is not None:
             self._train_iteration_ppo(iteration)
             return
-        # Read the ceiling before sampling so a mid-batch L_max change (folded in
-        # after collection) cannot alter which problems this batch was drawn from.
-        L_max_episode = self._current_max_distance()
-        episodes = self._collect_iteration(iteration, L_max_episode)
+        episodes = self._collect_iteration(iteration)
         self.total_episodes += len(episodes)
         mean_return, success_rate = batch_return_and_success(episodes)
         self._record_iteration_stats(mean_return, success_rate)
         self._finalize_navigation(iteration, episodes)
-        self._finalize_curriculum(iteration, episodes, L_max_episode)
         self.manager.emit(
             iteration * 100,
             "self_play",
@@ -420,25 +338,23 @@ class _TrainingRun:
                 "mean_return": mean_return,
                 "success_rate": success_rate,
                 "replay_size": len(self.replay),
-                **self._dynamic_params(L_max_episode),
+                **self._dynamic_params(),
             },
             level=self._progress_level(iteration),
         )
         self._run_optimizer_updates(iteration, mean_return, success_rate)
-        self._checkpoint(iteration, L_max_episode)
+        self._checkpoint(iteration)
 
     def _train_iteration_ppo(self, iteration: int) -> None:
         """Run one PPO iteration: on-policy rollouts, clipped updates, checkpoint."""
         assert self.ppo is not None
-        L_max_episode = self._current_max_distance()
         result = self.ppo.run_iteration(
-            self.model, self.seed, iteration, self.rng, self._current_alpha(), L_max_episode
+            self.model, self.seed, iteration, self.rng, self._current_alpha()
         )
         self.total_episodes += len(result.episodes)
         mean_return, success_rate = batch_return_and_success(result.episodes)
         self._record_iteration_stats(mean_return, success_rate)
         self._finalize_navigation(iteration, result.episodes)
-        self._finalize_curriculum(iteration, result.episodes, L_max_episode)
         self.manager.emit(
             iteration * 100,
             "self_play",
@@ -449,7 +365,7 @@ class _TrainingRun:
                 "mean_return": mean_return,
                 "success_rate": success_rate,
                 "examples": result.example_count,
-                **self._dynamic_params(L_max_episode),
+                **self._dynamic_params(),
             },
             level=self._progress_level(iteration),
         )
@@ -468,6 +384,7 @@ class _TrainingRun:
                 "approx_kl": stats.approx_kl,
                 "mean_return": mean_return,
                 "success_rate": success_rate,
+                **self._dynamic_params(),
             }
             self.metrics_rows.append(row)
             self.manager.emit(
@@ -477,9 +394,9 @@ class _TrainingRun:
                 row,
                 level=self._progress_level(self.optimizer_step),
             )
-        self._checkpoint(iteration, L_max_episode)
+        self._checkpoint(iteration)
 
-    def _checkpoint(self, iteration: int, L_max_episode: int | None) -> None:
+    def _checkpoint(self, iteration: int) -> None:
         """Save this iteration's checkpoint, then show an episode when one is due.
 
         The checkpoint event is what the HF uploader listens on, so the showcase
@@ -506,10 +423,9 @@ class _TrainingRun:
             iteration=iteration,
             seed=self.seed + iteration * 10_000 + self.config.episodes_per_iteration,
             alpha=self._current_alpha(),
-            max_distance=L_max_episode,
         )
 
-    def _collect_iteration(self, iteration: int, max_distance: int | None) -> list[EpisodeMetrics]:
+    def _collect_iteration(self, iteration: int) -> list[EpisodeMetrics]:
         """Collect this iteration's self-play episodes into the replay buffer."""
         episodes: list[EpisodeMetrics] = []
         collected = collect_episodes(
@@ -520,7 +436,6 @@ class _TrainingRun:
             iteration,
             self._instance_source,
             self._current_alpha(),
-            max_distance,
         )
         for examples, episode_metrics in collected:
             self.replay.extend(examples)
@@ -550,6 +465,7 @@ class _TrainingRun:
                 "total_loss": self.final_loss.total_loss,
                 "mean_return": mean_return,
                 "success_rate": success_rate,
+                **self._dynamic_params(),
             }
             self.metrics_rows.append(row)
             self.manager.emit(

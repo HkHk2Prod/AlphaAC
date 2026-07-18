@@ -11,7 +11,7 @@
 # the run seeds self-play from the grown dataset and its `strict-ac` annotations.
 # Leaving dataset.path unset lets `aczero train` pull the group dataset + its
 # annotations from the online HF bucket into data/generated/ by default (needed
-# for the navigation reward's start-to-goal distance and the distance curriculum).
+# for the navigation reward's start-to-goal distance).
 # Which dataset it pulls follows from `max_relator_tokens` below: the ball grown
 # under that same bound, `ball_rank2_rel48`.
 rank: 2

@@ -102,11 +102,10 @@ class EpisodeShowcase:
         iteration: int,
         seed: int,
         alpha: float | None,
-        max_distance: int | None,
     ) -> ShowcaseEpisode:
         """Play one episode, print its transcript, and record its shape as an event."""
         self._last = time.monotonic()
-        episode = self._play(model, seed, alpha, max_distance)
+        episode = self._play(model, seed, alpha)
         print(render_episode(episode, iteration), flush=True)
         manager.emit(
             event_id,
@@ -129,11 +128,10 @@ class EpisodeShowcase:
         model: PolicyValueModel,
         seed: int,
         alpha: float | None,
-        max_distance: int | None,
     ) -> ShowcaseEpisode:
-        presentation = self.source.sample(seed, max_distance)
+        presentation = self.source.sample(seed)
         start_distance, max_moves = episode_distance_and_moves(
-            self.source, presentation, self.config.curriculum_config.unknown_distance_max_moves
+            self.source, presentation, self.config.unknown_distance_max_moves
         )
         env = build_env(self.config, presentation, self.source, alpha, max_moves)
         names = presentation.generator_names

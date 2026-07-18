@@ -75,10 +75,8 @@ def test_console_summary_bundles_iteration_and_drops_per_episode_events() -> Non
                 "mean_return": 0.42,
                 "success_rate": 0.5,
                 "replay_size": 4096,
-                # Dynamic learning parameters folded onto the iteration line.
+                # The run's dynamic learning parameter, folded onto the iteration line.
                 "alpha": 0.3,
-                "L_max": 4,
-                "frontier_success": 0.8,
             },
         )
     )
@@ -90,22 +88,18 @@ def test_console_summary_bundles_iteration_and_drops_per_episode_events() -> Non
     assert "success=0.50" in printed
     assert "loss=0.1234" in printed
     assert "replay=4096" in printed
-    # Each iteration line shows the current value of the run's dynamic parameters.
+    # Each iteration line shows the current value of the run's dynamic parameter.
     assert "alpha=0.300" in printed
-    assert "L_max=4" in printed
-    assert "frontier_success=0.800" in printed
 
 
 def test_console_iteration_line_omits_inactive_dynamic_parameters() -> None:
     stream = io.StringIO()
     logger = ConsoleSummaryLogger(stream=stream)
-    # A plain run carries neither alpha nor L_max, so the line adds no params.
+    # A non-navigation run carries no alpha, so the line adds no params.
     logger.on_event(_event("self_play", {"iteration": 1, "episodes": 4, "mean_return": 0.1}))
     printed = stream.getvalue()
     assert "iter     1" in printed
     assert "alpha=" not in printed
-    assert "L_max=" not in printed
-    assert "frontier_success=" not in printed
 
 
 def test_console_summary_prints_a_line_for_each_supervised_epoch() -> None:
@@ -209,21 +203,12 @@ def test_console_summary_dataset_line_names_the_instance_source() -> None:
     assert "val=20" in supervised.getvalue()
 
 
-def test_console_summary_drops_checkpoint_but_keeps_length_cap() -> None:
+def test_console_summary_drops_checkpoint_events() -> None:
     stream = io.StringIO()
     logger = ConsoleSummaryLogger(stream=stream)
     # Checkpoint saves are recorded to JSONL but no longer clutter the console.
     logger.on_event(_event("checkpoint", {"iteration": 3, "optimizer_step": 12}))
-    # A distance-curriculum length-cap change is a milestone worth surfacing.
-    logger.on_event(
-        _event("length_cap", {"iteration": 3, "L_max": 4, "direction": "increase", "max_moves": 18})
-    )
-    printed = stream.getvalue()
-    assert "checkpoint" not in printed
-    assert "length_cap:" in printed
-    assert "L_max=4" in printed
-    assert "direction=increase" in printed
-    assert "max_moves=18" in printed
+    assert "checkpoint" not in stream.getvalue()
 
 
 def test_console_summary_quiet_keeps_only_milestones_and_diagnostics() -> None:
@@ -231,7 +216,6 @@ def test_console_summary_quiet_keeps_only_milestones_and_diagnostics() -> None:
     logger = ConsoleSummaryLogger(stream=stream, iterations=False)
     logger.on_event(_event("start", {"seed": 0}))
     logger.on_event(_event("self_play", {"iteration": 2, "mean_return": 0.1}))
-    logger.on_event(_event("length_cap", {"L_max": 3, "direction": "increase", "max_moves": 15}))
     logger.on_event(_event("checkpoint", {"iteration": 2}))
     logger.on_event(_event("completed", {"optimizer_updates": 9, "replay_size": 8}))
     logger.on_event(_event("dataset", {"errors": 1}, level=LogLevel.WARNING))
@@ -240,9 +224,7 @@ def test_console_summary_quiet_keeps_only_milestones_and_diagnostics() -> None:
     assert "start:" in printed
     assert "completed:" in printed
     assert "dataset WARNING:" in printed
-    # Length-cap changes surface even in quiet mode; checkpoints and iteration
-    # lines do not.
-    assert "length_cap:" in printed
+    # Checkpoints and iteration lines do not surface in quiet mode.
     assert "checkpoint" not in printed
     assert "iter " not in printed
 

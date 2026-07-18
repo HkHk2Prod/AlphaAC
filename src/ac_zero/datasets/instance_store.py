@@ -1,7 +1,7 @@
 """A compact, memory-mapped view of a grown group dataset's start states.
 
 Self-play needs only three things from a ``*.groups.json``: the rank, each
-group's relators, and -- for the curriculum filter and the potential reward --
+group's relators, and -- for the difficulty filter and the potential reward --
 its distance to the trivial group. The document carries far more. The universal
 move adjacency alone is ~85% of the bytes, and parsing the whole thing costs
 roughly six times the file size in Python objects: a 2 GB dataset becomes a

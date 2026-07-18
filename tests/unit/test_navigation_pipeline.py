@@ -13,17 +13,8 @@ from ac_zero.datasets.groups import (
 )
 from ac_zero.environment.navigation_reward import AlphaUpdater, EpisodeStats, RewardConfig
 from ac_zero.training.logging.callbacks import CallbackManager
-from ac_zero.training.logging.events import LogLevel, TrainingEvent
-from ac_zero.training.navigation.navigation_curriculum import (
-    DistanceCurriculum,
-    DistanceCurriculumConfig,
-)
-from ac_zero.training.navigation.navigation_metrics import (
-    fold_alpha,
-    fold_curriculum,
-    log_curriculum,
-    navigation_eval_metrics,
-)
+from ac_zero.training.logging.events import TrainingEvent
+from ac_zero.training.navigation.navigation_metrics import fold_alpha, navigation_eval_metrics
 from ac_zero.training.pipeline.pipeline import TrainingPipelineConfig, run_training_pipeline
 from ac_zero.training.pipeline.pipeline_episodes import EpisodeMetrics
 
@@ -33,9 +24,8 @@ _ANNOTATIONS_SCHEMA = "aczero-annotations-v1"
 def _annotated_dataset(tmp_path: Path) -> tuple[str, str]:
     """Write a tiny grown dataset whose groups carry small known distances.
 
-    Navigation requires distance annotations, and the distance curriculum starts at
-    ``L_max = 2``, so every group is annotated with a distance in ``{1, 2}`` to keep
-    the sampler non-empty.
+    Navigation requires distance annotations, so every group is annotated with a
+    distance in ``{1, 2}``.
     """
     presentations = [
         generate_solvable(rank=2, depth=1 + i % 2, seed=i).presentation for i in range(6)
@@ -116,7 +106,6 @@ def _episode(progress: float, success: bool, *, start: int = 10) -> EpisodeMetri
         success=success,
         moves=3,
         nav=stats,
-        start_distance=start,
     )
 
 
@@ -165,69 +154,6 @@ def test_navigation_eval_metrics_empty_without_nav_episodes() -> None:
     assert navigation_eval_metrics([plain]) == {}
 
 
-def test_log_curriculum_emits_info_length_cap_event_on_lmax_change() -> None:
-    # Two frontier successes at L_max = 2 are enough to trip the increase rule.
-    curriculum = DistanceCurriculum(
-        DistanceCurriculumConfig(
-            min_frontier_episodes_before_update=2, frontier_success_ema_rate=1.0
-        )
-    )
-    sink = _CapturingSink()
-    episodes = [_episode(1.0, True, start=2), _episode(1.0, True, start=2)]
-    log_curriculum(
-        CallbackManager((sink,)),
-        100,
-        iteration=4,
-        curriculum=curriculum,
-        episodes=episodes,
-        L_max_episode=2,
-        level=LogLevel.DEBUG,
-    )
-    cap_events = [e for e in sink.events if e.phase == "length_cap"]
-    assert len(cap_events) == 1
-    event = cap_events[0]
-    # Reported at INFO even though the batch's other events ran at DEBUG.
-    assert event.level is LogLevel.INFO
-    assert event.metrics["L_max"] == 3
-    assert event.metrics["direction"] == "increase"
-    assert event.metrics["max_moves"] == 3 * 3 + 6
-
-
-def test_log_curriculum_emits_no_length_cap_event_when_lmax_holds() -> None:
-    curriculum = DistanceCurriculum(DistanceCurriculumConfig())
-    sink = _CapturingSink()
-    log_curriculum(
-        CallbackManager((sink,)),
-        100,
-        iteration=1,
-        curriculum=curriculum,
-        episodes=[_episode(0.1, False, start=2)],
-        L_max_episode=2,
-        level=LogLevel.INFO,
-    )
-    assert not [e for e in sink.events if e.phase == "length_cap"]
-
-
-def test_fold_curriculum_advances_on_distance_without_navigation_stats() -> None:
-    # A potential-reward run carries no `nav` stats, but its episodes still have a
-    # known start distance -- the curriculum must fold over those and advance L_max,
-    # not sit frozen because `nav` is None.
-    curriculum = DistanceCurriculum(
-        DistanceCurriculumConfig(
-            min_frontier_episodes_before_update=2, frontier_success_ema_rate=1.0
-        )
-    )
-    frontier = [
-        EpisodeMetrics(
-            total_return=1.0, normalized_return=1.0, success=True, moves=3, start_distance=2
-        )
-        for _ in range(2)
-    ]
-    updates = fold_curriculum(curriculum, frontier, L_max_episode=2)
-    assert len(updates) == 2  # both distance-annotated episodes were folded
-    assert curriculum.current_L_max() == 3  # ceiling grew off the solved frontier
-
-
 def _navigation_config(tmp_path: Path, agent: str) -> TrainingPipelineConfig:
     dataset_path, annotations_path = _annotated_dataset(tmp_path)
     return TrainingPipelineConfig(
@@ -262,31 +188,41 @@ def test_navigation_pipeline_emits_alpha_and_eval_metrics(tmp_path: Path, agent:
     # Per-episode alpha logging (item 1 of the reward spec).
     episode_events = [e for e in sink.events if e.phase == "navigation_episode"]
     assert episode_events
-    # Each iteration's self-play line reports the run's live dynamic parameters:
-    # the shaping weight alpha and the distance curriculum ceiling L_max.
+    # Each iteration's self-play line reports the run's one live dynamic parameter,
+    # the shaping weight alpha.
     iteration_events = [
         e for e in sink.events if e.phase == "self_play" and "iteration" in e.metrics
     ]
     assert iteration_events
     assert "alpha" in iteration_events[-1].metrics
-    assert "L_max" in iteration_events[-1].metrics
 
 
-def test_warm_start_resumes_alpha_and_l_max_from_checkpoint(tmp_path: Path) -> None:
+def test_navigation_run_records_alpha_on_every_metrics_row(tmp_path: Path) -> None:
+    # Alpha is folded into the metrics rows so the rendered plots can trace it; a
+    # non-navigation run carries none and its alpha figure is skipped.
+    config = _navigation_config(tmp_path, "alphazero")
+    run_training_pipeline(config, seed=5, callbacks=CallbackManager(()))
+    rows = [
+        json.loads(line)
+        for line in (Path(config.run_directory) / "metrics.jsonl").read_text().splitlines()
+    ]
+    assert rows and all("alpha" in row for row in rows)
+
+
+def test_warm_start_resumes_alpha_from_checkpoint(tmp_path: Path) -> None:
     from dataclasses import replace
 
     from ac_zero.training.pipeline.pipeline import _TrainingRun
 
-    # Run once to produce a checkpoint, then edit its adaptive state to known
-    # values so we can prove a warm-started run continues from them rather than
-    # resetting alpha/L_max to their config initials.
+    # Run once to produce a checkpoint, then edit its adaptive state to a known
+    # value so we can prove a warm-started run continues from it rather than
+    # resetting alpha to its config initial.
     config = _navigation_config(tmp_path, "alphazero")
     summary = run_training_pipeline(config, seed=5, callbacks=CallbackManager(()))
     checkpoint = Path(summary.checkpoint_path)
     payload = json.loads(checkpoint.read_text(encoding="utf-8"))
     assert "learning_state" in payload
     payload["learning_state"]["alpha_updater"]["alpha"] = 0.77
-    payload["learning_state"]["distance_curriculum"]["L_max"] = 4
     warm = tmp_path / "warm_start.json"
     warm.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -297,49 +233,19 @@ def test_warm_start_resumes_alpha_and_l_max_from_checkpoint(tmp_path: Path) -> N
     )
     assert resumed.alpha_updater is not None
     assert resumed.alpha_updater.alpha == pytest.approx(0.77)
-    assert resumed.distance_curriculum is not None
-    assert resumed.distance_curriculum.current_L_max() == 4
 
 
 def test_fresh_run_without_warm_start_starts_at_config_initials(tmp_path: Path) -> None:
     # The restore path must be a no-op when nothing was warm-started: a fresh run
-    # keeps the config's alpha_initial / L_max_initial.
+    # keeps the config's alpha_initial.
     from ac_zero.training.pipeline.pipeline import _TrainingRun
 
     config = _navigation_config(tmp_path, "alphazero")
     run = _TrainingRun(config, seed=5, callbacks=CallbackManager(()))
     assert run.alpha_updater is not None
     assert run.alpha_updater.alpha == pytest.approx(config.reward_config.alpha_initial)
-    assert run.distance_curriculum is not None
-    assert run.distance_curriculum.current_L_max() == config.curriculum_config.L_max_initial
-
-
-def test_distance_curriculum_is_on_by_default_for_any_dataset_run(tmp_path: Path) -> None:
-    from ac_zero.training.pipeline.pipeline import _TrainingRun
-
-    dataset_path, annotations_path = _annotated_dataset(tmp_path)
-    # A non-navigation reward (here potential) seeded from an annotated dataset
-    # still gets the easy-to-hard distance curriculum: it caps sampling, not the
-    # shaping weight, so every reward mode benefits.
-    dataset_run = _TrainingRun(
-        TrainingPipelineConfig(
-            iterations=1,
-            episodes_per_iteration=1,
-            optimizer_updates=1,
-            batch_size=1,
-            workers=1,
-            reward_mode="potential",
-            dataset_path=dataset_path,
-            dataset_annotations_path=annotations_path,
-            run_directory=str(tmp_path / "dataset-run"),
-        ),
-        seed=0,
-        callbacks=None,
-    )
-    assert dataset_run.distance_curriculum is not None
-    assert dataset_run.alpha_updater is None  # alpha shaping stays navigation-only
-    # A scramble-seeded run carries no distances, so the curriculum stays off.
-    scramble_run = _TrainingRun(
+    # A non-navigation run carries no alpha at all.
+    plain = _TrainingRun(
         TrainingPipelineConfig(
             iterations=1,
             episodes_per_iteration=1,
@@ -351,7 +257,7 @@ def test_distance_curriculum_is_on_by_default_for_any_dataset_run(tmp_path: Path
         seed=0,
         callbacks=None,
     )
-    assert scramble_run.distance_curriculum is None
+    assert plain.alpha_updater is None
 
 
 def test_config_parses_reward_block_and_validates_navigation() -> None:

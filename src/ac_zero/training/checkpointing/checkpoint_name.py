@@ -7,7 +7,7 @@ that task and model, split into two parts:
 
 * a readable slug -- ``rank``, ``agent``, ``model``, ``moveset``, ``reward_mode``
 * a short hash of the remaining task-defining fields (goal, discount, relator
-  bound, curriculum) so configs that differ only there never collide silently
+  bound, difficulty cap) so configs that differ only there never collide silently
 
 Operational knobs that do not change *what* the model learns (iteration count,
 worker count, learning rate, batch size, run directory, seed, local dataset

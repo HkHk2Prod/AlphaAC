@@ -13,7 +13,6 @@ from ac_zero.moves.primitive import (
 )
 from ac_zero.training.logging.callbacks import CallbackManager
 from ac_zero.training.logging.events import TrainingEvent, Verbosity
-from ac_zero.training.navigation.navigation_curriculum import DistanceCurriculumConfig
 from ac_zero.training.pipeline.instance_source import build_instance_source
 from ac_zero.training.pipeline.pipeline import TrainingPipelineConfig, run_training_pipeline
 from ac_zero.training.pipeline.pipeline_showcase import (
@@ -41,7 +40,7 @@ class _CapturingSink:
 def _config(tmp_path: Path, **overrides: object) -> TrainingPipelineConfig:
     defaults: dict[str, object] = {
         "scramble_depth": 2,
-        "curriculum_config": DistanceCurriculumConfig(unknown_distance_max_moves=4),
+        "unknown_distance_max_moves": 4,
         "model": "residual_mlp",
         "mcts_simulations": 2,
         "iterations": 1,
@@ -130,7 +129,7 @@ def test_showcase_is_due_on_the_first_check_then_throttled_by_the_interval(
     # Owed at the first check so a fresh run shows an episode at its first
     # checkpoint rather than three hours in.
     assert showcase.due() is True
-    showcase.show(manager, model, event_id=1, iteration=1, seed=5, alpha=None, max_distance=None)
+    showcase.show(manager, model, event_id=1, iteration=1, seed=5, alpha=None)
     assert showcase.due() is False
     capsys.readouterr()
 
@@ -149,12 +148,11 @@ def test_showcase_plays_a_full_episode_and_reports_its_shape(tmp_path: Path, age
         iteration=2,
         seed=11,
         alpha=None,
-        max_distance=None,
     )
 
     assert episode.steps, "an episode with legal moves available takes at least one"
     # The horizon for an unannotated scramble is the unknown-distance fallback.
-    assert len(episode.steps) <= config.curriculum_config.unknown_distance_max_moves
+    assert len(episode.steps) <= config.unknown_distance_max_moves
     assert episode.reason in ("goal", "horizon", "no_legal_action")
     assert episode.solved is (episode.reason == "goal")
 

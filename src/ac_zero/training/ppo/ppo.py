@@ -84,13 +84,12 @@ def _collect_rollout(
     model: PolicyValueModel,
     source: InstanceSource,
     alpha: float | None = None,
-    max_distance: int | None = None,
 ) -> _Rollout:
     """Play one episode by sampling the current policy and record every step."""
     rng = random.Random(seed)
-    presentation = source.sample(seed, max_distance)
-    start_distance, max_moves = episode_distance_and_moves(
-        source, presentation, config.curriculum_config.unknown_distance_max_moves
+    presentation = source.sample(seed)
+    _, max_moves = episode_distance_and_moves(
+        source, presentation, config.unknown_distance_max_moves
     )
     env = build_env(config, presentation, source, alpha, max_moves)
     scale = 1.0 / max(1.0, float(env.initial.total_length))
@@ -125,7 +124,7 @@ def _collect_rollout(
     bootstrap = _bootstrap_value(env, encoder, model, action_count, terminated, bool(transitions))
     total = float(sum(rewards))
     nav = env.navigation_episode_stats() if config.reward_mode == "navigation" else None
-    metrics = EpisodeMetrics(total, total, terminated, len(transitions), nav, start_distance)
+    metrics = EpisodeMetrics(total, total, terminated, len(transitions), nav)
     return _Rollout(transitions, bootstrap, metrics)
 
 
@@ -167,24 +166,20 @@ _WORKER_ENCODER: StateEncoder | None = None
 _WORKER_MODEL: PolicyValueModel | None = None
 _WORKER_SOURCE: InstanceSource | None = None
 _WORKER_ALPHA: float | None = None
-_WORKER_MAX_DISTANCE: int | None = None
 
 
 def _init_rollout_worker(
     config: TrainingPipelineConfig,
     model_state: dict[str, Any],
     alpha: float | None,
-    max_distance: int | None,
 ) -> None:
-    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL, _WORKER_SOURCE
-    global _WORKER_ALPHA, _WORKER_MAX_DISTANCE
+    global _WORKER_CONFIG, _WORKER_ENCODER, _WORKER_MODEL, _WORKER_SOURCE, _WORKER_ALPHA
     use_single_torch_thread()
     _WORKER_CONFIG = config
     _WORKER_ENCODER = StateEncoder(config.max_relator_tokens)
     _WORKER_MODEL = model_from_json(model_state)
     _WORKER_SOURCE = build_instance_source(config)
     _WORKER_ALPHA = alpha
-    _WORKER_MAX_DISTANCE = max_distance
 
 
 def _rollout_worker(seed: int) -> _Rollout:
@@ -197,7 +192,6 @@ def _rollout_worker(seed: int) -> _Rollout:
         _WORKER_MODEL,
         _WORKER_SOURCE,
         _WORKER_ALPHA,
-        _WORKER_MAX_DISTANCE,
     )
 
 
@@ -209,28 +203,23 @@ def collect_rollouts(
     iteration: int,
     source: InstanceSource,
     alpha: float | None = None,
-    max_distance: int | None = None,
 ) -> tuple[list[PPOExample], list[EpisodeMetrics]]:
     """Collect one iteration's rollouts and build advantage-normalized examples.
 
     ``source`` is the run's instance source, reused across iterations. Workers
     open their own handle on it, which memory-maps the same dataset sidecar rather
     than parsing the dataset again (see :mod:`ac_zero.datasets.instance_store`).
-    ``max_distance`` is the distance curriculum's ceiling this batch was sampled
-    under (``None`` off the curriculum), held constant across the batch.
     """
     seeds = [seed + iteration * 10_000 + index for index in range(config.episodes_per_iteration)]
     if resolve_worker_count(config.workers) <= 1:
-        rollouts = [
-            _collect_rollout(config, encoder, s, model, source, alpha, max_distance) for s in seeds
-        ]
+        rollouts = [_collect_rollout(config, encoder, s, model, source, alpha) for s in seeds]
     else:
         rollouts = parallel_map(
             _rollout_worker,
             seeds,
             workers=config.workers,
             initializer=_init_rollout_worker,
-            initargs=(config, model.to_json(), alpha, max_distance),
+            initargs=(config, model.to_json(), alpha),
         )
     scored: list[tuple[_Transition, float, float]] = []
     for rollout in rollouts:
@@ -290,11 +279,10 @@ class PPOTrainer:
         iteration: int,
         rng: random.Random,
         alpha: float | None = None,
-        max_distance: int | None = None,
     ) -> PPOIterationResult:
         """Collect rollouts and apply this iteration's PPO updates to `model`."""
         examples, episodes = collect_rollouts(
-            self.config, self.encoder, model, seed, iteration, self.source, alpha, max_distance
+            self.config, self.encoder, model, seed, iteration, self.source, alpha
         )
         updates = self._optimize(model, examples, rng) if examples else []
         return PPOIterationResult(len(examples), episodes, updates)

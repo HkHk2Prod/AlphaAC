@@ -518,7 +518,7 @@ def _ensure_training_dataset(
     """Pull the configured self-play dataset (groups + annotations) from the bucket.
 
     A run seeds self-play from `dataset_path` when set; its companion annotations
-    feed the curriculum. Each file is fetched when missing locally so `aczero
+    carry the per-group distances. Each file is fetched when missing locally so `aczero
     train` works on a fresh machine the same way the Kaggle notebook does; `force`
     re-downloads both even when they already exist, refreshing a stale copy.
     """
