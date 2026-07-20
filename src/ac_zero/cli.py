@@ -6,6 +6,7 @@ import os
 import random
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -19,6 +20,14 @@ from ac_zero.agents.greedy import GreedyBestFirstSearch, GreedySolver
 from ac_zero.agents.ppo import PPOAgent
 from ac_zero.agents.random_agent import RandomLegalActionAgent
 from ac_zero.algebra.presentation import BalancedPresentation
+from ac_zero.benchmarks.catalog import DEFAULT_MAX_W_LENGTH, catalog_name
+from ac_zero.benchmarks.commands import (
+    DEFAULT_CATALOG_DIR,
+    create_catalog,
+    load_benchmark_config,
+    run_benchmark,
+)
+from ac_zero.benchmarks.config import BenchmarkConfig
 from ac_zero.certificates.verifier import CertificateVerifier
 from ac_zero.datasets.annotate import AnnotateConfig, annotate, annotation_path
 from ac_zero.datasets.ball import BallConfig, ball_groups_path, grow_ball
@@ -298,7 +307,25 @@ def main(argv: list[str] | None = None) -> int:
         "overrides the config. The JSONL log and graph files always record everything",
     )
     bench = sub.add_parser("benchmark")
-    bench.add_argument("--config", default="configs/experiments/benchmark_rank2.yaml")
+    # `solvers` (the default) is the cross-solver regression on a fixture;
+    # `create`/`run` are the AK/MS model benchmark.
+    bench.add_argument("subcmd", nargs="?", choices=["solvers", "create", "run"], default="solvers")
+    bench.add_argument("--catalog", default="", help="benchmark catalog file to write or score")
+    bench.add_argument("--max-relator-length", type=int, default=48)
+    bench.add_argument("--max-w-length", type=int, default=DEFAULT_MAX_W_LENGTH)
+    bench.add_argument("--config", default="", help="YAML of benchmark budgets")
+    bench.add_argument("--checkpoint", default="", help="local checkpoint file to evaluate")
+    bench.add_argument("--checkpoint-name", default="", help="HF lineage whose best model to pull")
+    bench.add_argument("--bucket", default=DEFAULT_BUCKET)
+    bench.add_argument("--run-id", default="")
+    bench.add_argument("--minutes", type=float, default=0.0, help="wall-clock cap (0 = unlimited)")
+    bench.add_argument("--upload", action="store_true", help="`run`: publish under benchmarks/")
+    bench.add_argument(
+        "--no-upload",
+        action="store_true",
+        help="`create`: keep the catalog local instead of publishing it to benchmark_datasets/",
+    )
+    bench.add_argument("--output", default="")
     solve = sub.add_parser("solve")
     solve.add_argument("--presentation", default="data/generated/smoke.json")
     solve.add_argument("--checkpoint", default="")
@@ -383,6 +410,12 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             verbosity=args.verbosity,
         )
     if args.cmd == "benchmark":
+        if args.subcmd == "create":
+            reporter.result_json(_benchmark_create(args), sort_keys=True)
+            return 0
+        if args.subcmd == "run":
+            reporter.result_json(_benchmark_run(args), sort_keys=True)
+            return 0
         return _benchmark(reporter)
     if args.cmd == "solve":
         return _solve(Path(args.presentation), args.agent, args.checkpoint, reporter)
@@ -924,6 +957,38 @@ def _load_checkpoint_model(checkpoint: str) -> Any:
     """Rebuild a trainable model from a training checkpoint's saved weights."""
     data = json.loads(Path(checkpoint).read_text())
     return model_from_json(data.get("model_state", data))
+
+
+def _benchmark_create(args: argparse.Namespace) -> dict[str, Any]:
+    """Enumerate the AK/MS catalog under the given bounds."""
+    return create_catalog(
+        max_relator_length=args.max_relator_length,
+        max_w_length=args.max_w_length,
+        output=args.catalog or args.output,
+        upload=not args.no_upload,
+        bucket=args.bucket,
+    )
+
+
+def _benchmark_run(args: argparse.Namespace) -> dict[str, Any]:
+    """Score one checkpoint against a catalog, optionally publishing the result."""
+    name = catalog_name(args.max_relator_length, args.max_w_length)
+    catalog = args.catalog or str(Path(DEFAULT_CATALOG_DIR) / f"{name}.json")
+    # Only flags the caller actually set override the config file; an unset flag
+    # carries an empty default that would otherwise erase the configured value.
+    overrides: dict[str, Any] = {"catalog_path": catalog, "bucket": args.bucket}
+    if args.checkpoint:
+        overrides["checkpoint_path"] = args.checkpoint
+    if args.checkpoint_name:
+        overrides["checkpoint_name"] = args.checkpoint_name
+    if args.minutes:
+        overrides["max_total_minutes"] = args.minutes
+    config = BenchmarkConfig.from_mapping({**load_benchmark_config(args.config), **overrides})
+    run_id = args.run_id or f"{int(time.time())}"
+    payload = run_benchmark(config, run_id=run_id, upload=args.upload, output=args.output)
+    # The solved ids are the record, not the terminal summary: on a full catalog
+    # they run to thousands. They stay in the written file and in the HF summary.
+    return {**payload, "solved_ids": payload["solved_ids"][:20]}
 
 
 def _benchmark(reporter: CliReporter) -> int:

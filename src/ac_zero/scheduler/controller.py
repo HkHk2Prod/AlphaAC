@@ -14,6 +14,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from ac_zero.datasets.hub import DEFAULT_BUCKET
+from ac_zero.scheduler.benchmarks import (
+    BENCHMARK_QUEUE_PATH,
+    DEFAULT_METRIC_THRESHOLD,
+    BenchmarkQueue,
+    scan_for_ready_checkpoints,
+)
 from ac_zero.scheduler.kaggle import KaggleClient
 from ac_zero.scheduler.models import Queue, SchedulerState, Task, utc_now
 from ac_zero.scheduler.runtime import (
@@ -47,6 +54,11 @@ class SchedulerConfig:
     force: bool = False
     dry_run: bool = False
     max_launches_override: int | None = None
+    # Where the training checkpoints (and the benchmark results) live. Separate
+    # from the state repo: the state repo holds the queue, the bucket holds the work.
+    data_bucket: str = DEFAULT_BUCKET
+    # Self-play success-rate EMA a training run must reach to earn an evaluation.
+    benchmark_metric_threshold: float = DEFAULT_METRIC_THRESHOLD
 
 
 @dataclass(slots=True)
@@ -225,6 +237,19 @@ def run_tick(
     state.last_scheduler_started_at = now
     _reconcile(store, kaggle, queue, state, now=now, log=log)
 
+    # Which trained checkpoints now deserve a benchmark run. Read before selection
+    # so a checkpoint that crossed the threshold since the last tick can be
+    # dispatched in this one.
+    benchmark_queue = BenchmarkQueue.load(store.backend)
+    scan_for_ready_checkpoints(
+        queue,
+        benchmark_queue,
+        bucket=config.data_bucket,
+        threshold=config.benchmark_metric_threshold,
+        log=log,
+    )
+    log(f"benchmark queue: {len(benchmark_queue.pending)} checkpoint(s) pending evaluation")
+
     if state.scheduler_paused:
         log("scheduler is paused; not launching.")
     elif state.stop_launching:
@@ -237,6 +262,7 @@ def run_tick(
             force_task_id=config.force_task_id,
             force=config.force,
             max_launches_override=config.max_launches_override,
+            blocked=_benchmark_blocks(queue, benchmark_queue),
         )
         report.decisions = decisions
         for decision in decisions:
@@ -257,6 +283,11 @@ def run_tick(
                 log(f"  DRY-RUN would launch {task.id} as run_id={run_id}")
                 report.launched.append(run_id)
                 continue
+            # A benchmark task carries no checkpoint of its own: it is handed one
+            # off the evaluation queue at launch, exactly like start_fresh is
+            # consumed by the launch rather than by the run's outcome.
+            if task.mode == "benchmark" and not _assign_evaluation(task, benchmark_queue, log=log):
+                continue
             runtime = _launch(task, run_id, kaggle, config, state, now=now, log=log)
             if runtime is not None:
                 report.launched.append(run_id)
@@ -269,12 +300,52 @@ def run_tick(
         log("dry-run: state not written.")
         return report
 
-    extra = None
+    # The evaluation queue rides the same commit as the rest of the tick, so a
+    # dispatched checkpoint is never lost between two writes.
+    extra = {BENCHMARK_QUEUE_PATH: benchmark_queue.to_json()}
     if last_runtime is not None:
-        extra = {RUNTIME_CONFIG_LATEST: json.dumps(last_runtime, indent=2) + "\n"}
+        extra[RUNTIME_CONFIG_LATEST] = json.dumps(last_runtime, indent=2) + "\n"
     _save_with_retry(store, snapshot, log=log, report=report, extra_files=extra)
     store.release_lease(config.owner)
     return report
+
+
+def _benchmark_blocks(queue: Queue, benchmark_queue: BenchmarkQueue) -> dict[str, str]:
+    """Veto benchmark tasks while nothing is waiting to be evaluated.
+
+    A benchmark task is otherwise left permanently ``active`` in the queue file:
+    it is not a job that runs on a cadence, it is one that runs when a model has
+    earned it. Expressing that as a per-tick block rather than by toggling
+    ``active`` keeps the operator's on/off switch meaning what it says.
+    """
+    if benchmark_queue.pending:
+        return {}
+    return {
+        task.id: "no checkpoints pending evaluation"
+        for task in queue.tasks
+        if task.mode == "benchmark"
+    }
+
+
+def _assign_evaluation(task: Task, benchmark_queue: BenchmarkQueue, *, log: Logger) -> bool:
+    """Attach the next pending checkpoint to ``task``; report whether one was free.
+
+    Writing the assignment into ``task.config`` means it travels to the notebook
+    through the ordinary runtime config, and is visible afterwards in the queue
+    file as a record of what this task was last sent.
+    """
+    entry = benchmark_queue.take()
+    if entry is None:
+        log(f"  skip {task.id}: evaluation queue emptied before launch")
+        return False
+    task.config = {
+        **task.config,
+        "checkpoint_name": entry.checkpoint_name,
+        "checkpoint_run_id": entry.run_id,
+        "checkpoint_metric": entry.metric,
+    }
+    log(f"  {task.id}: evaluating {entry.checkpoint_name} (metric={entry.metric:.3f})")
+    return True
 
 
 def _record_decisions(state: SchedulerState, decisions: list[Decision]) -> None:

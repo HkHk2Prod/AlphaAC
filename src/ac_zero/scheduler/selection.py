@@ -6,6 +6,7 @@ launch this tick. The controller wraps these with Kaggle/HF side effects.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -74,11 +75,24 @@ def _order_key(task: Task, rt: TaskRuntimeState | None) -> tuple[int, str, str]:
 
 
 def eligible(
-    task: Task, rt: TaskRuntimeState | None, *, now: str, stale_minutes: int, forced: bool
+    task: Task,
+    rt: TaskRuntimeState | None,
+    *,
+    now: str,
+    stale_minutes: int,
+    forced: bool,
+    blocked_reason: str | None = None,
 ) -> tuple[bool, str]:
-    """Whether ``task`` may launch, ignoring free-slot availability."""
+    """Whether ``task`` may launch, ignoring free-slot availability.
+
+    ``blocked_reason`` lets the controller veto a task for a reason this pure
+    module cannot see -- a benchmark task with nothing queued to evaluate -- while
+    keeping the explanation in the decision log alongside every other one.
+    """
     if not task.active:
         return False, "inactive"
+    if blocked_reason:
+        return False, blocked_reason
     if task.remaining_runs is not None and task.remaining_runs <= 0:
         return False, "remaining_runs exhausted"
     if not forced and rt is not None and run_is_live(rt, now=now, stale_minutes=stale_minutes):
@@ -94,12 +108,14 @@ def select_launches(
     force_task_id: str | None = None,
     force: bool = False,
     max_launches_override: int | None = None,
+    blocked: Mapping[str, str] | None = None,
 ) -> tuple[list[Task], list[Decision]]:
     """Pick tasks to launch this tick, respecting eligibility and slot limits.
 
     ``force_task_id`` is moved to the front of the ordering. When ``force`` is
     also set, that task may launch even if it already has an active run (slots
-    still apply). Returns the chosen tasks and a decision log for every task.
+    still apply). ``blocked`` maps a task id to the reason it may not launch this
+    tick. Returns the chosen tasks and a decision log for every task.
     """
     limits = queue.limits
     counts = active_counts(queue, state, now=now, stale_minutes=limits.stale_heartbeat_minutes)
@@ -119,7 +135,12 @@ def select_launches(
         rt = state.tasks.get(task.id)
         forced = force and task.id == force_task_id
         ok, reason = eligible(
-            task, rt, now=now, stale_minutes=limits.stale_heartbeat_minutes, forced=forced
+            task,
+            rt,
+            now=now,
+            stale_minutes=limits.stale_heartbeat_minutes,
+            forced=forced,
+            blocked_reason=(blocked or {}).get(task.id),
         )
         if not ok:
             decisions.append(Decision(task.id, False, reason))
