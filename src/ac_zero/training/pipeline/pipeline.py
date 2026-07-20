@@ -453,6 +453,7 @@ class _TrainingRun:
                 batch,
                 learning_rate=self.config.learning_rate,
                 value_loss_weight=self.config.value_loss_weight,
+                grad_clip=self.config.grad_clip,
             )
             self.optimizer_step += 1
             row: MetricsRow = {

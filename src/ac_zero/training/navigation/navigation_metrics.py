@@ -3,10 +3,12 @@
 The training pipeline holds a single :class:`AlphaUpdater` for the run. Episodes
 are collected in parallel and reassembled in a deterministic order, so alpha is
 held constant across a whole iteration's batch (and therefore constant within
-every episode) and advanced once, episode by episode in that fixed order, after
-the batch is collected. :func:`fold_alpha` performs that advance and yields the
-per-episode log rows (item 1 of the reward spec); :func:`navigation_eval_metrics`
-summarizes the batch (item 7).
+every episode). Each episode is folded into the updater's EMAs in that fixed
+order, and alpha then moves *once* for the batch -- not once per episode, which
+let the weight traverse its whole range inside a couple of iterations.
+:func:`fold_alpha` performs that fold-then-advance and yields the per-episode log
+rows (item 1 of the reward spec); :func:`navigation_eval_metrics` summarizes the
+batch (item 7).
 
 Alpha is the run's one adaptive difficulty knob: it both scales the shaping term
 and, through it, how much of the path to the destination the agent is effectively
@@ -29,15 +31,18 @@ def _episode_stats(episodes: Sequence[EpisodeMetrics]) -> list[EpisodeStats]:
 
 
 def fold_alpha(updater: AlphaUpdater, episodes: Sequence[EpisodeMetrics]) -> list[dict[str, float]]:
-    """Advance ``updater`` over each navigation episode, in collection order.
+    """Observe each navigation episode in collection order, then advance ``alpha`` once.
 
     Returns one row per folded episode carrying the values the spec asks to log
-    every episode: the resulting ``alpha`` plus ``progress_rate``/``success`` and
-    their EMAs. ``updater`` is left holding the alpha the next iteration runs at.
+    every episode: ``progress_rate``/``success`` and their EMAs, plus the
+    ``alpha`` those episodes actually *ran* at -- the batch shares one weight, so
+    the pre-advance value is the one that describes them. ``updater`` is left
+    holding the alpha the next iteration runs at.
     """
     rows: list[dict[str, float]] = []
+    alpha = updater.alpha
     for stats in _episode_stats(episodes):
-        alpha = updater.update(stats)
+        updater.observe(stats)
         rows.append(
             {
                 "alpha": alpha,
@@ -47,6 +52,8 @@ def fold_alpha(updater: AlphaUpdater, episodes: Sequence[EpisodeMetrics]) -> lis
                 "success_ema": updater.success_ema,
             }
         )
+    if rows:
+        updater.advance()
     return rows
 
 
@@ -112,6 +119,7 @@ def log_navigation(
                 "alpha": updater.alpha,
                 "progress_ema": updater.progress_ema,
                 "success_ema": updater.success_ema,
+                "recovery_ema": updater.recovery_ema,
                 **metrics,
             },
             level=level,

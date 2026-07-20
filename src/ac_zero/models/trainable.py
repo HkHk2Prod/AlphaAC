@@ -128,6 +128,7 @@ class TrainablePolicyValueModel(ABC):
         *,
         learning_rate: float,
         value_loss_weight: float,
+        grad_clip: float,
     ) -> PolicyValueLoss:
         """Apply one averaged gradient step and return mean pre-update losses."""
         if not batch:
@@ -150,6 +151,7 @@ class TrainablePolicyValueModel(ABC):
         policy = -(targets * log_probs.nan_to_num(neginf=0.0)).sum(dim=1)
         value = (values - value_targets) ** 2
         (policy + value_loss_weight * value).mean().backward()
+        self._clip_gradients(grad_clip)
         optimizer.step()
 
         return PolicyValueLoss(
@@ -166,6 +168,7 @@ class TrainablePolicyValueModel(ABC):
         clip_ratio: float,
         value_weight: float,
         entropy_weight: float,
+        grad_clip: float,
     ) -> PPOBatchStats:
         """Apply one clipped-surrogate PPO gradient step over a minibatch.
 
@@ -202,6 +205,7 @@ class TrainablePolicyValueModel(ABC):
         entropy = -(finite.exp() * finite).sum(dim=1)
         loss = surrogate + value_weight * value_loss - entropy_weight * entropy
         loss.mean().backward()
+        self._clip_gradients(grad_clip)
         optimizer.step()
 
         with torch.no_grad():
@@ -215,6 +219,17 @@ class TrainablePolicyValueModel(ABC):
             clip_fraction=float(clip_fraction.item()),
             approx_kl=float(approx_kl.item()),
         )
+
+    def _clip_gradients(self, grad_clip: float) -> None:
+        """Clip the accumulated gradient norm in place; ``0`` disables clipping.
+
+        The RL losses ran unclipped while the supervised one clipped, so a single
+        pathological minibatch -- an advantage spike after a reward-scale change,
+        say -- could take the whole policy out in one step.
+        """
+        if grad_clip > 0.0:
+            assert self._net is not None
+            torch.nn.utils.clip_grad_norm_(self._net.parameters(), grad_clip)
 
     # -- batch assembly ----------------------------------------------------
     def _legal(self, batch: list[TrainingExample]) -> torch.Tensor:

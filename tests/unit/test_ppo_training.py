@@ -117,14 +117,24 @@ def test_ppo_update_moves_action_probability_with_advantage_sign() -> None:
     model, encoding, mask, action, old_log_prob, _ = _model_and_state()
     example = PPOExample(encoding, mask, action, old_log_prob, advantage=1.0, return_target=0.0)  # type: ignore[arg-type]
     model.ppo_update(  # type: ignore[attr-defined]
-        [example], learning_rate=0.5, clip_ratio=0.2, value_weight=0.0, entropy_weight=0.0
+        [example],
+        learning_rate=0.5,
+        clip_ratio=0.2,
+        value_weight=0.0,
+        entropy_weight=0.0,
+        grad_clip=0.0,
     )
     assert _log_prob(model, encoding, mask, action) > old_log_prob
 
     model, encoding, mask, action, old_log_prob, _ = _model_and_state()
     example = PPOExample(encoding, mask, action, old_log_prob, advantage=-1.0, return_target=0.0)  # type: ignore[arg-type]
     model.ppo_update(  # type: ignore[attr-defined]
-        [example], learning_rate=0.5, clip_ratio=0.2, value_weight=0.0, entropy_weight=0.0
+        [example],
+        learning_rate=0.5,
+        clip_ratio=0.2,
+        value_weight=0.0,
+        entropy_weight=0.0,
+        grad_clip=0.0,
     )
     assert _log_prob(model, encoding, mask, action) < old_log_prob
 
@@ -137,7 +147,12 @@ def test_ppo_update_clipping_blocks_gradient_outside_the_trust_region() -> None:
     # action's probability unchanged.
     example = PPOExample(encoding, mask, action, old_log_prob - 5.0, 1.0, value)  # type: ignore[arg-type]
     model.ppo_update(  # type: ignore[attr-defined]
-        [example], learning_rate=0.5, clip_ratio=0.2, value_weight=1.0, entropy_weight=0.0
+        [example],
+        learning_rate=0.5,
+        clip_ratio=0.2,
+        value_weight=1.0,
+        entropy_weight=0.0,
+        grad_clip=0.0,
     )
     assert _log_prob(model, encoding, mask, action) == pytest.approx(old_log_prob, abs=1e-6)
 
@@ -146,7 +161,12 @@ def test_ppo_update_rejects_an_empty_batch() -> None:
     model = create_trainable_model("residual_mlp", seed=0)
     with pytest.raises(ValueError, match="batch must not be empty"):
         model.ppo_update(
-            [], learning_rate=0.1, clip_ratio=0.2, value_weight=0.5, entropy_weight=0.0
+            [],
+            learning_rate=0.1,
+            clip_ratio=0.2,
+            value_weight=0.5,
+            entropy_weight=0.0,
+            grad_clip=0.0,
         )
 
 
