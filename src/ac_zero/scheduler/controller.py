@@ -161,6 +161,10 @@ def _launch(
         task.remaining_runs -= 1
         if task.remaining_runs <= 0:
             task.active = False
+    # start_fresh is likewise consumed by the launch, not by the run's outcome: the
+    # launched notebook archives the old lineage on startup, so a second launch carrying
+    # the flag would archive the fresh run's own work.
+    task.start_fresh = False
     rt.active_run_id = run_id
     rt.kaggle_slug = task.notebook_slug
     rt.kaggle_status = "queued"
@@ -187,6 +191,10 @@ def run_tick(
 
     snapshot = store.load()
     queue, state = snapshot.queue, snapshot.state
+    # Before anything else: a global start_fresh_all becomes per-task flags, so the rest
+    # of the tick -- including any launch it performs -- sees the queue already expanded.
+    if queue.apply_start_fresh_all():
+        log(f"start_fresh_all was set: marking all {len(queue.tasks)} task(s) start_fresh.")
     log(f"state repo: {config.state_repo_id} (base_sha={snapshot.base_sha})")
     log(f"loaded {len(queue.tasks)} task(s); limits={queue.limits}")
     for task in queue.tasks:
@@ -196,7 +204,8 @@ def run_tick(
         )
         log(
             f"  task {task.id}: active={task.active} remaining_runs={task.remaining_runs} "
-            f"priority={task.priority} accel={task.accelerator} live_run={live}"
+            f"priority={task.priority} accel={task.accelerator} live_run={live} "
+            f"start_fresh={task.start_fresh}"
         )
 
     if not config.dry_run:

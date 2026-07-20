@@ -76,6 +76,10 @@ class Task:
     priority: int = 0
     max_runtime_minutes: int = 705
     stop_after_current_iteration: bool = False
+    # One-shot: the next launch abandons this task's checkpoint history and starts over
+    # from its pretrained checkpoint (or from zero). The controller clears it on launch,
+    # so setting it restarts the task exactly once rather than every tick.
+    start_fresh: bool = False
     config: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -106,6 +110,9 @@ class Queue:
     """Parsed ``queue.yaml``."""
 
     version: int = 1
+    # Restart *everything*: one edit at the top of the file instead of one per task.
+    # Expanded into the per-task flags and cleared before any other scheduling work.
+    start_fresh_all: bool = False
     limits: Limits = field(default_factory=Limits)
     tasks: list[Task] = field(default_factory=list)
 
@@ -113,6 +120,7 @@ class Queue:
     def from_dict(cls, data: dict[str, Any]) -> Queue:
         return cls(
             version=int(data.get("version", 1)),
+            start_fresh_all=bool(data.get("start_fresh_all", False)),
             limits=Limits.from_dict(data.get("limits")),
             tasks=[Task.from_dict(t) for t in data.get("tasks", [])],
         )
@@ -120,9 +128,25 @@ class Queue:
     def to_dict(self) -> dict[str, Any]:
         return {
             "version": self.version,
+            "start_fresh_all": self.start_fresh_all,
             "limits": _asdict(self.limits),
             "tasks": [_asdict(t) for t in self.tasks],
         }
+
+    def apply_start_fresh_all(self) -> bool:
+        """Fan the global flag out onto every task and clear it; report whether it fired.
+
+        Runs before anything else a tick does, so a task launched in the same tick the
+        flag was set carries the fresh start rather than picking it up a tick later. The
+        flag is cleared here and the per-task flags are cleared on launch, so each is a
+        one-shot: the operator sets it once and the queue returns to steady state.
+        """
+        if not self.start_fresh_all:
+            return False
+        for task in self.tasks:
+            task.start_fresh = True
+        self.start_fresh_all = False
+        return True
 
 
 @dataclass(slots=True)

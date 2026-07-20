@@ -11,11 +11,20 @@ Everything a run produces lives under one prefix keyed by the checkpoint name::
         plots/<run_id>/*.png          # that run's progress plots
         plots/all_runs/*.png          # every run's metrics concatenated
 
+Each all-runs plot is *also* copied to a bucket-wide comparison tree keyed by plot
+type rather than by model::
+
+    plots/<plot_type>/<name>.png      # e.g. plots/selfplay_progress/rank2-ppo-...png
+
+so one folder holds the same figure for every model in the queue, side by side.
+Comparing eight models is then opening one folder instead of eight.
+
 :func:`push_checkpoint_bundle` reads the local bundle, pulls the other runs'
 metrics to redraw the all-runs plots, promotes ``best.json`` only when this run
 beats the recorded best, and uploads the lot. :class:`PeriodicCheckpointUploader`
 drives that on a time interval from the training callbacks, mirroring the dataset
-notebooks' periodic upload.
+notebooks' periodic upload. :func:`archive_checkpoint_lineage` moves a name's whole
+tree aside so a ``start_fresh`` run begins with an empty history.
 """
 
 from __future__ import annotations
@@ -26,7 +35,14 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-from ac_zero.datasets.hub import DEFAULT_BUCKET, download_file, list_remote, upload_files
+from ac_zero.datasets.hub import (
+    DEFAULT_BUCKET,
+    delete_remote,
+    download_file,
+    list_remote,
+    move_remote_tree,
+    upload_files,
+)
 from ac_zero.training.checkpointing.checkpoint_bundle import (
     BEST_FILE,
     LATEST_FILE,
@@ -37,11 +53,20 @@ from ac_zero.training.logging.plots import PlotsUnavailable, render_training_plo
 
 INDEX_FILE = "index.json"
 _METRICS_SUFFIX = ".metrics.jsonl"
+# Cross-model comparison tree: one folder per plot type, one file per model inside it.
+COMPARISON_PREFIX = "plots"
+# Where a start-fresh run parks the lineage it is replacing.
+ARCHIVE_PREFIX = "model_checkpoints/_archive"
 
 
 def checkpoint_prefix(name: str) -> str:
     """Return the bucket prefix that holds every artifact for ``name``."""
     return f"model_checkpoints/{name}"
+
+
+def comparison_path(plot_type: str, name: str) -> str:
+    """Bucket path of ``name``'s copy of the ``plot_type`` all-runs plot."""
+    return f"{COMPARISON_PREFIX}/{plot_type}/{name}.png"
 
 
 def download_best_checkpoint(
@@ -58,6 +83,32 @@ def download_best_checkpoint(
     """
     remote = f"{checkpoint_prefix(name)}/{BEST_FILE}"
     return download_file(remote, local_path, bucket=bucket, missing_ok=missing_ok)
+
+
+def archive_checkpoint_lineage(name: str, stamp: str, *, bucket: str = DEFAULT_BUCKET) -> int:
+    """Move ``name``'s whole tree under the archive prefix; return the files moved.
+
+    What a ``start_fresh`` run needs is an *empty* name: no ``best.json`` for this run
+    to resume from, no ``index.json`` counting the old runs, and all-runs plots that
+    restart at the fresh run rather than replaying the history it was told to abandon.
+    Deleting would do that too, but the old models are the record of the experiment, so
+    they are moved rather than dropped -- server-side, at no transfer cost. The stale
+    comparison copies *are* deleted: they are duplicates of the all-runs plots that just
+    moved into the archive with everything else, so nothing is lost with them, and
+    leaving them would show this model's pre-reset curve next to its peers until the
+    fresh run's first upload overwrites them.
+    """
+    moved = move_remote_tree(
+        f"{checkpoint_prefix(name)}/", f"{ARCHIVE_PREFIX}/{name}/{stamp}/", bucket=bucket
+    )
+    if moved:
+        stale = [
+            path
+            for path in list_remote(f"{COMPARISON_PREFIX}/", bucket=bucket)
+            if path.rsplit("/", 1)[-1] == f"{name}.png"
+        ]
+        delete_remote(stale, bucket=bucket)
+    return len(moved)
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -152,6 +203,9 @@ def push_checkpoint_bundle(bundle_dir: str | Path, *, bucket: str = DEFAULT_BUCK
         combined = _combined_rows(list(history.items()))
         for plot in _render(combined, work / "all_runs"):
             pairs.append((plot, f"{prefix}/plots/all_runs/{plot.name}"))
+            # Second copy into the by-plot-type comparison tree, named after this model,
+            # so every model's version of the same figure sits in one folder.
+            pairs.append((plot, comparison_path(plot.stem, name)))
 
         index = _build_index(bundle, meta, name, run_id, bucket=bucket)
         if index.pop("_promote_best", False):

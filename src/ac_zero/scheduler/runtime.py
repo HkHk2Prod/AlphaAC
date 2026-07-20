@@ -43,6 +43,7 @@ def build_runtime_config(
         "hf_state_repo_id": state_repo_id,
         "hf_state_repo_type": state_repo_type,
         "stop_after_current_iteration": task.stop_after_current_iteration,
+        "start_fresh": task.start_fresh,
         "config": task.config,
     }
 
