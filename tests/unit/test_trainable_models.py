@@ -50,10 +50,28 @@ def test_training_reduces_loss(name: str) -> None:
     encoding, mask, _, target = _fixture()
     batch = [_Example(encoding, mask, target, 0.5)] * 4
     model = create_trainable_model(name, seed=0)
-    first = model.train_batch(batch, learning_rate=0.1, value_loss_weight=1.0)
+    first = model.train_batch(batch, learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0)
     for _ in range(25):
-        last = model.train_batch(batch, learning_rate=0.1, value_loss_weight=1.0)
+        last = model.train_batch(batch, learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0)
     assert last.total_loss < first.total_loss
+
+
+def test_grad_clip_bounds_how_far_one_batch_can_move_the_weights() -> None:
+    """The RL losses ran unclipped, so one pathological batch could take out the policy.
+
+    A wildly mis-scaled value target produces a huge gradient; clipping must cap
+    the resulting weight movement well below the unclipped step.
+    """
+    encoding, mask, _, target = _fixture()
+    batch = [_Example(encoding, mask, target, 1e4)] * 4
+
+    def moved(grad_clip: float) -> float:
+        model = create_trainable_model("residual_mlp", seed=0)
+        model.train_batch(batch, learning_rate=0.1, value_loss_weight=1.0, grad_clip=grad_clip)
+        params = model.to_json()["parameters"]
+        return max(float(np.abs(np.asarray(v)).max()) for v in params.values())
+
+    assert moved(1.0) < moved(0.0)
 
 
 @pytest.mark.parametrize("name", ARCHITECTURES)
@@ -61,7 +79,7 @@ def test_checkpoint_round_trip_is_exact(name: str) -> None:
     encoding, mask, action_count, target = _fixture()
     model = create_trainable_model(name, seed=0)
     example = _Example(encoding, mask, target, 0.5)
-    model.train_batch([example], learning_rate=0.1, value_loss_weight=1.0)
+    model.train_batch([example], learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0)
     restored = model_from_json(model.to_json())
     before = model.apply(encoding, action_count)
     after = restored.apply(encoding, action_count)
@@ -93,7 +111,7 @@ def test_transformer_grad_checkpoint_flag_survives_serialization() -> None:
     encoding, mask, _, target = _fixture()
     model = create_trainable_model("transformer", seed=0, grad_checkpoint=1)
     example = _Example(encoding, mask, target, 0.5)
-    model.train_batch([example], learning_rate=0.1, value_loss_weight=1.0)
+    model.train_batch([example], learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0)
     restored = model_from_json(model.to_json())
     assert restored.to_json()["hyperparameters"]["grad_checkpoint"] == 1
 

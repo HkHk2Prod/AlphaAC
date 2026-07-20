@@ -308,6 +308,7 @@ class PPOTrainer:
                         clip_ratio=self.config.ppo_clip,
                         value_weight=self.config.value_loss_weight,
                         entropy_weight=self.config.entropy_coef,
+                        grad_clip=self.config.grad_clip,
                     )
                 )
         return updates

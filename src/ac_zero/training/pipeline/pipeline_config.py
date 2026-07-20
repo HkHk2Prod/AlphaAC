@@ -521,8 +521,11 @@ def _reward_config(value: Any) -> RewardConfig:
     defaults = RewardConfig()
     if not isinstance(value, dict):
         return defaults
+    # Every field is a float bar the iteration bound, which is a count -- coercing
+    # that one to float would hand `advance` a 1.0 to compare against an int.
     fields = {f: getattr(defaults, f) for f in RewardConfig.__dataclass_fields__}
-    return RewardConfig(**{f: float(value[f]) for f in fields if f in value})
+    coerce: dict[str, Any] = {f: int if isinstance(d, int) else float for f, d in fields.items()}
+    return RewardConfig(**{f: coerce[f](value[f]) for f in fields if f in value})
 
 
 def _optional_str(value: Any) -> str | None:

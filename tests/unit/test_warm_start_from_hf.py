@@ -38,6 +38,60 @@ def _stub_downloads(monkeypatch, present: set[str]) -> None:
     monkeypatch.setattr(cli, "download_best_checkpoint", fake)
 
 
+def _stub_archive(monkeypatch, present: set[str]) -> list[tuple[str, str]]:
+    """Record archive calls and empty the archived name, as the real move does."""
+    calls: list[tuple[str, str]] = []
+
+    def fake(name, stamp, *, bucket):  # type: ignore[no-untyped-def]
+        calls.append((name, stamp))
+        present.discard(name)
+        return 1
+
+    monkeypatch.setattr(cli, "archive_checkpoint_lineage", fake)
+    return calls
+
+
+def test_start_fresh_archives_the_lineage_and_reseeds_from_pretrained(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Even with a run checkpoint present, a fresh start falls back to pretrained."""
+    config = _config(tmp_path, pretrained_checkpoint="pretrained-transformer")
+    present = {"rank2-ppo-transformer", "pretrained-transformer"}
+    _stub_downloads(monkeypatch, present)
+    calls = _stub_archive(monkeypatch, present)
+
+    result = cli._warm_start_from_hf(
+        config, "bucket", CliReporter("train", tmp_path), start_fresh=True
+    )
+
+    assert [name for name, _ in calls] == ["rank2-ppo-transformer"]
+    assert result.warm_start == str(Path(config.run_directory) / "pretrained_warm_start.json")
+
+
+def test_start_fresh_on_a_scratch_task_trains_from_zero(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)  # no pretrained_checkpoint: the scratch arm of the ablation
+    present = {"rank2-ppo-transformer"}
+    _stub_downloads(monkeypatch, present)
+    _stub_archive(monkeypatch, present)
+
+    result = cli._warm_start_from_hf(
+        config, "bucket", CliReporter("train", tmp_path), start_fresh=True
+    )
+
+    assert result.warm_start is None
+
+
+def test_without_start_fresh_the_lineage_is_never_archived(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    present = {"rank2-ppo-transformer"}
+    _stub_downloads(monkeypatch, present)
+    calls = _stub_archive(monkeypatch, present)
+
+    cli._warm_start_from_hf(config, "bucket", CliReporter("train", tmp_path))
+
+    assert calls == []
+
+
 def test_the_run_checkpoint_wins_when_it_exists(tmp_path: Path, monkeypatch) -> None:
     config = _config(tmp_path, pretrained_checkpoint="pretrained-transformer")
     _stub_downloads(monkeypatch, {"rank2-ppo-transformer", "pretrained-transformer"})

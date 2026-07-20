@@ -59,9 +59,17 @@ def _notebook_dir(tmp_path: Path) -> Path:
     return nb
 
 
-def _queue_yaml(nb_dir: Path, *, remaining_runs: str = "null", extra: str = "") -> str:
+def _queue_yaml(
+    nb_dir: Path,
+    *,
+    remaining_runs: str = "null",
+    extra: str = "",
+    start_fresh_all: str = "false",
+    start_fresh: str = "false",
+) -> str:
     return f"""
 version: 1
+start_fresh_all: {start_fresh_all}
 limits:
   max_total_active: 5
   max_cpu_active: 5
@@ -75,6 +83,7 @@ tasks:
     notebook_slug: u/runner
     notebook_dir: {nb_dir}
     remaining_runs: {remaining_runs}
+    start_fresh: {start_fresh}
     config:
       rank: 2
 {extra}
@@ -230,6 +239,83 @@ def test_stop_launching_drains_without_killing(tmp_path: Path) -> None:
     report = run_tick(store, KaggleClient(runner=fake), _config(), now=NOW, log=_silent)
     assert fake.pushes == []
     assert report.launched == []
+
+
+_SECOND_TASK = """  - id: gen2
+    mode: generation
+    accelerator: cpu
+    notebook_slug: u/runner2
+    notebook_dir: {nb_dir}
+    config:
+      rank: 2
+"""
+
+
+def test_start_fresh_all_marks_every_task_and_clears_itself(tmp_path: Path) -> None:
+    """One global edit restarts the whole queue, and only once."""
+    nb = _notebook_dir(tmp_path)
+    queue = _queue_yaml(nb, start_fresh_all="true", extra=_SECOND_TASK.format(nb_dir=nb))
+    store, _ = _store({QUEUE_PATH: queue})
+
+    # No launches this tick, so the expansion is all that is observed.
+    run_tick(
+        store,
+        KaggleClient(runner=FakeKaggleRunner()),
+        _config(max_launches_override=0),
+        now=NOW,
+        log=_silent,
+    )
+
+    snap = store.load()
+    assert snap.queue.start_fresh_all is False
+    assert [t.start_fresh for t in snap.queue.tasks] == [True, True]
+
+
+def test_start_fresh_all_applies_to_a_task_launched_in_the_same_tick(tmp_path: Path) -> None:
+    """The expansion runs before selection, so the launch it triggers is a fresh one."""
+    nb = _notebook_dir(tmp_path)
+    store, _ = _store({QUEUE_PATH: _queue_yaml(nb, start_fresh_all="true")})
+
+    run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
+
+    injected = "".join(json.loads((nb / "runner.ipynb").read_text())["cells"][0]["source"])
+    assert '\\"start_fresh\\": true' in injected
+
+
+def test_launch_consumes_start_fresh(tmp_path: Path) -> None:
+    """The flag rides one launch and is cleared, so the next run resumes normally."""
+    nb = _notebook_dir(tmp_path)
+    store, backend = _store({QUEUE_PATH: _queue_yaml(nb, start_fresh="true")})
+
+    run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
+
+    archived = backend.read_text(RUNTIME_CONFIG_LATEST)
+    assert archived is not None and json.loads(archived)["start_fresh"] is True
+    assert store.load().queue.tasks[0].start_fresh is False
+
+
+def test_failed_launch_keeps_start_fresh(tmp_path: Path) -> None:
+    """Nothing archived the lineage, so the restart is still owed and must survive."""
+    nb = _notebook_dir(tmp_path)
+    store, _ = _store({QUEUE_PATH: _queue_yaml(nb, start_fresh="true")})
+
+    report = run_tick(
+        store, KaggleClient(runner=FakeKaggleRunner(push_rc=1)), _config(), now=NOW, log=_silent
+    )
+
+    assert report.launched == []
+    assert store.load().queue.tasks[0].start_fresh is True
+
+
+def test_dry_run_does_not_consume_start_fresh_all(tmp_path: Path) -> None:
+    nb = _notebook_dir(tmp_path)
+    store, _ = _store({QUEUE_PATH: _queue_yaml(nb, start_fresh_all="true")})
+
+    run_tick(
+        store, KaggleClient(runner=FakeKaggleRunner()), _config(dry_run=True), now=NOW, log=_silent
+    )
+
+    assert store.load().queue.start_fresh_all is True
 
 
 def test_runtime_config_injected_into_notebook_and_archived(tmp_path: Path) -> None:

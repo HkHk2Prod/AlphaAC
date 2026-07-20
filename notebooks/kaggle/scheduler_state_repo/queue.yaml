@@ -1,4 +1,7 @@
 version: 1
+# One-shot global restart: set true and the next scheduler tick marks every task
+# `start_fresh: true` and clears this flag again -- one edit instead of eight.
+start_fresh_all: false
 limits:
   max_total_active: 5
   max_cpu_active: 5
@@ -27,6 +30,7 @@ tasks:
   priority: 100
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     moveset: strict-ac
@@ -54,6 +58,7 @@ tasks:
   priority: 100
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     target: 100000000
@@ -70,6 +75,7 @@ tasks:
   priority: 90
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     moveset: strict-ac
     max_depth: 0
@@ -94,6 +100,7 @@ tasks:
   priority: 50
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     agent: alphazero
@@ -121,6 +128,12 @@ tasks:
       value_loss_weight: 1.0
       mcts_simulations: 128
       c_puct: 1.5
+      # Gradient-norm clip: bounds how far one pathological batch can move the
+      # weights. Distinct from `ppo_clip`, which bounds the policy *ratio* -- the
+      # ratio clip alone did not stop a reward-scale change from destroying a
+      # working policy. 0.5 is the standard PPO value (Baselines/SB3/CleanRL);
+      # the library default of 1.0 is a supervised-training convention.
+      grad_clip: 0.5
       # Iterations between checkpoints. Not a disk-write knob: the checkpoint event is
       # what the 4-hourly HF push and the self-play showcase hang off, and each save
       # rewrites the run's whole metrics history -- so one per iteration is pure waste,
@@ -145,6 +158,7 @@ tasks:
   priority: 50
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     agent: alphazero
@@ -170,6 +184,12 @@ tasks:
       value_loss_weight: 1.0
       mcts_simulations: 128
       c_puct: 1.5
+      # Gradient-norm clip: bounds how far one pathological batch can move the
+      # weights. Distinct from `ppo_clip`, which bounds the policy *ratio* -- the
+      # ratio clip alone did not stop a reward-scale change from destroying a
+      # working policy. 0.5 is the standard PPO value (Baselines/SB3/CleanRL);
+      # the library default of 1.0 is a supervised-training convention.
+      grad_clip: 0.5
       checkpoint_every: 25
       # From-zero twin of `train-alphazero-strict-navigation-pretrained`: identical
       # config, no `pretrained_checkpoint`, and its own lineage so it never inherits the
@@ -186,6 +206,7 @@ tasks:
   priority: 50
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     agent: ppo
@@ -212,6 +233,9 @@ tasks:
       entropy_coef: 0.01
       value_loss_weight: 0.5
       learning_rate: 0.02
+      # See the alphazero tasks above: gradient-norm clip, not the `ppo_clip`
+      # ratio bound. 0.5 is the standard PPO value.
+      grad_clip: 0.5
       # See `checkpoint_every` on the alphazero task above: the event feeds the 4-hourly
       # push, so it must fire -- just not every iteration.
       checkpoint_every: 25
@@ -231,6 +255,7 @@ tasks:
   priority: 50
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     agent: ppo
@@ -256,6 +281,9 @@ tasks:
       entropy_coef: 0.01
       value_loss_weight: 0.5
       learning_rate: 0.02
+      # See the alphazero tasks above: gradient-norm clip, not the `ppo_clip`
+      # ratio bound. 0.5 is the standard PPO value.
+      grad_clip: 0.5
       checkpoint_every: 25
       # From-zero twin of `train-ppo-strict-navigation-pretrained` (see the alphazero one).
       checkpoint_name_suffix: scratch
@@ -270,6 +298,7 @@ tasks:
   priority: 50
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     agent: alphazero
@@ -299,6 +328,12 @@ tasks:
       value_loss_weight: 1.0
       mcts_simulations: 128
       c_puct: 1.5
+      # Gradient-norm clip: bounds how far one pathological batch can move the
+      # weights. Distinct from `ppo_clip`, which bounds the policy *ratio* -- the
+      # ratio clip alone did not stop a reward-scale change from destroying a
+      # working policy. 0.5 is the standard PPO value (Baselines/SB3/CleanRL);
+      # the library default of 1.0 is a supervised-training convention.
+      grad_clip: 0.5
       # Iterations between checkpoints. Not a disk-write knob: the checkpoint event is
       # what the 4-hourly HF push and the self-play showcase hang off, and each save
       # rewrites the run's whole metrics history -- so one per iteration is pure waste,
@@ -321,6 +356,7 @@ tasks:
   priority: 50
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     agent: alphazero
@@ -348,6 +384,12 @@ tasks:
       value_loss_weight: 1.0
       mcts_simulations: 128
       c_puct: 1.5
+      # Gradient-norm clip: bounds how far one pathological batch can move the
+      # weights. Distinct from `ppo_clip`, which bounds the policy *ratio* -- the
+      # ratio clip alone did not stop a reward-scale change from destroying a
+      # working policy. 0.5 is the standard PPO value (Baselines/SB3/CleanRL);
+      # the library default of 1.0 is a supervised-training convention.
+      grad_clip: 0.5
       checkpoint_every: 25
       # From-zero twin of `train-alphazero-strict-navigation-transformer` (see above).
       checkpoint_name_suffix: scratch
@@ -362,6 +404,7 @@ tasks:
   priority: 50
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     agent: ppo
@@ -390,6 +433,9 @@ tasks:
       entropy_coef: 0.01
       value_loss_weight: 0.5
       learning_rate: 0.02
+      # See the alphazero tasks above: gradient-norm clip, not the `ppo_clip`
+      # ratio bound. 0.5 is the standard PPO value.
+      grad_clip: 0.5
       # See `checkpoint_every` on the alphazero task above: the event feeds the 4-hourly
       # push, so it must fire -- just not every iteration.
       checkpoint_every: 25
@@ -409,6 +455,7 @@ tasks:
   priority: 50
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     agent: ppo
@@ -436,6 +483,9 @@ tasks:
       entropy_coef: 0.01
       value_loss_weight: 0.5
       learning_rate: 0.02
+      # See the alphazero tasks above: gradient-norm clip, not the `ppo_clip`
+      # ratio bound. 0.5 is the standard PPO value.
+      grad_clip: 0.5
       checkpoint_every: 25
       # From-zero twin of `train-ppo-strict-navigation-transformer` (see above).
       checkpoint_name_suffix: scratch
@@ -450,6 +500,7 @@ tasks:
   priority: 40
   max_runtime_minutes: 600
   stop_after_current_iteration: false
+  start_fresh: false
   config:
     rank: 2
     agent: greedy

@@ -8,6 +8,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +45,9 @@ from ac_zero.search.puct import PUCTMCTS
 from ac_zero.system.reporting import CliReporter
 from ac_zero.training.checkpointing.checkpoint_name import derive_checkpoint_name
 from ac_zero.training.checkpointing.hub_checkpoints import (
+    ARCHIVE_PREFIX,
     PeriodicCheckpointUploader,
+    archive_checkpoint_lineage,
     download_best_checkpoint,
 )
 from ac_zero.training.logging.callbacks import CallbackManager, default_training_callbacks
@@ -246,6 +249,13 @@ def main(argv: list[str] | None = None) -> int:
         help="warm-start from the best model already on the HF bucket for this checkpoint name",
     )
     train.add_argument(
+        "--start-fresh",
+        action="store_true",
+        help="abandon this checkpoint name's history: move its bucket tree under "
+        "model_checkpoints/_archive/ and train from the pretrained checkpoint (or from "
+        "scratch when the config names none) instead of resuming",
+    )
+    train.add_argument(
         "--checkpoint-name",
         default=None,
         help="HF checkpoint lineage name for up/download (default: derived from the run identity)",
@@ -363,6 +373,7 @@ def _dispatch(args: argparse.Namespace, reporter: CliReporter) -> int:
             minutes=args.minutes,
             upload_checkpoints=args.upload_checkpoints,
             download_checkpoint=args.download_checkpoint,
+            start_fresh=args.start_fresh,
             checkpoint_name=args.checkpoint_name,
             checkpoint_bucket=args.checkpoint_bucket,
             upload_every_hours=args.upload_every_hours,
@@ -439,6 +450,7 @@ def _train(
     minutes: float = 0.0,
     upload_checkpoints: bool = False,
     download_checkpoint: bool = False,
+    start_fresh: bool = False,
     checkpoint_name: str | None = None,
     checkpoint_bucket: str | None = None,
     upload_every_hours: float = 3.0,
@@ -468,8 +480,11 @@ def _train(
         config = _seed_from_default_dataset(config)
     bucket = checkpoint_bucket or DEFAULT_BUCKET
     _ensure_training_dataset(config, reporter, force=force_download_dataset)
-    if download_checkpoint:
-        config = _warm_start_from_hf(config, bucket, reporter)
+    # `--start-fresh` pulls in this path on its own: it has a lineage to archive and a
+    # pretrained checkpoint to re-seed from, so it must never silently no-op when the
+    # caller omitted `--download-checkpoint`.
+    if download_checkpoint or start_fresh:
+        config = _warm_start_from_hf(config, bucket, reporter, start_fresh=start_fresh)
     callbacks = _training_callbacks(config, upload_checkpoints, bucket, upload_every_hours)
     if callbacks is not None:
         reporter.progress("checkpoint", "uploading checkpoints to bucket", {"bucket": bucket})
@@ -616,7 +631,11 @@ def _ensure_dataset_split(groups: Path, reporter: CliReporter) -> None:
 
 
 def _warm_start_from_hf(
-    config: TrainingPipelineConfig, bucket: str, reporter: CliReporter
+    config: TrainingPipelineConfig,
+    bucket: str,
+    reporter: CliReporter,
+    *,
+    start_fresh: bool = False,
 ) -> TrainingPipelineConfig:
     """Pull this run's best model from the HF bucket and warm-start from it.
 
@@ -627,8 +646,21 @@ def _warm_start_from_hf(
     every later run finds this task's own checkpoint above, so the RL checkpoint always
     wins once it exists and the pretrained model only ever seeds run one. With neither on
     the bucket the run trains from scratch.
+
+    `start_fresh` restarts the lineage: the existing tree is archived first, which leaves
+    the name empty and drops the run into exactly the "first run" branch below -- so a
+    fresh start seeds from the pretrained checkpoint on a pretrained task and from zero on
+    a scratch one, with no separate code path deciding which.
     """
     name = config.checkpoint_name or derive_checkpoint_name(config)
+    if start_fresh:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        moved = archive_checkpoint_lineage(name, stamp, bucket=bucket)
+        reporter.progress(
+            "checkpoint",
+            "start_fresh: archived the existing checkpoint lineage",
+            {"name": name, "files": moved, "archive": f"{ARCHIVE_PREFIX}/{name}/{stamp}/"},
+        )
     reporter.progress(
         "checkpoint", "pulling best checkpoint from bucket", {"bucket": bucket, "name": name}
     )

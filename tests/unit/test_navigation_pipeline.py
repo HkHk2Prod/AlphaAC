@@ -109,16 +109,27 @@ def _episode(progress: float, success: bool, *, start: int = 10) -> EpisodeMetri
     )
 
 
-def test_fold_alpha_advances_once_per_episode_in_order() -> None:
+def test_fold_alpha_advances_once_for_the_whole_batch() -> None:
     updater = AlphaUpdater(RewardConfig(alpha_initial=0.3, progress_low=0.3, increase_factor=1.1))
     rows = fold_alpha(updater, [_episode(0.1, False), _episode(0.1, False)])
     assert len(rows) == 2
-    # Both low-progress episodes push alpha up multiplicatively.
-    assert rows[0]["alpha"] == pytest.approx(0.3 * 1.1)
-    assert rows[1]["alpha"] == pytest.approx(0.3 * 1.1 * 1.1)
-    assert updater.alpha == pytest.approx(0.3 * 1.1 * 1.1)
+    # Two low-progress episodes, but the batch shares one alpha and moves it once:
+    # per-episode moves let alpha outrun the EMA steering it.
+    assert updater.alpha == pytest.approx(0.3 * 1.1)
+    # The rows report the alpha those episodes actually ran at, not the new one.
+    assert rows[0]["alpha"] == pytest.approx(0.3)
+    assert rows[1]["alpha"] == pytest.approx(0.3)
     for row in rows:
         assert set(row) == {"alpha", "progress_rate", "progress_ema", "success", "success_ema"}
+
+
+def test_fold_alpha_folds_every_episode_into_the_emas() -> None:
+    """The move is rate-limited; the sensor is not -- every episode still counts."""
+    updater = AlphaUpdater(RewardConfig(alpha_initial=0.3, ema_rate=0.5))
+    fold_alpha(updater, [_episode(1.0, True), _episode(1.0, True), _episode(1.0, True)])
+    # Seeded at 1.0 by the first, held there by the rest.
+    assert updater.success_ema == pytest.approx(1.0)
+    assert updater.progress_ema == pytest.approx(1.0)
 
 
 def test_fold_alpha_ignores_episodes_without_nav_stats() -> None:
@@ -195,6 +206,12 @@ def test_navigation_pipeline_emits_alpha_and_eval_metrics(tmp_path: Path, agent:
     ]
     assert iteration_events
     assert "alpha" in iteration_events[-1].metrics
+    # Every episode of an iteration ran at one shared alpha: the weight moves once
+    # per iteration, not once per episode.
+    per_iteration: dict[float, set[float]] = {}
+    for event in episode_events:
+        per_iteration.setdefault(event.metrics["iteration"], set()).add(event.metrics["alpha"])
+    assert all(len(alphas) == 1 for alphas in per_iteration.values())
 
 
 def test_navigation_run_records_alpha_on_every_metrics_row(tmp_path: Path) -> None:
@@ -264,13 +281,21 @@ def test_config_parses_reward_block_and_validates_navigation() -> None:
     config = TrainingPipelineConfig.from_mapping(
         {
             "reward_mode": "navigation",
-            "reward": {"alpha_initial": 0.5, "move_fee_scale": 0.05, "increase_factor": 1.2},
+            "reward": {
+                "alpha_initial": 0.5,
+                "move_fee_scale": 0.05,
+                "increase_factor": 1.2,
+                "alpha_update_every_iterations": 4,
+            },
             "dataset": {"path": "train.groups.json", "annotations": "train.annotations.json"},
         }
     )
     assert config.reward_config.alpha_initial == 0.5
     assert config.reward_config.move_fee_scale == 0.05
     assert config.reward_config.increase_factor == 1.2
+    # The iteration bound is a count, not a float -- everything else in the block is.
+    assert config.reward_config.alpha_update_every_iterations == 4
+    assert isinstance(config.reward_config.alpha_update_every_iterations, int)
     # Untouched keys keep their defaults.
     assert config.reward_config.anneal_factor == RewardConfig().anneal_factor
     config.validate()

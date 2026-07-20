@@ -41,18 +41,38 @@ class RewardConfig:
     revisit_fee_scale: float = 0.02
     # Alpha updater: initial weight, bounds, and EMA smoothing.
     alpha_initial: float = 0.3
-    alpha_min: float = 1e-3
+    # The floor is deliberately well above zero. Annealing alpha to ~0 turns the
+    # shaping off entirely, and the value function then converges against a
+    # near-sparse reward; the next ramp back up changes the reward scale by the
+    # whole alpha_max/alpha_min ratio at once, invalidating that value function
+    # and destroying the policy through it. Keeping the span inside one order of
+    # magnitude bounds how much the reward can move under a converged critic.
+    alpha_min: float = 0.05
     alpha_max: float = 1.0
     ema_rate: float = 0.05
+    # Long-memory success EMA, used only to tell a regression from a stall (see
+    # `advance`). Much slower than `ema_rate` on purpose: the fast EMA decays to
+    # ~0 within a few iterations of a collapse, so it cannot distinguish a policy
+    # that was working moments ago from one that never worked at all. This rate
+    # sets how long a collapsed run is given to recover before shaping ramps
+    # again -- ~460 episodes, which is ~20 iterations at 24 episodes/iteration
+    # and ~58 at 8. It folds per episode, so the window in *iterations* scales
+    # with `episodes_per_iteration`.
+    recovery_ema_rate: float = 0.002
     # Alpha update-rule thresholds.
     progress_low: float = 0.3
     progress_high: float = 0.8
     success_target: float = 0.4
     success_good: float = 0.7
     # Alpha multiplicative moves.
-    increase_factor: float = 1.1
+    increase_factor: float = 1.05
     decrease_factor: float = 0.8
     anneal_factor: float = 0.95
+    # Iterations that must elapse between two alpha moves. The EMAs still fold
+    # every episode -- only the multiplicative move is rate-limited, so the
+    # controller's actuator cannot outrun its own sensor. 1 applies a move once
+    # per iteration; raising it slows alpha further.
+    alpha_update_every_iterations: int = 1
 
     def validate(self) -> None:
         """Reject configs that would make the reward or alpha rule ill-defined."""
@@ -70,6 +90,10 @@ class RewardConfig:
             raise ValueError("alpha_initial must lie in [alpha_min, alpha_max]")
         if not 0.0 < self.ema_rate <= 1.0:
             raise ValueError("ema_rate must be in (0, 1]")
+        if not 0.0 < self.recovery_ema_rate <= 1.0:
+            raise ValueError("recovery_ema_rate must be in (0, 1]")
+        if self.alpha_update_every_iterations < 1:
+            raise ValueError("alpha_update_every_iterations must be at least 1")
         if not 0.0 <= self.progress_low <= self.progress_high <= 1.0:
             raise ValueError("require 0 <= progress_low <= progress_high <= 1")
         if not 0.0 <= self.success_target <= 1.0:
@@ -260,12 +284,19 @@ class _ComponentSums:
 
 
 class AlphaUpdater:
-    """Retunes the shaping weight ``alpha`` between episodes from success/progress.
+    """Retunes the shaping weight ``alpha`` from success/progress.
 
-    Holds the two EMAs and the live ``alpha``. It is stepped exactly once per
-    finished episode via :meth:`update`; the returned value is the ``alpha`` the
-    *next* episode should run at. The EMAs seed from the first episode observed to
-    avoid a cold-start bias toward zero.
+    Holds the EMAs and the live ``alpha``. Sensor and actuator run at different
+    rates on purpose: :meth:`observe` folds one finished episode into the EMAs
+    and is called for every episode, while :meth:`advance` applies the
+    multiplicative move and is called once per *iteration* (and then only every
+    ``alpha_update_every_iterations``-th time). Moving alpha per episode let the
+    actuator outrun the EMA that steers it -- alpha could traverse its whole
+    range in a couple of iterations, changing the reward scale by orders of
+    magnitude under a value function fit to the old one.
+
+    The EMAs seed from the first episode observed to avoid a cold-start bias
+    toward zero.
     """
 
     def __init__(self, config: RewardConfig) -> None:
@@ -273,7 +304,9 @@ class AlphaUpdater:
         self._alpha = config.alpha_initial
         self._progress_ema = 0.0
         self._success_ema = 0.0
+        self._recovery_ema = 0.0
         self._seeded = False
+        self._iterations_since_move = 0
 
     @property
     def alpha(self) -> float:
@@ -288,10 +321,15 @@ class AlphaUpdater:
     def success_ema(self) -> float:
         return self._success_ema
 
+    @property
+    def recovery_ema(self) -> float:
+        """The long-memory success EMA that gates the increase branch."""
+        return self._recovery_ema
+
     def state_dict(self) -> dict[str, float | bool]:
         """Snapshot the across-episode state so a resumed run continues from it.
 
-        Captures the live ``alpha`` and both EMAs (plus whether they are seeded)
+        Captures the live ``alpha`` and every EMA (plus whether they are seeded)
         so restoring skips the cold-start re-seed and the shaping weight does not
         snap back to ``alpha_initial`` when a checkpoint is warm-started.
         """
@@ -299,6 +337,7 @@ class AlphaUpdater:
             "alpha": self._alpha,
             "progress_ema": self._progress_ema,
             "success_ema": self._success_ema,
+            "recovery_ema": self._recovery_ema,
             "seeded": self._seeded,
         }
 
@@ -307,24 +346,24 @@ class AlphaUpdater:
 
         ``alpha`` is re-clamped to ``[alpha_min, alpha_max]`` so a snapshot taken
         under looser bounds cannot reintroduce an out-of-range weight after a
-        config change between runs.
+        config change between runs -- which is also what pulls a checkpoint
+        written under the old ``alpha_min`` of 1e-3 up to the current floor.
+        ``recovery_ema`` falls back to ``success_ema`` when absent, so a snapshot
+        written before it existed resumes with a plausible value rather than a
+        zero that would read as "never succeeded".
         """
         cfg = self.config
         self._alpha = min(max(float(state["alpha"]), cfg.alpha_min), cfg.alpha_max)
         self._progress_ema = float(state["progress_ema"])
         self._success_ema = float(state["success_ema"])
+        self._recovery_ema = float(state.get("recovery_ema", self._success_ema))
         self._seeded = bool(state["seeded"])
 
-    def update(self, stats: EpisodeStats) -> float:
-        """Fold one finished episode into the EMAs and retune ``alpha``.
+    def observe(self, stats: EpisodeStats) -> None:
+        """Fold one finished episode into the EMAs, leaving ``alpha`` untouched.
 
-        Applies the spec's three-way rule against the post-update EMAs: raise
-        ``alpha`` when progress is stalling, lower it when the agent makes
-        progress but still fails to reach the goal, and anneal it once success is
-        reliably high. The retuned weight is clamped to
-        ``[alpha_min, alpha_max]`` so a persistent early-training stall cannot
-        ramp ``alpha`` geometrically without bound and blow up the shaping
-        reward (and, through it, the value targets and PPO loss).
+        Called for every episode. The move itself is deferred to :meth:`advance`
+        so the shaping weight cannot race ahead of the averages that steer it.
         """
         cfg = self.config
         progress_rate = stats.progress_rate
@@ -332,14 +371,48 @@ class AlphaUpdater:
         if not self._seeded:
             self._progress_ema = progress_rate
             self._success_ema = success
+            self._recovery_ema = success
             self._seeded = True
-        else:
-            rate = cfg.ema_rate
-            self._progress_ema = (1.0 - rate) * self._progress_ema + rate * progress_rate
-            self._success_ema = (1.0 - rate) * self._success_ema + rate * success
+            return
+        rate = cfg.ema_rate
+        self._progress_ema = (1.0 - rate) * self._progress_ema + rate * progress_rate
+        self._success_ema = (1.0 - rate) * self._success_ema + rate * success
+        slow = cfg.recovery_ema_rate
+        self._recovery_ema = (1.0 - slow) * self._recovery_ema + slow * success
+
+    def advance(self) -> float:
+        """Retune ``alpha`` from the current EMAs, at most once every N iterations.
+
+        Called once per iteration; applies a move only on every
+        ``alpha_update_every_iterations``-th call, and returns the weight the
+        next iteration runs at either way.
+
+        The rule is four-way. Raise ``alpha`` when progress is stalling, lower it
+        when the agent makes progress but still fails to reach the goal, anneal it
+        once success is reliably high -- and, the fourth case, *hold* it when
+        progress has collapsed but ``recovery_ema`` says the policy was recently
+        succeeding. That last branch is what stops a transient regression from
+        becoming permanent: ramping the shaping back up mid-collapse changes the
+        reward scale under a value function fit to the annealed one, which breaks
+        the policy far more thoroughly than the dip that triggered it, and the
+        resulting zero-success state then keeps ``progress_ema`` low enough to
+        pin ``alpha`` at its ceiling forever. Holding gives the policy room to
+        recover; if it genuinely never does, ``recovery_ema`` decays and normal
+        ramping resumes on its own.
+
+        The weight is clamped to ``[alpha_min, alpha_max]`` so a persistent stall
+        cannot ramp it geometrically without bound and blow up the shaping reward
+        (and, through it, the value targets and PPO loss).
+        """
+        cfg = self.config
+        self._iterations_since_move += 1
+        if self._iterations_since_move < cfg.alpha_update_every_iterations:
+            return self._alpha
+        self._iterations_since_move = 0
 
         if self._progress_ema < cfg.progress_low:
-            self._alpha = self._alpha * cfg.increase_factor
+            if self._recovery_ema < cfg.success_target:
+                self._alpha = self._alpha * cfg.increase_factor
         elif self._progress_ema > cfg.progress_high and self._success_ema < cfg.success_target:
             self._alpha = self._alpha * cfg.decrease_factor
         elif self._success_ema > cfg.success_good:

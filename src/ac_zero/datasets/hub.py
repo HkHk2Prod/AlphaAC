@@ -296,3 +296,42 @@ def list_remote(prefix: str = "", *, bucket: str = DEFAULT_BUCKET) -> list[str]:
         for item in hub.list_bucket_tree(bucket, recursive=True)
         if getattr(item, "type", "file") == "file" and item.path.startswith(prefix)
     ]
+
+
+def _files_under(prefix: str, *, bucket: str) -> list[Any]:
+    """Bucket file entries under ``prefix``, listed with the prefix pushed server-side."""
+    return [
+        item
+        for item in _hub().list_bucket_tree(bucket, prefix=prefix, recursive=True)
+        if getattr(item, "type", "file") == "file" and item.path.startswith(prefix)
+    ]
+
+
+def move_remote_tree(prefix: str, dest_prefix: str, *, bucket: str = DEFAULT_BUCKET) -> list[str]:
+    """Move every file under ``prefix`` to ``dest_prefix``; return the new paths.
+
+    The copy is a server-side xet-hash copy -- no bytes are downloaded or re-uploaded,
+    so moving a whole checkpoint lineage aside costs one API round trip rather than a
+    transfer of every model it ever wrote. Copy and delete are issued as two batches,
+    not one: ``batch_bucket_files`` is non-transactional, and a copy that half-fails
+    must leave the originals in place rather than delete what it did not copy.
+    """
+    items = _files_under(prefix, bucket=bucket)
+    if not items:
+        return []
+    sources = [str(item.path) for item in items]
+    destinations = [dest_prefix + source[len(prefix) :] for source in sources]
+    copies = [
+        ("bucket", bucket, item.xet_hash, destination)
+        for item, destination in zip(items, destinations, strict=True)
+    ]
+    hub = _hub()
+    hub.batch_bucket_files(bucket, copy=copies)
+    hub.batch_bucket_files(bucket, delete=sources)
+    return destinations
+
+
+def delete_remote(paths: list[str], *, bucket: str = DEFAULT_BUCKET) -> None:
+    """Delete ``paths`` from the bucket, ignoring any that are already absent."""
+    if paths:
+        _hub().batch_bucket_files(bucket, delete=paths)

@@ -19,22 +19,31 @@ from ac_zero.training.checkpointing.checkpoint_bundle import CheckpointBundle
 
 
 class _Item:
-    def __init__(self, path: str, type: str = "file") -> None:
+    def __init__(self, path: str, xet_hash: str = "", type: str = "file") -> None:
         self.path = path
+        self.xet_hash = xet_hash
         self.type = type
 
 
 def _install_bucket(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
-    """Install a fake hub whose bucket is a ``remote_path -> bytes`` dict."""
+    """Install a fake hub whose bucket is a ``remote_path -> bytes`` dict.
+
+    The xet hash a server-side copy addresses is faked as the path itself, so a
+    ``copy`` resolves through the same dict the uploads wrote.
+    """
     store: dict[str, bytes] = {}
     module = types.ModuleType("huggingface_hub")
 
-    def list_bucket_tree(bucket: str, recursive: bool = False):  # type: ignore[no-untyped-def]
-        return [_Item(path) for path in store]
+    def list_bucket_tree(bucket: str, prefix: str = "", recursive: bool = False):  # type: ignore[no-untyped-def]
+        return [_Item(path, xet_hash=path) for path in store if path.startswith(prefix)]
 
     def batch_bucket_files(bucket: str, add=None, delete=None, copy=None):  # type: ignore[no-untyped-def]
         for local, remote in add or []:
             store[remote] = Path(local).read_bytes()
+        for _repo_type, _repo_id, xet_hash, destination in copy or []:
+            store[destination] = store[xet_hash]
+        for remote in delete or []:
+            store.pop(remote, None)
 
     def download_bucket_files(bucket: str, files=None, *, raise_on_missing_files=False):  # type: ignore[no-untyped-def]
         for remote, local in files or []:
@@ -127,6 +136,67 @@ def test_push_uploads_bundle_index_and_plots(
     assert index["best"]["run_id"] == "100-0"
     assert index["best"]["metric"] == 0.3
     assert [r["run_id"] for r in index["runs"]] == ["100-0"]
+
+
+def test_push_copies_all_runs_plots_into_the_comparison_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every model's all-runs figures also land under plots/<type>/<name>.png."""
+    store = _install_bucket(monkeypatch)
+    _write_bundle(tmp_path / "a", name="model-a", run_id="100-0", metric=0.3)
+    _write_bundle(tmp_path / "b", name="model-b", run_id="200-0", metric=0.4)
+
+    hc.push_checkpoint_bundle(tmp_path / "a", bucket="ns/b")
+    hc.push_checkpoint_bundle(tmp_path / "b", bucket="ns/b")
+
+    # The comparison copy is byte-identical to the all-runs plot it mirrors...
+    for name in ("model-a", "model-b"):
+        source = f"model_checkpoints/{name}/plots/all_runs/loss_curves.png"
+        assert store[hc.comparison_path("loss_curves", name)] == store[source]
+    # ...and one folder now holds the same figure for both models, named after each.
+    in_folder = {k for k in store if k.startswith("plots/selfplay_progress/")}
+    assert in_folder == {
+        "plots/selfplay_progress/model-a.png",
+        "plots/selfplay_progress/model-b.png",
+    }
+
+
+def test_archive_lineage_empties_the_name_and_keeps_the_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A start-fresh archive leaves nothing to resume from but discards nothing."""
+    store = _install_bucket(monkeypatch)
+    _write_bundle(tmp_path / "a", name="model-a", run_id="100-0", metric=0.3)
+    hc.push_checkpoint_bundle(tmp_path / "a", bucket="ns/b")
+    before = dict(store)
+
+    moved = hc.archive_checkpoint_lineage("model-a", "20260719T000000Z", bucket="ns/b")
+
+    assert moved == len([k for k in before if k.startswith("model_checkpoints/model-a/")])
+    assert not [k for k in store if k.startswith("model_checkpoints/model-a/")]
+    assert not [k for k in store if k.startswith("plots/") and k.endswith("/model-a.png")]
+    archive = "model_checkpoints/_archive/model-a/20260719T000000Z"
+    assert store[f"{archive}/best.json"] == before["model_checkpoints/model-a/best.json"]
+    assert store[f"{archive}/runs/100-0.metrics.jsonl"]
+
+    # With the name empty, the next run's rollups start over rather than replaying it.
+    _write_bundle(tmp_path / "b", name="model-a", run_id="200-0", metric=0.1)
+    hc.push_checkpoint_bundle(tmp_path / "b", bucket="ns/b")
+    index = json.loads(store["model_checkpoints/model-a/index.json"])
+    assert [r["run_id"] for r in index["runs"]] == ["200-0"]
+    assert index["best"]["run_id"] == "200-0"  # the archived 0.3 no longer outranks it
+
+
+def test_archive_lineage_on_an_unknown_name_is_a_no_op(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _install_bucket(monkeypatch)
+    _write_bundle(tmp_path / "a", name="model-a", run_id="100-0", metric=0.3)
+    hc.push_checkpoint_bundle(tmp_path / "a", bucket="ns/b")
+    before = dict(store)
+
+    assert hc.archive_checkpoint_lineage("never-trained", "20260719T000000Z", bucket="ns/b") == 0
+    assert store == before  # a sibling model's comparison copy is untouched
 
 
 def test_best_promoted_only_when_metric_improves(
