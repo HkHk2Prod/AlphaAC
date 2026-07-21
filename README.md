@@ -176,12 +176,75 @@ from training data to avoid leakage:
 uv run --frozen aczero dataset candidates --output data/candidates/standard.json
 ```
 
-Run the small benchmark report:
+Run the small cross-solver regression report:
 
 ```bash
-uv run --frozen aczero benchmark \
-  --config configs/experiments/benchmark_rank2.yaml
+uv run --frozen aczero benchmark solvers
 ```
+
+## Benchmark Evaluation
+
+Separate from that regression, `aczero benchmark create` / `run` score a *trained
+model* against the Akbulut-Kirby and Miller-Schupp series. Two bounds define the
+catalog:
+
+* `--max-relator-length` — no relator may be longer than this after free
+  reduction. It bounds both families' index (AK(n) has a relator of length
+  `2n+1`, MS(n, w) one of length `2n+3`). Match it to the training tasks'
+  `max_relator_tokens` so the benchmark only asks models about presentations
+  their encoder can represent.
+* `--max-w-length` — a separate cap on the Miller-Schupp word `w`. It is needed
+  because the relator bound alone does not bound the sweep usefully: freely
+  reduced words with x-exponent sum zero grow roughly threefold per letter, so
+  the ~47 letters a bound of 48 permits describe more words than could ever be
+  enumerated.
+
+```bash
+# ~14.3k presentations: AK(1..23) plus MS(n<=22, |w|<=7), deduplicated by content.
+# Writes it locally AND publishes it to benchmark_datasets/ on the bucket; pass
+# --no-upload to keep it local.
+uv run --frozen aczero benchmark create --max-relator-length 48 --max-w-length 7
+
+# Score a checkpoint lineage's best model against it, publishing to the bucket
+uv run --frozen aczero benchmark run \
+  --checkpoint-name rank2-ppo-residual_mlp-strict_ac-navigation-1a2b3c \
+  --minutes 240 --upload
+```
+
+A run makes two passes: a cheap length-ordered classical **scan** over every
+entry, then model-guided PUCT (the **deep** pass) on what the scan missed, in
+smallest-first order. The wall-clock cap is checked between presentations, so a
+truncated run keeps everything it scored. Without a checkpoint the scan runs
+alone, which is the baseline a trained model's numbers are read against.
+
+Budgets live in the queue task's `benchmark:` block (or a `--config` YAML) —
+`scan_expansions`, `scan_generated`, `deep_simulations`, `deep_moves`,
+`max_moves`. They are starting guesses, meant to be tuned from the first runs.
+
+Results land in the bucket under `benchmarks/`, summaries at the top so the
+folder listing is the leaderboard; the catalogs themselves live under
+`benchmark_datasets/`, since a catalog is a shared *input* every model is scored
+against, not one run's output:
+
+```
+benchmarks/
+    <checkpoint_name>.json                # rolling summary, one file per model
+    runs/<checkpoint_name>/<run_id>.json  # per-entry detail for one run
+benchmark_datasets/
+    <catalog_name>.json                   # the entry set, e.g. ak-ms-rel48-w7
+```
+
+The summary's `best_solved` is a high-water mark and `ever_solved` is the union
+of every presentation the lineage has ever solved — a solve is a permanent fact
+about a presentation, so a later run with less budget does not un-solve it.
+
+On Kaggle this is automatic. Every scheduler tick reads each training task's
+`model_checkpoints/<name>/index.json` and queues any best model whose metric has
+reached the threshold (`BENCHMARK_METRIC_THRESHOLD`, default 0.30) — the
+self-play success-rate EMA, the same number best models are selected by. The
+`benchmark-ak-ms` task is blocked whenever nothing is pending, and on launch the
+scheduler pops the highest-metric checkpoint and hands it to the run. A given
+`(checkpoint_name, run_id)` is only ever evaluated once.
 
 Run the config-driven policy/value training pipeline:
 
@@ -677,9 +740,13 @@ notebook source, `runtime_config.json`, logs, checkpoints, or uploaded outputs.
 - `src/ac_zero/models`, `encoding`, `training`: trainable policy/value
   architectures, a reverse-mode autodiff engine, replay, losses, smoke helpers,
   and the CPU policy/value training pipeline.
+- `src/ac_zero/benchmarks`: the AK/MS catalog enumerator, the two-pass evaluation
+  run that scores a checkpoint against it, and the summary/detail documents it
+  publishes under `benchmarks/`.
 - `src/ac_zero/scheduler`: the GitHub Actions-driven Kaggle run scheduler
   (queue/state models, HF-backed state store with a lease, task selection, the
-  Kaggle CLI wrapper, the controller tick, and the notebook-side run reporter).
+  Kaggle CLI wrapper, the controller tick, the benchmark evaluation queue, and
+  the notebook-side run reporter).
 - `configs`, `data`, `docs`, `scripts`, `tests`: reproducibility and validation.
 
 ## Adding New Components

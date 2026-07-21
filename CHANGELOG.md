@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **Benchmark evaluation: the AK/MS series, scored automatically once a model gets decent.**
+  `aczero benchmark create` enumerates every Akbulut-Kirby and Miller-Schupp presentation
+  under two bounds — `--max-relator-length` (the longest relator after free reduction, which
+  bounds both families' index) and `--max-w-length` (a separate cap on the Miller-Schupp
+  word). The second bound is not redundant: freely reduced words with x-exponent sum zero
+  grow roughly threefold per letter, so the relator bound alone leaves the sweep unbounded
+  in practice. At 48/7 the catalog is ~14.3k presentations, deduplicated by content hash
+  (free reduction collapses distinct words onto the same presentation) and ordered
+  smallest-first. `aczero benchmark run` scores a checkpoint against it in two passes: a
+  cheap length-ordered classical scan over every entry, then model-guided PUCT on what the
+  scan missed. Budgets are node budgets, not seconds — a wall-clock budget could only be
+  enforced by killing a search partway, which throws the work away rather than bounding it —
+  and the one wall-clock cap is checked between presentations, so a truncated run keeps
+  everything it scored and reports what it never attempted rather than counting it as
+  unsolved. Results land under `benchmarks/`: a rolling summary per checkpoint name at the
+  top level (so the folder listing is the leaderboard) and per-entry detail one level down,
+  and the exact catalog that was scored lands under `benchmark_datasets/` (also published by `benchmark create`, which uploads by default unless `--no-upload`). On Kaggle it runs itself: each scheduler tick
+  reads every training task's `model_checkpoints/<name>/index.json` and queues any best model
+  whose metric has reached `BENCHMARK_METRIC_THRESHOLD` (default 0.30, the self-play
+  success-rate EMA that best models are already selected by). Pulling the gate into the
+  controller rather than pushing from the training notebook makes it idempotent — a run is
+  keyed `(checkpoint_name, run_id)` and enqueued once — and picks up checkpoints that crossed
+  the line while the scheduler was down. The new `benchmark-ak-ms` task is blocked whenever
+  nothing is pending, expressed as a per-tick block rather than by toggling `active`, so the
+  operator's on/off switch keeps meaning what it says.
+
 - **The distance curriculum is gone; alpha is the one difficulty knob, and it is now
   plotted.** `L_max` and the shaping weight `alpha` were conjugate controls on the same
   thing — how hard a problem the agent is asked to solve — one by capping which distances

@@ -10,6 +10,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 
 from ac_zero.scheduler.backend import MemoryStateBackend
+from ac_zero.scheduler.benchmarks import BENCHMARK_QUEUE_PATH
 from ac_zero.scheduler.controller import SchedulerConfig, run_tick
 from ac_zero.scheduler.kaggle import KaggleClient
 from ac_zero.scheduler.store import (
@@ -331,3 +332,84 @@ def test_runtime_config_injected_into_notebook_and_archived(tmp_path: Path) -> N
     # ...and is archived to the state repo for auditing.
     archived = backend.read_text(RUNTIME_CONFIG_LATEST)
     assert archived is not None and json.loads(archived)["task_id"] == "gen"
+
+
+def _benchmark_task(nb_dir: Path) -> str:
+    return f"""  - id: bench
+    mode: benchmark
+    accelerator: cpu
+    priority: 99
+    notebook_slug: u/runner
+    notebook_dir: {nb_dir}
+    config:
+      rank: 2
+"""
+
+
+def _pending_doc(*entries: tuple[str, str, float]) -> str:
+    return json.dumps(
+        {
+            "pending": [
+                {"checkpoint_name": name, "run_id": run, "metric": metric, "enqueued_at": NOW}
+                for name, run, metric in entries
+            ],
+            "dispatched": [],
+        }
+    )
+
+
+def test_a_benchmark_task_does_not_launch_with_an_empty_evaluation_queue(tmp_path: Path) -> None:
+    nb = _notebook_dir(tmp_path)
+    store, _ = _store({QUEUE_PATH: _queue_yaml(nb, extra=_benchmark_task(nb))})
+    report = run_tick(
+        store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent
+    )
+
+    launched = {run_id.rsplit("-", 4)[0] for run_id in report.launched}
+    assert "bench" not in launched
+    reasons = {d.task_id: d.reason for d in report.decisions}
+    assert reasons["bench"] == "no checkpoints pending evaluation"
+
+
+def test_a_benchmark_launch_takes_the_highest_metric_checkpoint(tmp_path: Path) -> None:
+    nb = _notebook_dir(tmp_path)
+    store, _ = _store(
+        {
+            QUEUE_PATH: _queue_yaml(nb, extra=_benchmark_task(nb)),
+            BENCHMARK_QUEUE_PATH: _pending_doc(("model-a", "r1", 0.4), ("model-b", "r2", 0.8)),
+        }
+    )
+    report = run_tick(
+        store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent
+    )
+
+    assert any(run_id.startswith("bench-") for run_id in report.launched)
+    task = next(t for t in store.load().queue.tasks if t.id == "bench")
+    assert task.config["checkpoint_name"] == "model-b"
+    assert task.config["checkpoint_run_id"] == "r2"
+
+
+def test_a_dispatched_checkpoint_leaves_the_pending_queue(tmp_path: Path) -> None:
+    nb = _notebook_dir(tmp_path)
+    store, backend = _store(
+        {
+            QUEUE_PATH: _queue_yaml(nb, extra=_benchmark_task(nb)),
+            BENCHMARK_QUEUE_PATH: _pending_doc(("model-a", "r1", 0.9)),
+        }
+    )
+    run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
+
+    doc = json.loads(backend.read_text(BENCHMARK_QUEUE_PATH) or "{}")
+    assert doc["pending"] == []
+    assert [e["checkpoint_name"] for e in doc["dispatched"]] == ["model-a"]
+
+
+def test_the_evaluation_queue_is_written_even_when_nothing_launches(tmp_path: Path) -> None:
+    nb = _notebook_dir(tmp_path)
+    store, backend = _store({QUEUE_PATH: _queue_yaml(nb, extra=_benchmark_task(nb))})
+    run_tick(store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent)
+
+    assert json.loads(backend.read_text(BENCHMARK_QUEUE_PATH) or "{}") == {
+        "pending": [],
+        "dispatched": [],
+    }

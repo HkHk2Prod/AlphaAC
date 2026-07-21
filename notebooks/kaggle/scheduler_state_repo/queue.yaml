@@ -506,3 +506,48 @@ tasks:
     agent: greedy
     dataset:
       bucket: HkHk2Prod/alphaac-data
+# Benchmark evaluation. Unlike every other task this one does not run on a cadence: the
+# scheduler blocks it whenever `queue/benchmark_queue.json` has nothing pending, and each
+# tick it enqueues any training lineage whose best model has reached the metric threshold
+# (the self-play success-rate EMA, the same number best models are selected by). On launch
+# the scheduler pops the highest-metric checkpoint and writes its name into this task's
+# `config`, so `checkpoint_name` below is a record of the last dispatch, not a setting.
+#
+# Leave `active: true`: the pending queue, not this flag, is what gates it. Set it false to
+# suspend evaluation entirely.
+#
+# `max_relator_length` and `max_w_length` define the catalog -- every Akbulut-Kirby and
+# Miller-Schupp presentation whose longest relator fits the first bound, with the
+# Miller-Schupp word `w` capped by the second. At 48/7 that is ~14.3k presentations. The
+# relator bound matches the training tasks' `max_relator_tokens` so the benchmark asks the
+# models about presentations their encoder can actually represent.
+- id: benchmark-ak-ms
+  mode: benchmark
+  notebook_slug: hkhk2prod/alphaac-benchmark
+  notebook_dir: notebooks/kaggle
+  active: true
+  remaining_runs: null
+  accelerator: cpu
+  priority: 60
+  max_runtime_minutes: 600
+  stop_after_current_iteration: false
+  start_fresh: false
+  config:
+    rank: 2
+    moveset: strict-ac
+    max_relator_length: 48
+    max_w_length: 7
+    dataset:
+      bucket: HkHk2Prod/alphaac-data
+    # Budgets. These are guesses -- the right effort per presentation is exactly what the
+    # first few runs are for -- so they are meant to be tuned from here.
+    benchmark:
+      max_relator_tokens: 48
+      # Pass 1: length-ordered classical search on every entry. Cheap, so the whole
+      # catalog is always covered before any of the budget goes into depth.
+      scan_expansions: 256
+      scan_generated: 10000
+      # Pass 2: model-guided PUCT on what pass 1 missed, in smallest-first order.
+      deep_simulations: 128
+      deep_moves: 64
+      max_moves: 128

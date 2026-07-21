@@ -11,3 +11,6 @@ runs/
 data/generated/
 # Dataset summaries are derived artifacts, regenerated on every `grow` run.
 data/summaries/
+# Benchmark catalogs are a pure function of their two bounds, regenerated on
+# demand by `aczero benchmark create` (the 48/7 catalog is ~14k presentations).
+data/benchmarks/

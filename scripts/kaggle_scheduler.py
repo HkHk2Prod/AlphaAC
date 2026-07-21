@@ -27,7 +27,9 @@ import sys
 # the src/ layout importable without an editable install.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from ac_zero.datasets.hub import DEFAULT_BUCKET
 from ac_zero.scheduler.backend import make_state_backend
+from ac_zero.scheduler.benchmarks import DEFAULT_METRIC_THRESHOLD
 from ac_zero.scheduler.controller import SchedulerConfig, run_tick
 from ac_zero.scheduler.kaggle import KaggleClient
 from ac_zero.scheduler.store import StateError, StateStore
@@ -45,6 +47,16 @@ def _env_int(name: str) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -96,6 +108,12 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run or _env_flag("DRY_RUN"),
         max_launches_override=(
             args.max_launches if args.max_launches is not None else _env_int("MAX_LAUNCHES")
+        ),
+        data_bucket=os.environ.get("HF_DATA_BUCKET", "").strip() or DEFAULT_BUCKET,
+        # Self-play success rate a training run must reach before its best model is
+        # queued for a benchmark evaluation.
+        benchmark_metric_threshold=_env_float(
+            "BENCHMARK_METRIC_THRESHOLD", DEFAULT_METRIC_THRESHOLD
         ),
     )
 
