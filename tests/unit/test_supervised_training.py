@@ -120,12 +120,14 @@ def test_a_batch_pairs_each_group_with_its_own_labels(tmp_path: Path) -> None:
     assert batch.policy_targets.shape == (8, 12)
     assert batch.deltas.shape == (8, 12)
     assert np.allclose(batch.policy_targets.sum(axis=1), 1.0)
-    # Every group is a real problem, so its value target is short of the goal's 1.0.
-    assert np.all(batch.value_targets < 1.0)
-    assert np.all(batch.value_targets > -1.0)
+    # Every group is a real problem short of the origin, so its success target
+    # gamma**d is below the origin's 1.0, and its progress target B~ is positive.
+    assert np.all(batch.success_targets < 1.0)
+    assert np.all(batch.success_targets > 0.0)
+    assert np.all(batch.progress_targets > 0.0)
 
 
-def test_the_value_target_falls_off_with_the_distance_to_the_origin(tmp_path: Path) -> None:
+def test_the_head_targets_track_the_distance_to_the_origin(tmp_path: Path) -> None:
     groups = _dataset(tmp_path)
     batches = _batches(groups)
     labels = SupervisedStore.open(
@@ -136,9 +138,18 @@ def test_the_value_target_falls_off_with_the_distance_to_the_origin(tmp_path: Pa
     far = int(rows[np.argmax(labels.distances[rows])])
 
     batch = batches.rows([near, far])
-    assert labels.distances[near] < labels.distances[far]
-    assert batch.value_targets[0] > batch.value_targets[1]
-    assert batch.value_targets[0] == pytest.approx(2.0 * 0.99 ** labels.distances[near] - 1.0)
+    d_near = labels.distances[near]
+    assert d_near < labels.distances[far]
+    # success = gamma**(d-1) falls off with distance; the nearer group is more likely
+    # to reach the origin. The goal reward lands on the d-th transition, discounted
+    # from the start by gamma**(d-1) under the RL collectors' convention.
+    assert batch.success_targets[0] > batch.success_targets[1]
+    assert batch.success_targets[0] == pytest.approx(0.99 ** (d_near - 1))
+    # progress = B~ = (1 - gamma**d) / ((1 - gamma) * d), the descent's normalized
+    # shaping return.
+    assert batch.progress_targets[0] == pytest.approx(
+        (1.0 - 0.99**d_near) / ((1.0 - 0.99) * d_near)
+    )
 
 
 def test_an_epoch_sweep_sees_every_group_in_the_split_once(tmp_path: Path) -> None:

@@ -235,6 +235,15 @@ class RewardComputer:
         """The (constant within an episode) shaping weight currently in force."""
         return self._alpha
 
+    @property
+    def start_distance(self) -> int:
+        """The episode's start-to-destination distance ``L0`` (fixed for its span).
+
+        The value reconstruction reads it to turn the ``alpha``-free heads back into
+        a scalar: ``L0 * (destination_scale * success + alpha * progress)``.
+        """
+        return self._start_distance
+
     def step(
         self,
         next_node: Hashable,

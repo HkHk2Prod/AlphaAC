@@ -21,7 +21,10 @@ from ac_zero.training.checkpointing.checkpointing import CheckpointManager
 from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
 from ac_zero.training.ppo.losses import PolicyValueLoss
 
-_SCHEMA_VERSION = "aczero-training-checkpoint-v1"
+# v2: the model carries the navigation success/progress value heads, and navigation
+# runs train on raw (un-normalized) rewards -- so a v2 checkpoint's value semantics
+# differ from v1's single normalized scalar critic.
+_SCHEMA_VERSION = "aczero-training-checkpoint-v2"
 
 
 class RunCheckpointer:

@@ -11,12 +11,17 @@ from ac_zero.datasets.groups import (
     SCHEMA_VERSION,
     group_entry,
 )
-from ac_zero.environment.navigation_reward import AlphaUpdater, EpisodeStats, RewardConfig
+from ac_zero.environment.navigation_reward import (
+    AlphaUpdater,
+    EpisodeStats,
+    RewardComponents,
+    RewardConfig,
+)
 from ac_zero.training.logging.callbacks import CallbackManager
 from ac_zero.training.logging.events import TrainingEvent
 from ac_zero.training.navigation.navigation_metrics import fold_alpha, navigation_eval_metrics
 from ac_zero.training.pipeline.pipeline import TrainingPipelineConfig, run_training_pipeline
-from ac_zero.training.pipeline.pipeline_episodes import EpisodeMetrics
+from ac_zero.training.pipeline.pipeline_episodes import EpisodeMetrics, navigation_head_targets
 
 _ANNOTATIONS_SCHEMA = "aczero-annotations-v1"
 
@@ -107,6 +112,73 @@ def _episode(progress: float, success: bool, *, start: int = 10) -> EpisodeMetri
         moves=3,
         nav=stats,
     )
+
+
+def _component(distance_progress: int) -> RewardComponents:
+    """A reward component carrying only the field the head targets read."""
+    return RewardComponents(
+        reward_total=0.0,
+        reward_destination=0.0,
+        reward_shaping=0.0,
+        reward_move_fee=0.0,
+        reward_revisit_fee=0.0,
+        alpha=1.0,
+        distance_before=0,
+        distance_after=0,
+        distance_progress=distance_progress,
+    )
+
+
+def test_navigation_head_targets_are_the_optimal_descent_return_to_go() -> None:
+    # A clean 3-step descent from L0=3 (each step closes one unit of distance). The
+    # supervised pretraining targets for a distance-3 group must equal what this
+    # optimal rollout produces, so the seeded heads match what the run regresses.
+    gamma = 0.99
+    components = [_component(1), _component(1), _component(1)]
+    success, progress = navigation_head_targets(
+        components, reached_goal=True, gamma=gamma, max_shaping_progress=1, start_distance=3
+    )
+    # success return-to-go: gamma**(steps-to-goal), so gamma**2, gamma**1, gamma**0.
+    assert success == pytest.approx([gamma**2, gamma**1, gamma**0])
+    # progress return-to-go of one +1 per step, normalized by L0=3.
+    assert progress[0] == pytest.approx((1 + gamma + gamma**2) / 3)
+    assert progress[2] == pytest.approx(1 / 3)
+
+
+def test_navigation_progress_target_caps_a_reentry_spike() -> None:
+    # A +9 re-entry (an off-graph excursion collapsing back onto the graph) is clipped
+    # to +1 in the target exactly as the reward clips it, so the head is never taught
+    # to prize the move that happened to come back.
+    capped, uncapped = (
+        navigation_head_targets(
+            [_component(9)],
+            reached_goal=False,
+            gamma=0.99,
+            max_shaping_progress=cap,
+            start_distance=1,
+        )[1][0]
+        for cap in (1, 9)
+    )
+    assert capped == pytest.approx(1.0)
+    assert uncapped == pytest.approx(9.0)
+
+
+def test_navigation_head_targets_bootstrap_a_truncated_rollout() -> None:
+    # No goal reached: success is zero without a bootstrap, but seeds from the tail
+    # (a value-head estimate past the horizon) when one is given.
+    plain = navigation_head_targets(
+        [_component(0)], reached_goal=False, gamma=0.99, max_shaping_progress=1, start_distance=2
+    )[0][0]
+    seeded = navigation_head_targets(
+        [_component(0)],
+        reached_goal=False,
+        gamma=0.99,
+        max_shaping_progress=1,
+        start_distance=2,
+        success_tail=0.5,
+    )[0][0]
+    assert plain == pytest.approx(0.0)
+    assert seeded == pytest.approx(0.99 * 0.5)
 
 
 def test_fold_alpha_advances_once_for_the_whole_batch() -> None:

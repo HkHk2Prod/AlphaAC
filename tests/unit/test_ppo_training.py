@@ -40,7 +40,8 @@ def _transition(reward: float, value: float) -> _Transition:
 
 def _rollout(transitions: list[_Transition], bootstrap: float) -> _Rollout:
     metrics = EpisodeMetrics(0.0, 0.0, False, len(transitions))
-    return _Rollout(transitions, bootstrap, metrics)
+    zeros = [0.0] * len(transitions)
+    return _Rollout(transitions, bootstrap, metrics, zeros, zeros)
 
 
 def _flatten(pairs: list[tuple[float, float]]) -> list[float]:
@@ -123,6 +124,7 @@ def test_ppo_update_moves_action_probability_with_advantage_sign() -> None:
         value_weight=0.0,
         entropy_weight=0.0,
         grad_clip=0.0,
+        reward_mode="length_reduction_and_goal",
     )
     assert _log_prob(model, encoding, mask, action) > old_log_prob
 
@@ -135,6 +137,7 @@ def test_ppo_update_moves_action_probability_with_advantage_sign() -> None:
         value_weight=0.0,
         entropy_weight=0.0,
         grad_clip=0.0,
+        reward_mode="length_reduction_and_goal",
     )
     assert _log_prob(model, encoding, mask, action) < old_log_prob
 
@@ -153,6 +156,7 @@ def test_ppo_update_clipping_blocks_gradient_outside_the_trust_region() -> None:
         value_weight=1.0,
         entropy_weight=0.0,
         grad_clip=0.0,
+        reward_mode="length_reduction_and_goal",
     )
     assert _log_prob(model, encoding, mask, action) == pytest.approx(old_log_prob, abs=1e-6)
 
@@ -167,6 +171,7 @@ def test_ppo_update_rejects_an_empty_batch() -> None:
             value_weight=0.5,
             entropy_weight=0.0,
             grad_clip=0.0,
+            reward_mode="length_reduction_and_goal",
         )
 
 

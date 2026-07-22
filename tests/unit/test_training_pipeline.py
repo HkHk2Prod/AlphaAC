@@ -127,7 +127,7 @@ def test_training_pipeline_writes_checkpoint_and_summary(tmp_path: Path) -> None
     assert Path(summary.event_log_path).exists()
     assert Path(summary.final_graph_path).exists()
     checkpoint = CheckpointManager(tmp_path / "train/checkpoints").load_json("latest")
-    assert checkpoint["schema_version"] == "aczero-training-checkpoint-v1"
+    assert checkpoint["schema_version"] == "aczero-training-checkpoint-v2"
     assert checkpoint["optimizer_state"]["step"] == 2
     assert checkpoint["model_state"]["architecture"] == "residual_mlp"
     summary_json = json.loads((tmp_path / "train/artifacts/training_summary.json").read_text())
@@ -1064,7 +1064,7 @@ def test_cli_train_uses_configured_pipeline(monkeypatch, tmp_path: Path) -> None
     # --self-generated keeps this offline (no dataset download).
     assert main(["train", "--config", str(config_path), "--seed", "3", "--self-generated"]) == 0
     checkpoint = CheckpointManager(tmp_path / "runs/train/test/checkpoints").load_json("latest")
-    assert checkpoint["schema_version"] == "aczero-training-checkpoint-v1"
+    assert checkpoint["schema_version"] == "aczero-training-checkpoint-v2"
     assert checkpoint["optimizer_state"]["step"] == 1
     assert (tmp_path / "runs/train/test/artifacts/training_summary.json").exists()
     # The command presents the rendered plots: they exist on disk.

@@ -17,7 +17,6 @@ class PUCTConfig:
 
     simulations: int = 64
     c_puct: float = 1.5
-    terminal_value: float = 1.0
 
 
 class _Node:
@@ -70,7 +69,7 @@ class PUCTMCTS:
         action_count = len(env.catalog)
         nodes: dict[tuple[object, ...], _Node] = {}
         self.model_evaluations = 0
-        reward_scale = 1.0 / max(1, root.initial_length)
+        reward_scale = env.reward_scale
         self._expand(env, root, nodes)
         for _ in range(self.config.simulations):
             self._simulate(env, root, root_reward, nodes, reward_scale)
@@ -152,7 +151,12 @@ class PUCTMCTS:
         output = self.model.apply(encoding, len(mask))
         self.model_evaluations += 1
         priors = masked_softmax(output.logits, mask).tolist()
-        value = self.config.terminal_value if reached_goal else float(output.value)
+        # A goal leaf has no future reward: its destination bonus is paid on the
+        # transition into it, which is already in the backed-up path rewards, so its
+        # leaf value is zero. Every other leaf takes the model's value, reconstructed
+        # from its heads at this episode's alpha and start distance (see
+        # `ACEnvironment.leaf_value`).
+        value = 0.0 if reached_goal else env.leaf_value(output)
         nodes[state.key] = _Node(priors, list(mask), terminal or not any(mask), value)
 
     def _backup(
