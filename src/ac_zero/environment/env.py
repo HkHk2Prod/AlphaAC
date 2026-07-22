@@ -343,12 +343,18 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         stands on annotated nodes.
 
         The estimate is provisional, not a verdict: the anchor advances with it, so
-        stepping back onto a known node at distance ``d`` scores
-        ``alpha * (anchor - d)`` against the *inflated* anchor and hands back every
-        fee the excursion was charged. Shaping over an excursion therefore
-        telescopes to ``alpha * (exit_distance - reentry_distance)`` however long the
-        detour ran -- the same path-invariant total the deferred-credit rule gave,
-        with each step of the detour now priced along the way.
+        stepping back onto a known node at distance ``d`` scores against the
+        *inflated* anchor and hands the excursion's fee back rather than charging
+        the return as a fresh climb.
+
+        That refund is capped at ``max_shaping_progress`` (see
+        :class:`RewardConfig`), so it is partial: a ``k``-step detour nets about
+        ``-(k - 1) * alpha``. Paying it in full would telescope exactly -- the
+        excursion would be free -- but it would also pay one move the worth of the
+        whole detour, and a move that earns a dozen descents teaches the network a
+        preference it cannot explain. Leaving the annotated graph is meant to cost
+        something; the cap is what keeps that cost on the steps that incurred it
+        instead of refunding it all to whichever move happened to come back.
         """
         assert self._reward is not None
         known_after = self._navigation_distance(next_node, terminated)

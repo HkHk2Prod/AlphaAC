@@ -39,6 +39,16 @@ class RewardConfig:
     destination_reward_scale: float = 1.0
     move_fee_scale: float = 0.01
     revisit_fee_scale: float = 0.02
+    # Ceiling on the distance change one move may be *paid* for. Shortest-path
+    # distance is 1-Lipschitz over an invertible moveset -- a single move changes
+    # the true distance by at most one -- so on the annotated graph this clips
+    # nothing. It binds only where the distance is an estimate: re-entering the
+    # graph after an off-graph excursion scores against an anchor inflated by the
+    # whole detour, and would otherwise pay one move the worth of a dozen descents.
+    # Measured on the rank-2 ball, re-entry steps claimed up to +9 where a genuine
+    # descent earns +1. The network cannot see *why* that move was special, so it
+    # generalizes the preference to states that merely encode similarly.
+    max_shaping_progress: int = 1
     # Alpha updater: initial weight, bounds, and EMA smoothing.
     alpha_initial: float = 0.3
     # The floor is deliberately well above zero. Annealing alpha to ~0 turns the
@@ -82,6 +92,8 @@ class RewardConfig:
             raise ValueError("move_fee_scale must be non-negative")
         if self.revisit_fee_scale < 0.0:
             raise ValueError("revisit_fee_scale must be non-negative")
+        if self.max_shaping_progress < 1:
+            raise ValueError("max_shaping_progress must be at least 1")
         if self.alpha_initial <= 0.0:
             raise ValueError("alpha_initial must be positive")
         if not 0.0 < self.alpha_min <= self.alpha_max:
@@ -237,7 +249,11 @@ class RewardComputer:
         """
         cfg = self.config
         distance_progress = distance_before - distance_after
-        shaping = self._alpha * distance_progress
+        # `distance_progress` is reported unclipped -- it is what happened -- while
+        # shaping pays the clipped value, which is what one move can be worth (see
+        # `max_shaping_progress`).
+        cap = cfg.max_shaping_progress
+        shaping = self._alpha * max(-cap, min(cap, distance_progress))
         destination = (
             cfg.destination_reward_scale * self._start_distance if reached_destination else 0.0
         )

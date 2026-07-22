@@ -75,17 +75,39 @@ def test_destination_reward_zero_when_not_reached() -> None:
 def test_moving_closer_gives_positive_shaping() -> None:
     computer = _computer()
     computer.start_episode(alpha=0.5, start_node="s", start_distance=5)
-    components = computer.step("n", distance_before=5, distance_after=3, reached_destination=False)
-    assert components.reward_shaping == pytest.approx(0.5 * 2)
+    components = computer.step("n", distance_before=5, distance_after=4, reached_destination=False)
+    assert components.reward_shaping == pytest.approx(0.5)
     assert components.reward_shaping > 0.0
 
 
 def test_moving_farther_gives_negative_shaping() -> None:
     computer = _computer()
     computer.start_episode(alpha=0.5, start_node="s", start_distance=5)
-    components = computer.step("n", distance_before=3, distance_after=5, reached_destination=False)
-    assert components.reward_shaping == pytest.approx(0.5 * -2)
+    components = computer.step("n", distance_before=4, distance_after=5, reached_destination=False)
+    assert components.reward_shaping == pytest.approx(-0.5)
     assert components.reward_shaping < 0.0
+
+
+def test_shaping_is_capped_at_one_step_of_progress() -> None:
+    # A move cannot change true distance by more than one (shortest-path distance is
+    # 1-Lipschitz over an invertible moveset), so a larger jump only ever comes from
+    # an estimated distance -- re-entering the annotated graph against an anchor the
+    # off-graph detour inflated. Paying it in full hands one move the worth of the
+    # whole detour.
+    computer = _computer()
+    computer.start_episode(alpha=0.5, start_node="s", start_distance=5)
+    forward = computer.step("n", distance_before=12, distance_after=4, reached_destination=False)
+    assert forward.reward_shaping == pytest.approx(0.5)
+    # The unclipped change is still reported: shaping is capped, history is not.
+    assert forward.distance_progress == 8
+    backward = computer.step("m", distance_before=4, distance_after=12, reached_destination=False)
+    assert backward.reward_shaping == pytest.approx(-0.5)
+    assert backward.distance_progress == -8
+
+
+def test_max_shaping_progress_must_be_at_least_one() -> None:
+    with pytest.raises(ValueError, match="max_shaping_progress"):
+        RewardConfig(max_shaping_progress=0).validate()
 
 
 def test_unchanged_distance_gives_zero_shaping() -> None:
