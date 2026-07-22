@@ -24,7 +24,7 @@ testable in isolation:
 from __future__ import annotations
 
 from collections.abc import Hashable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +157,29 @@ class EpisodeStats:
         return (self.start_distance - self.min_distance_reached) / self.start_distance
 
 
+@dataclass(frozen=True, slots=True)
+class RewardSnapshot:
+    """A :class:`RewardComputer`'s within-episode state, captured mid-episode.
+
+    A tree search plays hypothetical moves through the same environment the real
+    episode steps, and every one of those calls folds into the visited set, the
+    distance trackers, and the component sums. Handing this snapshot back after
+    the search puts the episode where it was, so the move the agent actually plays
+    is scored against its own path rather than the search's.
+
+    ``alpha`` and the start distance are fixed for the episode's span, so they are
+    neither captured nor restored.
+    """
+
+    visited: frozenset[Hashable]
+    min_distance: int
+    final_distance: int
+    revisit_count: int
+    steps: int
+    reached_destination: bool
+    sums: _ComponentSums
+
+
 class RewardComputer:
     """Scores transitions within one episode at a fixed ``alpha``.
 
@@ -244,6 +267,28 @@ class RewardComputer:
             distance_after=distance_after,
             distance_progress=distance_progress,
         )
+
+    def snapshot(self) -> RewardSnapshot:
+        """Capture the within-episode state so a search can hand it back later."""
+        return RewardSnapshot(
+            visited=frozenset(self._visited),
+            min_distance=self._min_distance,
+            final_distance=self._final_distance,
+            revisit_count=self._revisit_count,
+            steps=self._steps,
+            reached_destination=self._reached_destination,
+            sums=replace(self._sums),
+        )
+
+    def restore(self, snapshot: RewardSnapshot) -> None:
+        """Roll the within-episode state back to ``snapshot``."""
+        self._visited = set(snapshot.visited)
+        self._min_distance = snapshot.min_distance
+        self._final_distance = snapshot.final_distance
+        self._revisit_count = snapshot.revisit_count
+        self._steps = snapshot.steps
+        self._reached_destination = snapshot.reached_destination
+        self._sums = replace(snapshot.sums)
 
     def episode_stats(self) -> EpisodeStats:
         """Snapshot the finished episode for the alpha updater and metrics."""

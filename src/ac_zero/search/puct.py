@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 
 from ac_zero.encoding.padded import StateEncoder
-from ac_zero.environment.env import ACEnvironment
+from ac_zero.environment.env import ACEnvironment, NavigationRewardState
 from ac_zero.environment.state import ACSearchState
 from ac_zero.models.base import PolicyValueModel
 from ac_zero.search.mcts import MCTSStats
@@ -62,14 +62,20 @@ class PUCTMCTS:
     def search(self, env: ACEnvironment) -> MCTSStats:
         """Run PUCT simulations from the environment's current state."""
         root = env.state
+        # The navigation reward keeps per-episode state (visited set, distance
+        # anchor) outside `env.state`, so restoring the state alone would leave the
+        # caller's episode -- and every simulation after the first -- scored against
+        # moves this search only imagined.
+        root_reward = env.navigation_reward_state()
         action_count = len(env.catalog)
         nodes: dict[tuple[object, ...], _Node] = {}
         self.model_evaluations = 0
         reward_scale = 1.0 / max(1, root.initial_length)
         self._expand(env, root, nodes)
         for _ in range(self.config.simulations):
-            self._simulate(env, root, nodes, reward_scale)
+            self._simulate(env, root, root_reward, nodes, reward_scale)
         env.state = root
+        env.restore_navigation_reward_state(root_reward)
         root_node = nodes[root.key]
         counts = tuple(root_node.visits)
         if not any(counts):
@@ -87,10 +93,14 @@ class PUCTMCTS:
         self,
         env: ACEnvironment,
         root: ACSearchState,
+        root_reward: NavigationRewardState | None,
         nodes: dict[tuple[object, ...], _Node],
         reward_scale: float,
     ) -> None:
+        # Each simulation is scored as a continuation of the *real* episode, so it
+        # rewinds the navigation reward to the root alongside the Markov state.
         env.state = root
+        env.restore_navigation_reward_state(root_reward)
         path: list[tuple[tuple[object, ...], int, float]] = []
         state = root
         while True:

@@ -16,6 +16,7 @@ from ac_zero.environment.navigation_reward import (
     RewardComponents,
     RewardComputer,
     RewardConfig,
+    RewardSnapshot,
 )
 from ac_zero.environment.rewards import RewardSignal, step_reward
 from ac_zero.environment.state import ACSearchState
@@ -44,6 +45,19 @@ class ACEnvironmentConfig:
     # Which named move set (`ac_zero.moves.universal.MOVE_SET_NAMES`) the episode
     # steps with.
     moveset: str = "strict-ac"
+
+
+@dataclass(frozen=True, slots=True)
+class NavigationRewardState:
+    """The episode state the navigation reward keeps outside `ACSearchState`.
+
+    The distance anchor lives on the env and the visited set inside the
+    `RewardComputer`, so neither is restored by putting `env.state` back. A search
+    that steps the env captures this first and hands it back afterwards.
+    """
+
+    reward: RewardSnapshot
+    anchor: int
 
 
 class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
@@ -92,9 +106,9 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
             else None
         )
         self._last_components: RewardComponents | None = None
-        # Last known distance to the destination, carried so the navigation reward
-        # can defer an off-graph excursion's shaping credit until the search
-        # re-enters a node whose distance is known (see `_navigation_step`).
+        # The walk's running distance to the destination: exact on the annotated
+        # graph, and one step further out for each move off it (see
+        # `_navigation_step`).
         self._nav_anchor: int = 0
         self.state = self._initial_state()
         if self._reward is not None:
@@ -291,10 +305,10 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
 
         The destination (goal) is always distance zero; annotated groups use their
         exact ``distance_to_origin`` from ``potentials``. A presentation off the
-        annotated graph has no known distance and returns ``None`` -- navigation
-        never invents a length proxy; it defers the excursion's shaping credit to
-        the re-entry step instead (see `_navigation_step`). Navigation runs require
-        annotations, so the start node and the goal are always known.
+        annotated graph has no *known* distance and returns ``None``; the caller
+        estimates one rather than inventing a length proxy (see
+        `_navigation_step`). Navigation runs require annotations, so the start node
+        and the goal are always known.
         """
         if is_goal:
             return 0
@@ -317,25 +331,58 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
         )
 
     def _navigation_step(self, next_node: BalancedPresentation, terminated: bool) -> float:
-        """Score one transition with the RewardComputer, deferring off-graph credit.
+        """Score one transition against the running anchor, pricing off-graph steps.
 
-        The step is scored against the anchor (the last known distance): re-entering
-        a known node credits the whole ``anchor - distance`` descent at once, while an
-        off-graph step holds the anchor and so scores zero shaping.
+        A step off the annotated graph is scored as if it walked one step further
+        out (``anchor + 1``), so it costs ``alpha`` like any other move away from
+        the destination. Holding the anchor instead -- scoring the excursion at zero
+        -- made leaving the graph strictly cheaper than climbing inside it, and the
+        annotated region is small enough that a policy which has not learned to
+        descend leaves on its first move and never comes back. The estimate is what
+        makes the whole walk carry a gradient rather than only the 4% of it that
+        stands on annotated nodes.
+
+        The estimate is provisional, not a verdict: the anchor advances with it, so
+        stepping back onto a known node at distance ``d`` scores
+        ``alpha * (anchor - d)`` against the *inflated* anchor and hands back every
+        fee the excursion was charged. Shaping over an excursion therefore
+        telescopes to ``alpha * (exit_distance - reentry_distance)`` however long the
+        detour ran -- the same path-invariant total the deferred-credit rule gave,
+        with each step of the detour now priced along the way.
         """
         assert self._reward is not None
         known_after = self._navigation_distance(next_node, terminated)
-        distance_after = self._nav_anchor if known_after is None else known_after
+        distance_after = self._nav_anchor + 1 if known_after is None else known_after
         components = self._reward.step(
             next_node=next_node.content_hash,
             distance_before=self._nav_anchor,
             distance_after=distance_after,
             reached_destination=terminated,
         )
-        if known_after is not None:
-            self._nav_anchor = known_after
+        self._nav_anchor = distance_after
         self._last_components = components
         return components.reward_total
+
+    def navigation_reward_state(self) -> NavigationRewardState | None:
+        """Snapshot what a search must restore beyond `state`; ``None`` off navigation.
+
+        `ACSearchState` is the Markov state, so restoring it undoes a search under
+        every other reward mode -- the "potential" mode's anchor rides on the state
+        itself. Navigation keeps its anchor and visited set outside the state, and a
+        search that stepped the env leaves them at its own deepest simulated node.
+        The agent's next real move is then scored against a distance it never stood
+        at, and charged a revisit fee for nodes only the search visited.
+        """
+        if self._reward is None:
+            return None
+        return NavigationRewardState(self._reward.snapshot(), self._nav_anchor)
+
+    def restore_navigation_reward_state(self, state: NavigationRewardState | None) -> None:
+        """Roll the navigation reward back to `state`; a no-op off navigation."""
+        if state is None or self._reward is None:
+            return
+        self._reward.restore(state.reward)
+        self._nav_anchor = state.anchor
 
     def navigation_episode_stats(self) -> EpisodeStats:
         """Aggregate stats for the finished navigation episode (alpha updater input)."""
