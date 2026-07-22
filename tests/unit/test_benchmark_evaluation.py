@@ -83,6 +83,27 @@ def test_report_counts_are_grouped_by_family() -> None:
 
 def test_solve_rate_is_zero_when_nothing_was_attempted() -> None:
     assert BenchmarkReport("cat", "ckpt").solve_rate == 0.0
+    assert BenchmarkReport("cat", "ckpt").solved_by_scan == 0
+
+
+def test_solved_by_scan_counts_only_the_greedy_pass_solves() -> None:
+    report = BenchmarkReport("cat", "ckpt")
+    report.results = [
+        _entry("a", solved=True),
+        _entry("b", solved=True, agent=DEEP_AGENT),
+        _entry("c", solved=False),
+    ]
+    report.attempted = 3
+    assert report.solved_by_scan == 1
+
+
+def test_the_run_summary_reports_the_greedy_share() -> None:
+    lines: list[str] = []
+    report = BenchmarkEvaluator(_catalog(), _SMALL).run(log=lines.append)
+    summary = [line for line in lines if "by the greedy scan" in line]
+    assert len(summary) == 1
+    assert f"{report.solved_by_scan} by the greedy scan" in summary[0]
+    assert report.solved_by_scan == len(report.solved)
 
 
 def test_entry_result_json_is_serializable() -> None:

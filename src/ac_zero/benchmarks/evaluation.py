@@ -96,6 +96,11 @@ class BenchmarkReport:
         """Share of *attempted* entries solved (0.0 when nothing was attempted)."""
         return len(self.solved) / self.attempted if self.attempted else 0.0
 
+    @property
+    def solved_by_scan(self) -> int:
+        """Solves the classical greedy scan owns -- the baseline the model is read against."""
+        return sum(1 for result in self.solved if result.agent == SCAN_AGENT)
+
     def counts_by_family(self) -> dict[str, dict[str, int]]:
         counts: dict[str, dict[str, int]] = {}
         for result in self.results:
@@ -250,40 +255,42 @@ class BenchmarkEvaluator:
             f"({report.solve_rate:.1%})"
         )
 
-        # Only what the scan actually reached: entries it never got to are
-        # unattempted, not unsolved, and the deep pass does not invent coverage.
-        unsolved = [
-            presentation
-            for presentation in scorable
-            if str(presentation.presentation_id) in slot_of
-            and not report.results[slot_of[str(presentation.presentation_id)]].solved
-        ]
         if self.model is None:
             log("[benchmark] no checkpoint model; skipping the deep pass")
-            report.seconds = time.monotonic() - started
-            return report
-
-        report.deep_pass_ran = True
-        gained = 0
-        for index, presentation in enumerate(unsolved):
-            if out_of_time():
-                report.stopped_early = True
-                log(f"[benchmark] budget spent after {index}/{len(unsolved)} deep searches")
-                break
-            entry_started = time.monotonic()
-            result = self._deep(presentation)
-            if not result.success:
-                continue
-            # Only an improvement replaces the scan's record: a deep search that
-            # also fails says nothing the cheaper pass did not already say.
-            gained += 1
-            entry = self._record(presentation, result, DEEP_AGENT, time.monotonic() - entry_started)
-            report.results[slot_of[entry.presentation_id]] = entry
+        else:
+            report.deep_pass_ran = True
+            # Only what the scan actually reached: entries it never got to are
+            # unattempted, not unsolved, and the deep pass does not invent coverage.
+            unsolved = [
+                presentation
+                for presentation in scorable
+                if str(presentation.presentation_id) in slot_of
+                and not report.results[slot_of[str(presentation.presentation_id)]].solved
+            ]
+            gained = 0
+            for index, presentation in enumerate(unsolved):
+                if out_of_time():
+                    report.stopped_early = True
+                    log(f"[benchmark] budget spent after {index}/{len(unsolved)} deep searches")
+                    break
+                entry_started = time.monotonic()
+                result = self._deep(presentation)
+                if not result.success:
+                    continue
+                # Only an improvement replaces the scan's record: a deep search that
+                # also fails says nothing the cheaper pass did not already say.
+                gained += 1
+                entry = self._record(
+                    presentation, result, DEEP_AGENT, time.monotonic() - entry_started
+                )
+                report.results[slot_of[entry.presentation_id]] = entry
+            log(f"[benchmark] deep pass solved {gained} more")
 
         report.seconds = time.monotonic() - started
         log(
-            f"[benchmark] deep pass solved {gained} more; "
-            f"{len(report.solved)}/{report.attempted} total ({report.solve_rate:.1%})"
+            f"[benchmark] {len(report.solved)}/{report.attempted} total "
+            f"({report.solve_rate:.1%}); {report.solved_by_scan} by the greedy scan, "
+            f"{len(report.solved) - report.solved_by_scan} by the deep pass"
         )
         return report
 
