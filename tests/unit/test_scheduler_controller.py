@@ -8,7 +8,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from subprocess import CompletedProcess
+from typing import Any
 
+import pytest
+
+from ac_zero.scheduler import benchmarks as benchmarks_module
 from ac_zero.scheduler.backend import MemoryStateBackend
 from ac_zero.scheduler.benchmarks import BENCHMARK_QUEUE_PATH
 from ac_zero.scheduler.controller import SchedulerConfig, run_tick
@@ -414,3 +418,58 @@ def test_the_evaluation_queue_is_written_even_when_nothing_launches(tmp_path: Pa
         "dispatched": [],
         "ladder": {},
     }
+
+
+_TRAINING_TASK = """  - id: train
+    mode: training
+    accelerator: gpu
+    active: false
+    notebook_slug: u/trainer
+    notebook_dir: {nb_dir}
+    config:
+      checkpoint_name: model-a
+"""
+
+
+def test_start_fresh_all_clears_the_benchmark_queue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every entry names a lineage the restart archives, so the queue starts over too."""
+
+    def explode(name: str, *, bucket: str) -> dict[str, Any]:
+        raise AssertionError("the gate must not re-scan the lineages being archived")
+
+    monkeypatch.setattr(benchmarks_module, "_read_index", explode)
+    nb = _notebook_dir(tmp_path)
+    populated = json.dumps(
+        {
+            "pending": [
+                {"checkpoint_name": "model-a", "run_id": "r1", "metric": 0.9, "enqueued_at": NOW}
+            ],
+            "dispatched": [
+                {"checkpoint_name": "model-a", "run_id": "r0", "metric": 0.5, "enqueued_at": NOW}
+            ],
+            "ladder": {"model-a": {"run_id": "r1", "metric": 0.9, "format_version": 2, "at": NOW}},
+        }
+    )
+    store, backend = _store(
+        {
+            QUEUE_PATH: _queue_yaml(
+                nb,
+                start_fresh_all="true",
+                extra=_benchmark_task(nb) + _TRAINING_TASK.format(nb_dir=nb),
+            ),
+            BENCHMARK_QUEUE_PATH: populated,
+        }
+    )
+    report = run_tick(
+        store, KaggleClient(runner=FakeKaggleRunner()), _config(), now=NOW, log=_silent
+    )
+
+    assert json.loads(backend.read_text(BENCHMARK_QUEUE_PATH) or "{}") == {
+        "pending": [],
+        "dispatched": [],
+        "ladder": {},
+    }
+    reasons = {d.task_id: d.reason for d in report.decisions}
+    assert reasons["bench"] == "no checkpoints pending evaluation"

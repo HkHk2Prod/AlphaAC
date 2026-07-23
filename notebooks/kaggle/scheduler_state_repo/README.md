@@ -48,7 +48,10 @@ A training task normally resumes: it warm-starts from the best model already und
   old runs stay readable under the archive path.
 * `start_fresh_all: true` at the top of the file — the next tick sets `start_fresh` on
   *every* task and clears itself. This is applied before any other scheduling work, so
-  a task launched in that same tick already carries the restart.
+  a task launched in that same tick already carries the restart. It also empties
+  `queue/benchmark_queue.json` (pending evaluations, dispatch history and ladder rungs):
+  every entry there points at a lineage being archived, so the evaluation queue starts
+  over with the models and that tick runs no benchmark-gate scan.
 
 Both are consumed by the launch and written back as `false`, so setting one restarts a
 task exactly once rather than on every tick. A launch that fails to push keeps the flag:
