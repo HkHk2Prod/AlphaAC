@@ -44,7 +44,12 @@ from ac_zero.datasets.supervised_store import SupervisedStore
 from ac_zero.datasets.validation import validate_dataset
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
-from ac_zero.models.registry import create_trainable_model, model_from_json
+from ac_zero.models.registry import (
+    checkpoint_format_version,
+    create_trainable_model,
+    model_from_json,
+)
+from ac_zero.models.trainable import MODEL_FORMAT_VERSION
 from ac_zero.moves.universal import MOVE_SET_NAMES
 from ac_zero.search.bidirectional import BidirectionalSearch
 from ac_zero.search.breadth_first import BreadthFirstSearch
@@ -663,6 +668,21 @@ def _ensure_dataset_split(groups: Path, reporter: CliReporter) -> None:
     )
 
 
+def _reject_stale_checkpoint(path: Path, name: str, remedy: str) -> None:
+    """Fail the run now if the pulled checkpoint predates the current model format.
+
+    The load itself happens deep inside the pipeline, after the dataset download and the
+    supervised sidecar build -- half an hour into a Kaggle slot. The version is one field
+    of the payload, so checking it here turns that into an immediate, actionable error.
+    """
+    version = checkpoint_format_version(json.loads(path.read_text(encoding="utf-8")))
+    if version != MODEL_FORMAT_VERSION:
+        raise ValueError(
+            f"checkpoint {name!r} on the bucket is model format v{version}, but this code "
+            f"writes and loads v{MODEL_FORMAT_VERSION}; it cannot seed this run -- {remedy}."
+        )
+
+
 def _warm_start_from_hf(
     config: TrainingPipelineConfig,
     bucket: str,
@@ -700,6 +720,9 @@ def _warm_start_from_hf(
     dest = Path(config.run_directory) / "warm_start.json"
     path = download_best_checkpoint(name, dest, bucket=bucket, missing_ok=True)
     if path is not None:
+        _reject_stale_checkpoint(
+            path, name, f"re-run this task with --start-fresh to archive {name!r} and start over"
+        )
         return replace(config, warm_start=str(path))
     if config.pretrained_checkpoint:
         pretrained = config.pretrained_checkpoint
@@ -713,6 +736,11 @@ def _warm_start_from_hf(
             pretrained, pretrained_dest, bucket=bucket, missing_ok=True
         )
         if pretrained_path is not None:
+            _reject_stale_checkpoint(
+                pretrained_path,
+                pretrained,
+                "re-run supervised pretraining for that lineage to publish a current checkpoint",
+            )
             return replace(config, warm_start=str(pretrained_path))
         reporter.warning(
             "checkpoint",

@@ -19,7 +19,7 @@ TrainingExample = Any
 # Bumped when the serialized network shape changes incompatibly. v2 split the single
 # scalar value head into the navigation `success`/`progress` heads, so a v1 checkpoint
 # cannot load into a v2 network and carries different value semantics besides.
-_MODEL_FORMAT_VERSION = 2
+MODEL_FORMAT_VERSION = 2
 
 
 # Range of the `progress` head's `tanh`. The normalized shaping-return-to-go B~ is
@@ -317,7 +317,7 @@ class TrainablePolicyValueModel(ABC):
         parameters = {name: value.detach().cpu().numpy().tolist() for name, value in state.items()}
         return {
             "architecture": self.architecture,
-            "format_version": _MODEL_FORMAT_VERSION,
+            "format_version": MODEL_FORMAT_VERSION,
             "hyperparameters": {"seed": self.seed, **self._hp},
             "built": self._net is not None,
             "feature_dim": self._feature_dim,
@@ -339,12 +339,12 @@ class TrainablePolicyValueModel(ABC):
         if not data.get("built", False):
             return
         version = int(data.get("format_version", 1))
-        if version != _MODEL_FORMAT_VERSION:
+        if version != MODEL_FORMAT_VERSION:
             raise ValueError(
                 f"checkpoint model format v{version} predates the success/progress value "
-                f"heads (v{_MODEL_FORMAT_VERSION}); its single scalar value head is "
+                f"heads (v{MODEL_FORMAT_VERSION}); its single scalar value head is "
                 "incompatible -- re-run supervised pretraining to produce a v"
-                f"{_MODEL_FORMAT_VERSION} checkpoint."
+                f"{MODEL_FORMAT_VERSION} checkpoint."
             )
         self._feature_dim = int(data["feature_dim"])
         self._action_count = int(data["action_count"])

@@ -8,9 +8,13 @@ returns a path, so the network call is stubbed to script each case.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
+
 import ac_zero.cli as cli
+from ac_zero.models.trainable import MODEL_FORMAT_VERSION
 from ac_zero.system.reporting import CliReporter
 from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig
 
@@ -24,15 +28,22 @@ def _config(tmp_path: Path, **overrides: object) -> TrainingPipelineConfig:
     return TrainingPipelineConfig(**settings)  # type: ignore[arg-type]
 
 
-def _stub_downloads(monkeypatch, present: set[str]) -> None:
-    """Make `download_best_checkpoint` return a written file for names in `present`."""
+def _stub_downloads(
+    monkeypatch, present: set[str], format_version: int = MODEL_FORMAT_VERSION
+) -> None:
+    """Make `download_best_checkpoint` return a written file for names in `present`.
+
+    The file carries a model state of `format_version`, which the warm start checks
+    before accepting the checkpoint.
+    """
 
     def fake(name, local_path, *, bucket, missing_ok):  # type: ignore[no-untyped-def]
         if name not in present:
             return None
         dest = Path(local_path)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text("{}", encoding="utf-8")
+        payload = {"model_state": {"format_version": format_version}}
+        dest.write_text(json.dumps(payload), encoding="utf-8")
         return dest
 
     monkeypatch.setattr(cli, "download_best_checkpoint", fake)
@@ -111,6 +122,27 @@ def test_no_checkpoint_anywhere_trains_from_scratch(tmp_path: Path, monkeypatch)
     _stub_downloads(monkeypatch, set())
     result = cli._warm_start_from_hf(config, "bucket", CliReporter("train", tmp_path))
     assert result.warm_start is None
+
+
+def test_a_stale_format_run_checkpoint_fails_the_run_at_the_pull(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A pre-bump checkpoint cannot be loaded, so say so now, not an hour into the run."""
+    config = _config(tmp_path)
+    _stub_downloads(monkeypatch, {"rank2-ppo-transformer"}, format_version=1)
+
+    with pytest.raises(ValueError, match=r"rank2-ppo-transformer.*format v1"):
+        cli._warm_start_from_hf(config, "bucket", CliReporter("train", tmp_path))
+
+
+def test_a_stale_format_pretrained_checkpoint_fails_the_run_at_the_pull(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = _config(tmp_path, pretrained_checkpoint="pretrained-transformer")
+    _stub_downloads(monkeypatch, {"pretrained-transformer"}, format_version=1)
+
+    with pytest.raises(ValueError, match="supervised pretraining"):
+        cli._warm_start_from_hf(config, "bucket", CliReporter("train", tmp_path))
 
 
 def test_without_a_pretrained_name_the_first_run_is_from_scratch(

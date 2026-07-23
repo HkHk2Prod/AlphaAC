@@ -61,11 +61,21 @@ def _install_bucket(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
 
 
 def _write_bundle(
-    directory: Path, *, name: str, run_id: str, metric: float, steps: int = 3
+    directory: Path,
+    *,
+    name: str,
+    run_id: str,
+    metric: float,
+    steps: int = 3,
+    format_version: int = 1,
 ) -> CheckpointBundle:
     """Write a minimal bundle with ``steps`` metric rows and best metric ``metric``."""
     bundle = CheckpointBundle(directory)
-    payload = {"schema_version": "v1", "checkpoint_metric": metric, "model_state": {"a": 1}}
+    payload = {
+        "schema_version": "v1",
+        "checkpoint_metric": metric,
+        "model_state": {"a": 1, "format_version": format_version},
+    }
     bundle.save_checkpoint(payload, metric=metric)
     rows = [
         {
@@ -223,6 +233,35 @@ def test_best_promoted_only_when_metric_improves(
     index = json.loads(store["model_checkpoints/name/index.json"])
     assert index["best"]["run_id"] == "300-0"
     assert json.loads(store["model_checkpoints/name/best.json"])["checkpoint_metric"] == 0.9
+
+
+def test_a_newer_model_format_promotes_even_with_a_worse_metric(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Metrics are only comparable within one format: a re-pretrain must land regardless.
+
+    Otherwise the lineage keeps serving a `best.json` this code can no longer load, and
+    every task seeding from it fails.
+    """
+    store = _install_bucket(monkeypatch)
+
+    _write_bundle(tmp_path / "a", name="name", run_id="100-0", metric=0.9, format_version=1)
+    hc.push_checkpoint_bundle(tmp_path / "a", bucket="ns/b")
+
+    _write_bundle(tmp_path / "b", name="name", run_id="200-0", metric=0.2, format_version=2)
+    hc.push_checkpoint_bundle(tmp_path / "b", bucket="ns/b")
+
+    index = json.loads(store["model_checkpoints/name/index.json"])
+    assert index["best"]["run_id"] == "200-0"
+    assert index["best"]["format_version"] == 2
+    best = json.loads(store["model_checkpoints/name/best.json"])
+    assert best["model_state"]["format_version"] == 2
+
+    # Within the new format the metric gate is back in force.
+    _write_bundle(tmp_path / "c", name="name", run_id="300-0", metric=0.1, format_version=2)
+    hc.push_checkpoint_bundle(tmp_path / "c", bucket="ns/b")
+    index = json.loads(store["model_checkpoints/name/index.json"])
+    assert index["best"]["run_id"] == "200-0"
 
 
 def test_periodic_uploader_throttles_and_flushes_on_close(

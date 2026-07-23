@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **A model format bump now always promotes `best.json`.** The bucket replaced a
+  lineage's `best.json` only when a run's metric beat the recorded best, and that
+  comparison was blind to the model format the two checkpoints were written in. So a
+  re-pretraining run on the new (v2) format that scored a hair below the pre-split (v1)
+  record uploaded its metrics and plots but left the *unloadable* v1 `best.json` in
+  place, and every task seeding from that lineage died on it. `index.json` now records
+  each run's format version and a run on a different format promotes regardless of its
+  score -- metrics are only comparable within one format. A warm start also checks the
+  pulled checkpoint's format at the pull, so a stale bucket fails the run immediately
+  with the lineage named, instead of half an hour later inside the pipeline.
+
 - **The navigation value is split into two `alpha`-invariant heads.** The single scalar
   critic was trained on the shaped return, so it had to be refit whenever the alpha
   controller moved the shaping weight, and the value floor `alpha_min` existed only to

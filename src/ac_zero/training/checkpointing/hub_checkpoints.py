@@ -20,8 +20,9 @@ so one folder holds the same figure for every model in the queue, side by side.
 Comparing eight models is then opening one folder instead of eight.
 
 :func:`push_checkpoint_bundle` reads the local bundle, pulls the other runs'
-metrics to redraw the all-runs plots, promotes ``best.json`` only when this run
-beats the recorded best, and uploads the lot. :class:`PeriodicCheckpointUploader`
+metrics to redraw the all-runs plots, promotes ``best.json`` when this run beats the
+recorded best (or is written in a newer model format, whose metrics the recorded best's
+cannot be compared against), and uploads the lot. :class:`PeriodicCheckpointUploader`
 drives that on a time interval from the training callbacks, mirroring the dataset
 notebooks' periodic upload. :func:`archive_checkpoint_lineage` moves a name's whole
 tree aside so a ``start_fresh`` run begins with an empty history.
@@ -43,6 +44,7 @@ from ac_zero.datasets.hub import (
     move_remote_tree,
     upload_files,
 )
+from ac_zero.models.registry import checkpoint_format_version
 from ac_zero.training.checkpointing.checkpoint_bundle import (
     BEST_FILE,
     LATEST_FILE,
@@ -229,9 +231,16 @@ def _build_index(
 
     The returned dict carries a private ``_promote_best`` flag telling the caller
     whether ``best.json`` should be uploaded (i.e. this run is the new best).
+
+    The metric comparison only holds within one model format: after a format bump the
+    stored best cannot even be loaded by this code, so a run on the newer format always
+    promotes regardless of its score. Without that, a re-pretraining run that scored a
+    hair below the pre-bump record would leave an unloadable ``best.json`` in place and
+    every task seeding from this lineage would fail on it.
     """
     best = _read_json(bundle / BEST_FILE)
     metric = None if best is None else best.get("checkpoint_metric")
+    fmt = None if best is None else checkpoint_format_version(best)
 
     with tempfile.TemporaryDirectory() as tmp:
         remote_index = _read_json(
@@ -247,6 +256,7 @@ def _build_index(
     entry = {
         "run_id": run_id,
         "metric": metric,
+        "format_version": fmt,
         "iteration": meta.get("iteration"),
         "optimizer_step": meta.get("optimizer_step"),
         "warm_started_from": meta.get("warm_started_from"),
@@ -257,7 +267,11 @@ def _build_index(
 
     prev_best = remote_index.get("best")
     prev_metric = None if prev_best is None else prev_best.get("metric")
-    promote = metric is not None and (prev_metric is None or metric >= prev_metric)
+    # An index entry predating this field describes a checkpoint from before the bump.
+    prev_fmt = None if prev_best is None else prev_best.get("format_version", 1)
+    promote = metric is not None and (
+        prev_metric is None or prev_fmt != fmt or metric >= prev_metric
+    )
     best_pointer = entry if promote else prev_best
     return {
         "name": name,

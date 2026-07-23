@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ac_zero.datasets.hub import DEFAULT_BUCKET
+from ac_zero.scheduler.benchmark_ladder import DEFAULT_ERROR_REDUCTION, DEFAULT_STALENESS_DAYS
 from ac_zero.scheduler.benchmarks import (
     BENCHMARK_QUEUE_PATH,
     DEFAULT_METRIC_THRESHOLD,
@@ -57,8 +58,12 @@ class SchedulerConfig:
     # Where the training checkpoints (and the benchmark results) live. Separate
     # from the state repo: the state repo holds the queue, the bucket holds the work.
     data_bucket: str = DEFAULT_BUCKET
-    # Self-play success-rate EMA a training run must reach to earn an evaluation.
+    # Self-play success-rate EMA a training run must reach to earn its first evaluation.
     benchmark_metric_threshold: float = DEFAULT_METRIC_THRESHOLD
+    # Past the first, the fraction of remaining error a model must close to earn
+    # another -- and how long a rung stands before a new best model earns one anyway.
+    benchmark_error_reduction: float = DEFAULT_ERROR_REDUCTION
+    benchmark_staleness_days: float = DEFAULT_STALENESS_DAYS
 
 
 @dataclass(slots=True)
@@ -246,6 +251,8 @@ def run_tick(
         benchmark_queue,
         bucket=config.data_bucket,
         threshold=config.benchmark_metric_threshold,
+        error_reduction=config.benchmark_error_reduction,
+        staleness_days=config.benchmark_staleness_days,
         log=log,
     )
     log(f"benchmark queue: {len(benchmark_queue.pending)} checkpoint(s) pending evaluation")
