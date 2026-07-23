@@ -183,6 +183,34 @@ def test_training_reduces_the_loss_on_the_data_it_is_shown(tmp_path: Path) -> No
     assert last.policy_loss > 0.0
 
 
+def test_warmup_ramps_the_learning_rate_linearly_then_holds(tmp_path: Path) -> None:
+    """Each step scales the target rate by min(1, step / warmup_steps): a linear ramp
+    that reaches the full rate on the warmup-th step and stays there afterwards."""
+    trainer = SupervisedTrainer(
+        create_trainable_model("linear_policy_value", seed=0),
+        _batches(_dataset(tmp_path)),
+        actions=12,
+        learning_rate=0.05,
+        value_loss_weight=1.0,
+        grad_clip=1.0,
+        warmup_steps=4,
+    )
+    rng = random.Random(0)
+    seen = []
+    for _ in range(6):
+        trainer.step("train", 8, rng)
+        assert trainer._optimizer is not None
+        seen.append(trainer._optimizer.param_groups[0]["lr"])
+    assert seen == pytest.approx([0.0125, 0.025, 0.0375, 0.05, 0.05, 0.05])
+
+
+def test_no_warmup_leaves_the_rate_at_its_target_from_the_first_step(tmp_path: Path) -> None:
+    trainer = _trainer(_dataset(tmp_path))  # the helper leaves warmup_steps at its 0 default
+    trainer.step("train", 8, random.Random(0))
+    assert trainer._optimizer is not None
+    assert trainer._optimizer.param_groups[0]["lr"] == pytest.approx(0.05)
+
+
 def test_evaluation_scores_the_move_the_model_actually_picks(tmp_path: Path) -> None:
     groups = _dataset(tmp_path)
     trainer = _trainer(groups)
@@ -365,5 +393,7 @@ def test_supervised_settings_are_validated(tmp_path: Path) -> None:
         _config(tmp_path, groups, target_temperature=0.0).validate()
     with pytest.raises(ValueError, match="grad_clip must be non-negative"):
         _config(tmp_path, groups, grad_clip=-1.0).validate()
+    with pytest.raises(ValueError, match="warmup_steps must be non-negative"):
+        _config(tmp_path, groups, warmup_steps=-1).validate()
     with pytest.raises(ValueError, match="eval_batches must be positive"):
         _config(tmp_path, groups, eval_batches=0).validate()

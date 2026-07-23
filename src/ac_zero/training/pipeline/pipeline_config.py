@@ -115,6 +115,11 @@ class TrainingPipelineConfig:
     batch_size: int = 8
     replay_capacity: int = 512
     learning_rate: float = 0.05
+    # Linearly ramp the learning rate from 0 to `learning_rate` over this many optimizer
+    # updates before holding it constant. 0 disables warmup. A few hundred steps steadies
+    # Adam's early second-moment estimate and lets the deep Pre-LN configs take their full
+    # learning rate from the first epoch instead of crawling out of it.
+    warmup_steps: int = 0
     value_loss_weight: float = 1.0
     checkpoint_every: int = 1
     # Emit a terminal progress line at INFO on the first and every
@@ -257,6 +262,9 @@ class TrainingPipelineConfig:
             learning_rate=float(
                 training.get("learning_rate", data.get("learning_rate", defaults.learning_rate))
             ),
+            warmup_steps=int(
+                training.get("warmup_steps", data.get("warmup_steps", defaults.warmup_steps))
+            ),
             value_loss_weight=float(
                 training.get(
                     "value_loss_weight",
@@ -388,6 +396,8 @@ class TrainingPipelineConfig:
             raise ValueError("replay_capacity must be positive")
         if self.learning_rate <= 0.0:
             raise ValueError("learning_rate must be positive")
+        if self.warmup_steps < 0:
+            raise ValueError("warmup_steps must be non-negative (0 disables warmup)")
         if self.value_loss_weight < 0.0:
             raise ValueError("value_loss_weight must be non-negative")
         if self.checkpoint_every <= 0:
@@ -463,6 +473,7 @@ def run_description(
         "batch_size": config.batch_size,
         "replay_capacity": config.replay_capacity,
         "learning_rate": config.learning_rate,
+        "warmup_steps": config.warmup_steps,
         "value_loss_weight": config.value_loss_weight,
         "checkpoint_every": config.checkpoint_every,
         "progress_every": config.progress_every,

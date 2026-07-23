@@ -79,7 +79,14 @@ class _RotaryAttention(nn.Module):
 
 
 class _EncoderBlock(nn.Module):
-    """Pre-residual self-attention and feed-forward sublayers with layer norm."""
+    """Pre-LN self-attention and feed-forward sublayers.
+
+    Each sublayer normalizes its own input and the residual path stays an
+    unnormalized identity highway (``x + sublayer(norm(x))``). Unlike Post-LN,
+    the gradient reaches every layer through that highway undistorted, so deep
+    stacks train from a cold constant learning rate without warmup -- Post-LN's
+    warmup requirement grows with depth and stalls the deeper configs.
+    """
 
     def __init__(self, dim: int, ff_dim: int, num_heads: int) -> None:
         super().__init__()
@@ -89,8 +96,8 @@ class _EncoderBlock(nn.Module):
         self.norm2 = nn.LayerNorm(dim)
 
     def forward(self, x: torch.Tensor, key_mask: torch.Tensor) -> torch.Tensor:
-        x = self.norm1(x + self.attention(x, key_mask))
-        out: torch.Tensor = self.norm2(x + self.feed_forward(x))
+        x = x + self.attention(self.norm1(x), key_mask)
+        out: torch.Tensor = x + self.feed_forward(self.norm2(x))
         return out
 
 
@@ -117,6 +124,9 @@ class _TransformerTrunk(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(vocab, embed_dim, padding_idx=0)
         self.blocks = nn.ModuleList(_EncoderBlock(embed_dim, ff_dim, heads) for _ in range(layers))
+        # Pre-LN leaves the final block's output on the raw residual scale, so a trailing
+        # norm brings the pooled features back to unit scale before the linear heads.
+        self.final_norm = nn.LayerNorm(embed_dim)
         # Recompute each block's activations during backward instead of storing them.
         # A deep, wide trunk is activation-bound long before it is parameter-bound, so
         # this is what lets the ~100M-parameter config train at a real batch size on a
@@ -137,6 +147,7 @@ class _TransformerTrunk(nn.Module):
                 x = checkpoint(block, x, mask, use_reentrant=False)
             else:
                 x = block(x, mask)
+        x = self.final_norm(x)
         weights = mask.unsqueeze(-1).to(x.dtype)
         pooled: torch.Tensor = (x * weights).sum(dim=1) / weights.sum(dim=1)
         return pooled

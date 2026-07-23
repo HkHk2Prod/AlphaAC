@@ -28,6 +28,7 @@ training:
   optimizer_updates: 300    # minibatches per epoch
   batch_size: 128
   learning_rate: 0.0007
+  warmup_steps: 200         # linear LR ramp before holding, ~0.7 epochs at 300 updates/epoch
   value_loss_weight: 0.5
   gamma: 0.99               # sets the value target: 2 * gamma**distance - 1
   target_temperature: 1.0

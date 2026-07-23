@@ -75,6 +75,7 @@ class SupervisedTrainer:
         learning_rate: float,
         value_loss_weight: float,
         grad_clip: float,
+        warmup_steps: int = 0,
     ) -> None:
         self._model = model
         self._batches = batches
@@ -82,6 +83,8 @@ class SupervisedTrainer:
         self._value_weight = value_loss_weight
         self._grad_clip = grad_clip
         self._learning_rate = learning_rate
+        self._warmup_steps = warmup_steps
+        self._updates = 0
         self._optimizer: torch.optim.Optimizer | None = None
 
     def _losses(
@@ -118,6 +121,8 @@ class SupervisedTrainer:
         loss = (policy + self._value_weight * value).mean()
 
         optimizer = self._ensure_optimizer()
+        self._updates += 1
+        self._apply_warmup(optimizer)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()  # type: ignore[no-untyped-call]
         if self._grad_clip > 0.0:
@@ -134,6 +139,19 @@ class SupervisedTrainer:
         if self._optimizer is None:
             self._optimizer = torch.optim.Adam(self._model.parameters(), lr=self._learning_rate)
         return self._optimizer
+
+    def _apply_warmup(self, optimizer: torch.optim.Optimizer) -> None:
+        """Scale the learning rate linearly from 0 to its target across the warmup.
+
+        ``self._updates`` is the 1-based index of the update about to be applied, so the
+        first step already carries a small nonzero rate and step ``warmup_steps`` reaches
+        the full rate; every later step holds it there.
+        """
+        if self._warmup_steps <= 0:
+            return
+        scale = min(1.0, self._updates / self._warmup_steps)
+        for group in optimizer.param_groups:
+            group["lr"] = self._learning_rate * scale
 
     def evaluate(self, batches: list[LabelledBatch]) -> SupervisedMetrics:
         """Score the model on already-drawn batches, without touching its weights."""
