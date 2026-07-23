@@ -156,6 +156,7 @@ def run_benchmark(
         "checkpoint_name": config.checkpoint_name,
         "attempted": report.attempted,
         "solved": len(report.solved),
+        "solved_by_scan": report.solved_by_scan,
         "solve_rate": report.solve_rate,
         "solved_ids": [entry.presentation_id for entry in report.solved],
         "by_family": report.counts_by_family(),

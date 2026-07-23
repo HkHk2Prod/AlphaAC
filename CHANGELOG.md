@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- **Steps off the annotated graph are priced instead of free.** A move to an unannotated
+  node used to hold the distance anchor and score zero shaping, deferring the excursion's
+  credit to the re-entry step. That made leaving the graph strictly cheaper than climbing
+  inside it, and the annotated region is small enough that a policy which has not learned
+  to descend leaves on its first move and never comes back. Such a step is now scored as
+  if it walked one step further out (``anchor + 1``), so it costs ``alpha`` like any other
+  move away from the destination, and the anchor advances with it. The estimate is
+  provisional, not a verdict: re-entering the graph at distance ``d`` scores
+  ``alpha * (anchor - d)`` against the inflated anchor and hands back the shaping the
+  detour was charged, so an excursion still telescopes to
+  ``alpha * (exit - reentry)`` however long it ran. The whole walk now carries a gradient
+  rather than only the small fraction of it that stands on annotated nodes.
+
+- **PUCT no longer charges the agent for the moves it only imagined.** The navigation
+  reward keeps per-episode state — the visited set and the distance anchor — outside
+  `ACSearchState`, and PUCT runs its simulations by stepping the caller's environment,
+  restoring only `env.state` afterwards. So every simulated move folded into the real
+  episode's accounting: the anchor was left at the search's *deepest* simulated node, and
+  the visited set held nodes the agent never stood on. The next real move was then shaped
+  against a distance the agent was never at — a step toward the destination could be
+  scored as a step away from it, the more so the better the search planned — and charged a
+  revisit fee besides. The damage was not only cosmetic: those rewards are what
+  AlphaZero's value targets are built from, what PUCT backs up into its own action values,
+  and what the alpha controller reads (phantom simulated progress inflated `progress_rate`
+  and could mark an episode successful, pushing alpha to its floor). Self-play return
+  under `reward_mode: navigation` was therefore deflated for the AlphaZero agent and not
+  for PPO, which runs no search — the two were not comparable. `ACEnvironment` now exposes
+  the reward state as a snapshot and the search rewinds to it, both between simulations
+  (so each one is scored as a continuation of the real episode) and on the way out. Other
+  reward modes were never affected: the "potential" mode's anchor already rode on the
+  Markov state.
+
 - **Benchmark evaluation: the AK/MS series, scored automatically once a model gets decent.**
   `aczero benchmark create` enumerates every Akbulut-Kirby and Miller-Schupp presentation
   under two bounds — `--max-relator-length` (the longest relator after free reduction, which
