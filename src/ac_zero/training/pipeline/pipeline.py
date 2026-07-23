@@ -454,6 +454,7 @@ class _TrainingRun:
                 learning_rate=self.config.learning_rate,
                 value_loss_weight=self.config.value_loss_weight,
                 grad_clip=self.config.grad_clip,
+                reward_mode=self.config.reward_mode,
             )
             self.optimizer_step += 1
             row: MetricsRow = {

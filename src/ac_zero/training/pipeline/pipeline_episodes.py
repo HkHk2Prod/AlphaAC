@@ -38,6 +38,12 @@ class ReplayExample:
     reward: float
     action: int
     components: RewardComponents | None = None
+    # Navigation's two alpha-invariant value-head targets (0.0 off navigation, where
+    # the scalar `value_target` is regressed instead): `success_target` is the
+    # discounted-success return-to-go gamma**(steps-to-goal), and `progress_target`
+    # the clipped shaping return-to-go normalized by the start distance L0.
+    success_target: float = 0.0
+    progress_target: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +78,53 @@ def moves_for_distance(distance: int) -> int:
     difficulty rather than a single global cap.
     """
     return 3 * distance + 6
+
+
+def navigation_head_targets(
+    components: list[RewardComponents | None],
+    *,
+    reached_goal: bool,
+    gamma: float,
+    max_shaping_progress: int,
+    start_distance: int,
+    success_tail: float = 0.0,
+    progress_tail: float = 0.0,
+) -> tuple[list[float], list[float]]:
+    """Per-step return-to-go targets for the two alpha-invariant navigation heads.
+
+    ``success`` regresses ``gamma**(steps-to-goal)`` -- the return-to-go of a reward
+    that is 1 only on the goal-reaching step -- so it estimates the discounted
+    probability this state reaches the destination. ``progress`` regresses the
+    clipped shaping return-to-go divided by the start distance ``L0``, the exact
+    ``B~`` the reconstruction multiplies by ``alpha``. The clip mirrors the reward
+    (:class:`RewardConfig.max_shaping_progress`), so target and reward price an
+    off-graph re-entry the same way.
+
+    The ``*_tail`` seeds carry a bootstrap value past the last step, in each head's
+    own units -- ``success_tail`` a success probability, ``progress_tail`` a ``B~``
+    -- so PPO seeds them from the model's heads at the final state; AlphaZero leaves
+    them zero, treating truncation as a dead end.
+    """
+    cap = max_shaping_progress
+    denom = max(1, start_distance)
+    last = len(components) - 1
+    success = 0.0 if reached_goal else success_tail
+    progress = progress_tail
+    success_out = [0.0] * len(components)
+    progress_out = [0.0] * len(components)
+    for idx in range(last, -1, -1):
+        goal_here = 1.0 if (reached_goal and idx == last) else 0.0
+        success = goal_here + gamma * success
+        component = components[idx]
+        clipped = 0.0 if component is None else _clip(component.distance_progress, cap)
+        progress = clipped / denom + gamma * progress
+        success_out[idx] = success
+        progress_out[idx] = progress
+    return success_out, progress_out
+
+
+def _clip(value: int, cap: int) -> float:
+    return float(max(-cap, min(cap, value)))
 
 
 def build_env_config(
@@ -227,6 +280,7 @@ def _collect_episode(
     mcts = PUCTMCTS(
         model, encoder, PUCTConfig(simulations=config.mcts_simulations, c_puct=config.c_puct)
     )
+    scale = env.reward_scale
     pending: list[_PendingStep] = []
     rewards: list[float] = []
     terminated = False
@@ -240,12 +294,16 @@ def _collect_episode(
         policy_target = visit_count_policy(stats.visit_counts, legal_mask)
         action = _sample_action(policy_target, rng)
         _, reward, terminated, truncated, info = env.step(action)
-        normalized_reward = reward / max(1.0, float(env.initial.total_length))
+        scaled_reward = reward * scale
         pending.append(
-            (encoding, legal_mask, policy_target, action, normalized_reward, _components(info))
+            (encoding, legal_mask, policy_target, action, scaled_reward, _components(info))
         )
-        rewards.append(normalized_reward)
+        rewards.append(scaled_reward)
     returns = return_to_go(rewards, config.gamma)
+    is_navigation = config.reward_mode == "navigation"
+    success_targets, progress_targets = _episode_head_targets(
+        config, env, [components for *_, components in pending], terminated, is_navigation
+    )
     examples = [
         ReplayExample(
             encoding=encoding,
@@ -255,19 +313,40 @@ def _collect_episode(
             reward=reward,
             action=action,
             components=components,
+            success_target=success_targets[idx],
+            progress_target=progress_targets[idx],
         )
         for idx, (encoding, legal_mask, policy_target, action, reward, components) in enumerate(
             pending
         )
     ]
     total_return = float(sum(rewards))
-    nav = env.navigation_episode_stats() if config.reward_mode == "navigation" else None
+    nav = env.navigation_episode_stats() if is_navigation else None
     return examples, EpisodeMetrics(
         total_return=total_return,
         normalized_return=total_return,
         success=terminated,
         moves=len(pending),
         nav=nav,
+    )
+
+
+def _episode_head_targets(
+    config: TrainingPipelineConfig,
+    env: ACEnvironment,
+    components: list[RewardComponents | None],
+    reached_goal: bool,
+    is_navigation: bool,
+) -> tuple[list[float], list[float]]:
+    """The two navigation head targets for one episode; zeros off navigation."""
+    if not is_navigation or not components:
+        return [0.0] * len(components), [0.0] * len(components)
+    return navigation_head_targets(
+        components,
+        reached_goal=reached_goal,
+        gamma=config.gamma,
+        max_shaping_progress=config.reward_config.max_shaping_progress,
+        start_distance=env.navigation_episode_stats().start_distance,
     )
 
 

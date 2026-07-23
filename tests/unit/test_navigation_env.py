@@ -7,11 +7,13 @@ definition, so the only distances consistent with that path are P1 at 1 and P0 a
 that jumps further per move would exercise shaping the real graph never pays.
 """
 
+import numpy as np
 import pytest
 
 from ac_zero.algebra.presentation import BalancedPresentation
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.environment.navigation_reward import RewardComponents, RewardConfig
+from ac_zero.models.base import PolicyValueOutput
 from ac_zero.moves.catalog import ActionCatalog
 from ac_zero.moves.primitive import InvertRelatorMove, MultiplyRelatorsMove
 
@@ -81,6 +83,32 @@ def test_navigation_env_prices_a_step_off_the_annotated_graph() -> None:
     assert arriving.reward_destination == pytest.approx(2.0)
     # Closest known approach is the goal, so progress is complete.
     assert env.navigation_episode_stats().progress_rate == pytest.approx(1.0)
+
+
+def _output(value: float, success: float, progress: float) -> PolicyValueOutput:
+    return PolicyValueOutput(np.zeros(2, dtype=np.float64), value, success, progress)
+
+
+def test_navigation_leaf_value_reconstructs_from_the_two_heads() -> None:
+    # V = L0 * (destination_scale * success + alpha * progress). Start is P0 at
+    # distance 2, alpha 0.5, scale 1.0: 2 * (1.0*0.7 + 0.5*(-1.5)) = -0.1. The legacy
+    # scalar head is ignored under navigation.
+    env = _navigation_env(alpha=0.5)
+    reconstructed = env.leaf_value(_output(value=0.9, success=0.7, progress=-1.5))
+    assert reconstructed == pytest.approx(2 * (1.0 * 0.7 + 0.5 * -1.5))
+
+
+def test_leaf_value_off_navigation_is_the_legacy_scalar() -> None:
+    env = ACEnvironment(_P0, ACEnvironmentConfig(reward_mode="length_reduction_and_goal"))
+    assert env.leaf_value(_output(value=0.42, success=0.7, progress=-1.5)) == pytest.approx(0.42)
+
+
+def test_navigation_reward_scale_is_raw_and_others_normalize() -> None:
+    # Navigation trains on raw rewards (favoring farther solves); the other modes
+    # keep the 1/initial_length normalization the legacy critic was fit under.
+    assert _navigation_env().reward_scale == pytest.approx(1.0)
+    other = ACEnvironment(_P0, ACEnvironmentConfig(reward_mode="length_reduction_and_goal"))
+    assert other.reward_scale == pytest.approx(1.0 / _P0.total_length)
 
 
 def test_navigation_env_holds_alpha_constant_across_the_episode() -> None:

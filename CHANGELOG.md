@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **The navigation value is split into two `alpha`-invariant heads.** The single scalar
+  critic was trained on the shaped return, so it had to be refit whenever the alpha
+  controller moved the shaping weight, and the value floor `alpha_min` existed only to
+  bound how badly that refit broke the policy. The reward is affine in `alpha`
+  (`destination + alpha * clipped_progress + fees`), so the value is too, and the model
+  now predicts the two `alpha`-free parts separately: a `success` head (discounted
+  probability of reaching the destination) and a `progress` head (the shaping
+  return-to-go normalized by the start distance, `B~`). The environment recombines them
+  as `L0 * (destination_scale * success + alpha * progress)` at the episode's fixed
+  `alpha` and start distance, so moving `alpha` rescales a head that was never refit
+  rather than invalidating the critic. Both heads are pretrained directly from the
+  dataset's `distance_to_origin` (`success = gamma**(d-1)`, `progress = B~` of an optimal
+  descent), and they are load-bearing at opposite ends of training: `success` is
+  degenerate for a scratch run that never solves, where `progress` carries the whole
+  value, and `progress` is vestigial once `alpha` anneals, where `success` does. The
+  legacy scalar head is retained for the non-navigation reward modes, so those are
+  unchanged. Navigation now also trains on **raw** rewards (the length normalization is
+  kept only for the legacy modes), so a solve from a farther group is worth proportionally
+  more. Checkpoints carry a model format version; a pre-split (v1) checkpoint is rejected
+  with a clear message rather than a deep `state_dict` load error, and must be
+  re-pretrained. A goal leaf's search value is now `0` (its destination bonus is already
+  in the backed-up path rewards) rather than a fixed `terminal_value`.
+
 - **Steps off the annotated graph are priced instead of free.** A move to an unannotated
   node used to hold the distance anchor and score zero shaping, deferring the excursion's
   credit to the re-entry step. That made leaving the graph strictly cheaper than climbing
@@ -9,11 +32,14 @@
   to descend leaves on its first move and never comes back. Such a step is now scored as
   if it walked one step further out (``anchor + 1``), so it costs ``alpha`` like any other
   move away from the destination, and the anchor advances with it. The estimate is
-  provisional, not a verdict: re-entering the graph at distance ``d`` scores
-  ``alpha * (anchor - d)`` against the inflated anchor and hands back the shaping the
-  detour was charged, so an excursion still telescopes to
-  ``alpha * (exit - reentry)`` however long it ran. The whole walk now carries a gradient
-  rather than only the small fraction of it that stands on annotated nodes.
+  provisional, not a verdict: re-entering the graph scores against the inflated anchor and
+  hands back the shaping the detour was charged. That refund is capped at
+  ``max_shaping_progress`` (shortest-path distance is 1-Lipschitz, so on the annotated
+  graph the cap never binds), so a ``k``-step excursion nets about ``-(k-1) * alpha``
+  rather than telescoping to zero -- paying the refund in full would hand one move the
+  worth of the whole detour, teaching the network a preference it cannot explain. The
+  whole walk now carries a gradient rather than only the small fraction of it that stands
+  on annotated nodes.
 
 - **PUCT no longer charges the agent for the moves it only imagined.** The navigation
   reward keeps per-episode state — the visited set and the distance anchor — outside

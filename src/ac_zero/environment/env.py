@@ -20,6 +20,7 @@ from ac_zero.environment.navigation_reward import (
 )
 from ac_zero.environment.rewards import RewardSignal, step_reward
 from ac_zero.environment.state import ACSearchState
+from ac_zero.models.base import PolicyValueOutput
 from ac_zero.moves.universal import moveset_catalog
 
 ENV_ID = "ACZero-v0"
@@ -389,6 +390,42 @@ class ACEnvironment(gymnasium.Env[dict[str, Any], int]):
             return
         self._reward.restore(state.reward)
         self._nav_anchor = state.anchor
+
+    @property
+    def reward_scale(self) -> float:
+        """Per-step reward scale the tree back-up and the training targets share.
+
+        Navigation trains on *raw* rewards -- a solve from distance 8 is worth its
+        full ``+8`` destination bonus, four times a distance-2 solve, so the model
+        is rewarded for reaching farther groups rather than for the same fraction of
+        any length. The other reward modes keep the ``1/initial_length``
+        normalization the legacy tanh critic was fit under. Both the PUCT back-up and
+        the episode return-to-go read this one source so the search leaf and the
+        training target never disagree on scale.
+        """
+        if self.config.reward_mode == "navigation":
+            return 1.0
+        return 1.0 / max(1, self.initial.total_length)
+
+    def leaf_value(self, output: PolicyValueOutput) -> float:
+        """Collapse a model's value heads into the scalar this episode's reward uses.
+
+        Off the navigation reward the legacy scalar critic is the value, unchanged.
+        Under navigation the value is reconstructed from the two ``alpha``-invariant
+        heads at the episode's fixed ``alpha`` and start distance ``L0``:
+
+            ``L0 * (destination_scale * success + alpha * progress)``
+
+        so a search leaf and a training target agree on the same value, and moving
+        ``alpha`` between iterations rescales the ``progress`` term without touching
+        either head.
+        """
+        if self._reward is None:
+            return output.value
+        scale = self.config.reward_config.destination_reward_scale
+        return self._reward.start_distance * (
+            scale * output.success + self._reward.alpha * output.progress
+        )
 
     def navigation_episode_stats(self) -> EpisodeStats:
         """Aggregate stats for the finished navigation episode (alpha updater input)."""

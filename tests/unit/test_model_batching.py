@@ -40,11 +40,13 @@ def test_a_batched_forward_matches_the_single_state_apply(name: str) -> None:
     singles = [model.apply(encoding, 12) for encoding in encodings]
 
     with torch.no_grad():
-        logits, values = model.forward(model.encode(encodings), 12)
+        logits, values, success, progress = model.forward(model.encode(encodings), 12)
 
     for index, single in enumerate(singles):
         assert np.allclose(logits[index].numpy(), single.logits, atol=1e-5)
         assert float(values[index]) == pytest.approx(single.value, abs=1e-5)
+        assert float(success[index]) == pytest.approx(single.success, abs=1e-5)
+        assert float(progress[index]) == pytest.approx(single.progress, abs=1e-5)
 
 
 @pytest.mark.parametrize("name", ARCHITECTURES)
@@ -52,12 +54,15 @@ def test_a_batch_trains_and_stays_finite(name: str) -> None:
     encodings = _encodings(4)
     model = create_trainable_model(name, seed=0)
     batch = model.encode(encodings)
-    logits, values = model.forward(batch, 12)
+    logits, values, success, progress = model.forward(batch, 12)
 
     assert logits.shape == (4, 12)
-    assert values.shape == (4,)
-    assert bool(torch.isfinite(logits).all()) and bool(torch.isfinite(values).all())
-    assert bool((values.abs() <= 1.0).all())  # the tanh-bounded value head
+    assert values.shape == success.shape == progress.shape == (4,)
+    for head in (logits, values, success, progress):
+        assert bool(torch.isfinite(head).all())
+    assert bool((values.abs() <= 1.0).all())  # the tanh-bounded legacy value head
+    assert bool(((success >= 0.0) & (success <= 1.0)).all())  # sigmoid probability
+    assert bool((progress.abs() <= 4.0).all())  # PROGRESS_VALUE_SCALE * tanh
     assert model.parameter_count > 0
 
 
@@ -70,7 +75,7 @@ def test_deepsets_stays_permutation_invariant_when_batched() -> None:
 
     model = create_trainable_model("deepsets", seed=0)
     with torch.no_grad():
-        logits, _ = model.forward(
+        logits, _, _, _ = model.forward(
             model.encode([encoder.encode(env.state), encoder.encode(other.state)]), 12
         )
     assert np.allclose(logits[0].numpy(), logits[1].numpy(), atol=1e-6)

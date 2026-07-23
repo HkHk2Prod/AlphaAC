@@ -17,6 +17,10 @@ from ac_zero.training.ppo.losses import visit_count_policy
 
 ARCHITECTURES = ["linear_policy_value", "residual_mlp", "deepsets", "gru", "transformer"]
 
+# These tests exercise the legacy scalar value head, so they train under a
+# non-navigation mode (navigation regresses the success/progress heads instead).
+_SCALAR_MODE = "length_reduction_and_goal"
+
 
 @dataclass
 class _Example:
@@ -24,6 +28,8 @@ class _Example:
     legal_mask: tuple[bool, ...]
     policy_target: Any
     value_target: float
+    success_target: float = 0.0
+    progress_target: float = 0.0
 
 
 def _fixture(seed: int = 1, depth: int = 2) -> tuple[PaddedEncoding, tuple[bool, ...], int, Any]:
@@ -50,9 +56,40 @@ def test_training_reduces_loss(name: str) -> None:
     encoding, mask, _, target = _fixture()
     batch = [_Example(encoding, mask, target, 0.5)] * 4
     model = create_trainable_model(name, seed=0)
-    first = model.train_batch(batch, learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0)
+    first = model.train_batch(
+        batch, learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0, reward_mode=_SCALAR_MODE
+    )
     for _ in range(25):
-        last = model.train_batch(batch, learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0)
+        last = model.train_batch(
+            batch, learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0, reward_mode=_SCALAR_MODE
+        )
+    assert last.total_loss < first.total_loss
+
+
+@pytest.mark.parametrize("name", ARCHITECTURES)
+def test_navigation_training_reduces_the_two_head_loss(name: str) -> None:
+    """Under navigation, train_batch regresses success and progress, not the scalar.
+
+    The scalar value head is left untouched, so a run that drives the two
+    alpha-invariant heads toward their targets is what lowers the loss.
+    """
+    encoding, mask, _, target = _fixture()
+    batch = [_Example(encoding, mask, target, 0.0, success_target=0.7, progress_target=0.5)] * 4
+    model = create_trainable_model(name, seed=0)
+    # The real training defaults (SGD lr 0.02, grad clip 0.5): the progress head's
+    # 4*tanh scale makes its gradient hotter than the legacy tanh critic's, so the
+    # clip that guards every real run is what keeps this descent monotone.
+    first = model.train_batch(
+        batch, learning_rate=0.02, value_loss_weight=1.0, grad_clip=0.5, reward_mode="navigation"
+    )
+    for _ in range(60):
+        last = model.train_batch(
+            batch,
+            learning_rate=0.02,
+            value_loss_weight=1.0,
+            grad_clip=0.5,
+            reward_mode="navigation",
+        )
     assert last.total_loss < first.total_loss
 
 
@@ -67,7 +104,13 @@ def test_grad_clip_bounds_how_far_one_batch_can_move_the_weights() -> None:
 
     def moved(grad_clip: float) -> float:
         model = create_trainable_model("residual_mlp", seed=0)
-        model.train_batch(batch, learning_rate=0.1, value_loss_weight=1.0, grad_clip=grad_clip)
+        model.train_batch(
+            batch,
+            learning_rate=0.1,
+            value_loss_weight=1.0,
+            grad_clip=grad_clip,
+            reward_mode=_SCALAR_MODE,
+        )
         params = model.to_json()["parameters"]
         return max(float(np.abs(np.asarray(v)).max()) for v in params.values())
 
@@ -79,7 +122,9 @@ def test_checkpoint_round_trip_is_exact(name: str) -> None:
     encoding, mask, action_count, target = _fixture()
     model = create_trainable_model(name, seed=0)
     example = _Example(encoding, mask, target, 0.5)
-    model.train_batch([example], learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0)
+    model.train_batch(
+        [example], learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0, reward_mode=_SCALAR_MODE
+    )
     restored = model_from_json(model.to_json())
     before = model.apply(encoding, action_count)
     after = restored.apply(encoding, action_count)
@@ -95,7 +140,7 @@ def test_transformer_grad_checkpointing_matches_plain_path() -> None:
     first_grads = []
     for grad_checkpoint in (0, 1):
         model = create_trainable_model("transformer", seed=0, grad_checkpoint=grad_checkpoint)
-        logits, values = model.forward(model.encode(encodings), action_count)
+        logits, values, _, _ = model.forward(model.encode(encodings), action_count)
         (logits.pow(2).mean() + values.pow(2).mean()).backward()
         params = model.parameters()
         outputs.append((logits.detach().numpy(), values.detach().numpy()))
@@ -111,7 +156,9 @@ def test_transformer_grad_checkpoint_flag_survives_serialization() -> None:
     encoding, mask, _, target = _fixture()
     model = create_trainable_model("transformer", seed=0, grad_checkpoint=1)
     example = _Example(encoding, mask, target, 0.5)
-    model.train_batch([example], learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0)
+    model.train_batch(
+        [example], learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0, reward_mode=_SCALAR_MODE
+    )
     restored = model_from_json(model.to_json())
     assert restored.to_json()["hyperparameters"]["grad_checkpoint"] == 1
 

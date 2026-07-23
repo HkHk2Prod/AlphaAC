@@ -35,7 +35,12 @@ class LabelledBatch:
 
     encodings: list[PaddedEncoding]
     policy_targets: NDArray[np.float32]  # (batch, actions)
-    value_targets: NDArray[np.float32]  # (batch,)
+    # The two navigation value-head targets an optimal descent of length `d` implies:
+    # `success` = gamma**d (the discounted-success value of a state d steps from the
+    # origin) and `progress` = B~, the shaping return-to-go of that descent normalized
+    # by d. Pretraining these seeds the exact heads the navigation RL runs read.
+    success_targets: NDArray[np.float32]  # (batch,)
+    progress_targets: NDArray[np.float32]  # (batch,)
     # The per-move distance deltas the targets were built from, kept so evaluation can
     # ask the question the task is really about: what does the move the model picked do
     # to the distance to the origin?
@@ -44,6 +49,27 @@ class LabelledBatch:
     @property
     def size(self) -> int:
         return len(self.encodings)
+
+
+def _head_targets(
+    distances: NDArray[np.float64], gamma: float
+) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+    """The (success, progress) head targets an optimal descent of each length implies.
+
+    These match the return-to-go a d-step optimal descent produces under the RL
+    collectors' convention (the first transition discounted by ``gamma**0``), so the
+    pretrained heads seed exactly what the runs regress:
+
+    * ``success = gamma**(d-1)`` -- the goal reward lands on the d-th (last)
+      transition, discounted from the start by ``gamma**(d-1)``; ``1`` at the origin.
+    * ``progress = B~ = (1 - gamma**d) / ((1 - gamma) * d)`` -- the discounted sum of
+      one clipped +1 per descent step, normalized by ``d``; ``0`` at the origin.
+    """
+    with np.errstate(invalid="ignore", divide="ignore"):
+        success = np.where(distances > 0, gamma ** (distances - 1.0), 1.0)
+        shaping = (1.0 - gamma**distances) / ((1.0 - gamma) * distances)
+    progress = np.where(distances > 0, shaping, 0.0)
+    return success.astype(np.float32), progress.astype(np.float32)
 
 
 def policy_targets(deltas: NDArray[np.int16], temperature: float) -> NDArray[np.float32]:
@@ -112,10 +138,12 @@ class SupervisedBatches:
         """Assemble the batch for these group rows."""
         deltas = self._labels.deltas[indices]
         distances = self._labels.distances[indices].astype(np.float64)
+        success, progress = _head_targets(distances, self._gamma)
         return LabelledBatch(
             encodings=[self._encode(index) for index in indices],
             policy_targets=policy_targets(deltas, self._temperature),
-            value_targets=(2.0 * self._gamma**distances - 1.0).astype(np.float32),
+            success_targets=success,
+            progress_targets=progress,
             deltas=deltas,
         )
 

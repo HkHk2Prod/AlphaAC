@@ -85,25 +85,36 @@ class SupervisedTrainer:
         self._optimizer: torch.optim.Optimizer | None = None
 
     def _losses(
-        self, batch: LabelledBatch, logits: torch.Tensor, values: torch.Tensor
+        self,
+        batch: LabelledBatch,
+        logits: torch.Tensor,
+        success: torch.Tensor,
+        progress: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Per-example cross-entropy against the move target, and value squared error.
 
         The softmax spans *every* action, not just the labelled ones: an unlabelled
         move carries zero target mass, so probability the model puts there is
-        probability taken away from the moves that descend.
+        probability taken away from the moves that descend. The value error pretrains
+        the two navigation heads the RL runs read -- ``success`` toward ``gamma**d``
+        and ``progress`` toward the descent's normalized shaping-return B~ -- summed
+        with equal weight, matching :meth:`TrainablePolicyValueModel._value_error`.
         """
         device = self._model.device
         targets = torch.from_numpy(batch.policy_targets).to(device)
-        value_targets = torch.from_numpy(batch.value_targets).to(device)
+        success_targets = torch.from_numpy(batch.success_targets).to(device)
+        progress_targets = torch.from_numpy(batch.progress_targets).to(device)
         policy = -(targets * torch.log_softmax(logits, dim=1)).sum(dim=1)
-        return policy, (values - value_targets) ** 2
+        value = (success - success_targets) ** 2 + (progress - progress_targets) ** 2
+        return policy, value
 
     def step(self, split: str, batch_size: int, rng: random.Random) -> SupervisedLoss:
         """Draw one minibatch and apply a single Adam update."""
         batch = self._batches.sample(split, batch_size, rng)
-        logits, values = self._model.forward(self._model.encode(batch.encodings), self._actions)
-        policy, value = self._losses(batch, logits, values)
+        logits, _, success, progress = self._model.forward(
+            self._model.encode(batch.encodings), self._actions
+        )
+        policy, value = self._losses(batch, logits, success, progress)
         loss = (policy + self._value_weight * value).mean()
 
         optimizer = self._ensure_optimizer()
@@ -134,8 +145,8 @@ class SupervisedTrainer:
         for batch in batches:
             with torch.no_grad():
                 encoded = self._model.encode(batch.encodings)
-                logits, values = self._model.forward(encoded, self._actions)
-                policy, value = self._losses(batch, logits, values)
+                logits, _, success, progress = self._model.forward(encoded, self._actions)
+                policy, value = self._losses(batch, logits, success, progress)
                 chosen = logits.argmax(dim=1).cpu().numpy()
             picked = np.take_along_axis(batch.deltas, chosen[:, None], axis=1).ravel()
             known = picked != DELTA_UNKNOWN

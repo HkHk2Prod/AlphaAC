@@ -21,6 +21,7 @@ from ac_zero.training.pipeline.pipeline_episodes import (
     EpisodeMetrics,
     build_env,
     episode_distance_and_moves,
+    navigation_head_targets,
 )
 from ac_zero.training.ppo.losses import PPOBatchStats, masked_softmax, sample_from_policy
 
@@ -39,6 +40,10 @@ class PPOExample:
     old_log_prob: float
     advantage: float
     return_target: float
+    # Navigation's two alpha-invariant value-head targets (see `ReplayExample`);
+    # 0.0 off navigation, where the scalar `return_target` is regressed instead.
+    success_target: float = 0.0
+    progress_target: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,11 +66,19 @@ class _Transition:
 
 @dataclass(frozen=True, slots=True)
 class _Rollout:
-    """One episode's transitions plus the bootstrap value of the final state."""
+    """One episode's transitions, its bootstrap value, and the head targets.
+
+    ``success_targets`` and ``progress_targets`` are the per-transition navigation
+    value-head return-to-go targets (empty/zero off navigation); they are computed
+    here, where the whole trajectory and its bootstrap heads are in hand, rather
+    than in the advantage pass.
+    """
 
     transitions: list[_Transition]
     bootstrap_value: float
     metrics: EpisodeMetrics
+    success_targets: list[float]
+    progress_targets: list[float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,7 +105,7 @@ def _collect_rollout(
         source, presentation, config.unknown_distance_max_moves
     )
     env = build_env(config, presentation, source, alpha, max_moves)
-    scale = 1.0 / max(1.0, float(env.initial.total_length))
+    scale = env.reward_scale
     action_count = len(env.catalog)
     transitions: list[_Transition] = []
     rewards: list[float] = []
@@ -107,7 +120,7 @@ def _collect_rollout(
         action = sample_from_policy(probs, rng)
         log_prob = math.log(max(float(probs[action]), 1e-12))
         _, reward, terminated, truncated, info = env.step(action)
-        normalized = reward * scale
+        scaled = reward * scale
         components = info.get("reward_components")
         transitions.append(
             _Transition(
@@ -115,31 +128,54 @@ def _collect_rollout(
                 mask,
                 action,
                 log_prob,
-                normalized,
-                float(output.value),
+                scaled,
+                env.leaf_value(output),
                 components if isinstance(components, RewardComponents) else None,
             )
         )
-        rewards.append(normalized)
-    bootstrap = _bootstrap_value(env, encoder, model, action_count, terminated, bool(transitions))
+        rewards.append(scaled)
+    bootstrap, success_tail, progress_tail = _bootstrap(
+        env, encoder, model, action_count, terminated, bool(transitions)
+    )
+    is_navigation = config.reward_mode == "navigation"
+    nav = env.navigation_episode_stats() if is_navigation else None
+    if is_navigation and transitions:
+        success_targets, progress_targets = navigation_head_targets(
+            [t.components for t in transitions],
+            reached_goal=terminated,
+            gamma=config.gamma,
+            max_shaping_progress=config.reward_config.max_shaping_progress,
+            start_distance=env.navigation_episode_stats().start_distance,
+            success_tail=success_tail,
+            progress_tail=progress_tail,
+        )
+    else:
+        success_targets = [0.0] * len(transitions)
+        progress_targets = [0.0] * len(transitions)
     total = float(sum(rewards))
-    nav = env.navigation_episode_stats() if config.reward_mode == "navigation" else None
     metrics = EpisodeMetrics(total, total, terminated, len(transitions), nav)
-    return _Rollout(transitions, bootstrap, metrics)
+    return _Rollout(transitions, bootstrap, metrics, success_targets, progress_targets)
 
 
-def _bootstrap_value(
+def _bootstrap(
     env: ACEnvironment,
     encoder: StateEncoder,
     model: PolicyValueModel,
     action_count: int,
     terminated: bool,
     stepped: bool,
-) -> float:
-    """Value of the state the episode stopped in: zero at a goal or dead end."""
+) -> tuple[float, float, float]:
+    """Value and head tails of the state the episode stopped in.
+
+    Zero everywhere at a goal or dead end (no future reward); otherwise the
+    reconstructed leaf value plus the two head outputs, so the head return-to-go
+    targets can be seeded past the truncation the same way GAE bootstraps the
+    scalar value.
+    """
     if terminated or not stepped or not any(env.legal_action_mask()):
-        return 0.0
-    return float(model.apply(encoder.encode(env.state), action_count).value)
+        return 0.0, 0.0, 0.0
+    output = model.apply(encoder.encode(env.state), action_count)
+    return env.leaf_value(output), output.success, output.progress
 
 
 def _generalized_advantages(
@@ -221,37 +257,54 @@ def collect_rollouts(
             initializer=_init_rollout_worker,
             initargs=(config, model.to_json(), alpha),
         )
-    scored: list[tuple[_Transition, float, float]] = []
+    scored: list[_Scored] = []
     for rollout in rollouts:
         estimates = _generalized_advantages(rollout, config.gamma, config.ppo_lambda)
-        for transition, (advantage, return_target) in zip(
-            rollout.transitions, estimates, strict=True
+        for transition, (advantage, return_target), success_target, progress_target in zip(
+            rollout.transitions,
+            estimates,
+            rollout.success_targets,
+            rollout.progress_targets,
+            strict=True,
         ):
-            scored.append((transition, advantage, return_target))
+            scored.append(
+                _Scored(transition, advantage, return_target, success_target, progress_target)
+            )
     examples = _normalize_examples(scored)
     return examples, [rollout.metrics for rollout in rollouts]
 
 
-def _normalize_examples(
-    scored: list[tuple[_Transition, float, float]],
-) -> list[PPOExample]:
+@dataclass(frozen=True, slots=True)
+class _Scored:
+    """A transition with its advantage and every value-head return target."""
+
+    transition: _Transition
+    advantage: float
+    return_target: float
+    success_target: float
+    progress_target: float
+
+
+def _normalize_examples(scored: list[_Scored]) -> list[PPOExample]:
     """Standardize advantages across the batch and pack them into examples."""
     if not scored:
         return []
-    advantages = np.asarray([advantage for _, advantage, _ in scored], dtype=np.float64)
+    advantages = np.asarray([item.advantage for item in scored], dtype=np.float64)
     std = float(advantages.std())
     denominator = std if std > 1e-8 else 1.0
     mean = float(advantages.mean())
     return [
         PPOExample(
-            encoding=transition.encoding,
-            legal_mask=transition.legal_mask,
-            action=transition.action,
-            old_log_prob=transition.log_prob,
-            advantage=(advantage - mean) / denominator,
-            return_target=return_target,
+            encoding=item.transition.encoding,
+            legal_mask=item.transition.legal_mask,
+            action=item.transition.action,
+            old_log_prob=item.transition.log_prob,
+            advantage=(item.advantage - mean) / denominator,
+            return_target=item.return_target,
+            success_target=item.success_target,
+            progress_target=item.progress_target,
         )
-        for transition, advantage, return_target in scored
+        for item in scored
     ]
 
 
@@ -309,6 +362,7 @@ class PPOTrainer:
                         value_weight=self.config.value_loss_weight,
                         entropy_weight=self.config.entropy_coef,
                         grad_clip=self.config.grad_clip,
+                        reward_mode=self.config.reward_mode,
                     )
                 )
         return updates
