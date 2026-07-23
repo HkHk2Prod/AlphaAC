@@ -108,6 +108,7 @@ class _SupervisedRun:
             learning_rate=self.config.learning_rate,
             value_loss_weight=self.config.value_loss_weight,
             grad_clip=self.config.grad_clip,
+            warmup_steps=self.config.warmup_steps,
         )
         self.checkpointer = RunCheckpointer(
             self.dirs.run,
