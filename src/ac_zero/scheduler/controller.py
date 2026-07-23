@@ -210,7 +210,8 @@ def run_tick(
     queue, state = snapshot.queue, snapshot.state
     # Before anything else: a global start_fresh_all becomes per-task flags, so the rest
     # of the tick -- including any launch it performs -- sees the queue already expanded.
-    if queue.apply_start_fresh_all():
+    fresh_all = queue.apply_start_fresh_all()
+    if fresh_all:
         log(f"start_fresh_all was set: marking all {len(queue.tasks)} task(s) start_fresh.")
     log(f"state repo: {config.state_repo_id} (base_sha={snapshot.base_sha})")
     log(f"loaded {len(queue.tasks)} task(s); limits={queue.limits}")
@@ -245,16 +246,26 @@ def run_tick(
     # Which trained checkpoints now deserve a benchmark run. Read before selection
     # so a checkpoint that crossed the threshold since the last tick can be
     # dispatched in this one.
-    benchmark_queue = BenchmarkQueue.load(store.backend)
-    scan_for_ready_checkpoints(
-        queue,
-        benchmark_queue,
-        bucket=config.data_bucket,
-        threshold=config.benchmark_metric_threshold,
-        error_reduction=config.benchmark_error_reduction,
-        staleness_days=config.benchmark_staleness_days,
-        log=log,
-    )
+    if fresh_all:
+        # Every queued evaluation, every dispatch record and every ladder rung
+        # describes a lineage that is about to be archived, so start the
+        # evaluation queue over with the models. This tick's scan is skipped
+        # too: the published indices still describe the abandoned runs, so
+        # scanning would only re-queue what was just cleared. The fresh runs
+        # earn their first evaluations again once they publish their own.
+        benchmark_queue = BenchmarkQueue()
+        log("start_fresh_all: benchmark queue cleared (pending, dispatched and ladder).")
+    else:
+        benchmark_queue = BenchmarkQueue.load(store.backend)
+        scan_for_ready_checkpoints(
+            queue,
+            benchmark_queue,
+            bucket=config.data_bucket,
+            threshold=config.benchmark_metric_threshold,
+            error_reduction=config.benchmark_error_reduction,
+            staleness_days=config.benchmark_staleness_days,
+            log=log,
+        )
     log(f"benchmark queue: {len(benchmark_queue.pending)} checkpoint(s) pending evaluation")
 
     if state.scheduler_paused:

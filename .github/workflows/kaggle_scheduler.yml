@@ -2,8 +2,8 @@ name: Kaggle Scheduler
 
 on:
   schedule:
-    # Every 2 hours, offset to :17 to dodge the top-of-hour cron congestion.
-    - cron: "17 */2 * * *"
+    # Hourly, offset to :17 to dodge the top-of-hour cron congestion.
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       task_id:
