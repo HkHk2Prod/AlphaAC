@@ -7,6 +7,7 @@ import pytest
 from ac_zero.cli import main
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.models.registry import create_trainable_model
+from ac_zero.models.trainable import MODEL_FORMAT_VERSION
 from ac_zero.training.checkpointing.checkpointing import CheckpointManager
 from ac_zero.training.logging.callbacks import CallbackManager
 from ac_zero.training.logging.events import TrainingEvent
@@ -779,7 +780,9 @@ def test_warm_start_from_hf_uses_name_and_falls_back(monkeypatch, tmp_path: Path
     def _fake_download(name, dest, *, bucket, missing_ok):  # type: ignore[no-untyped-def]
         calls.append((name, str(dest), bucket, missing_ok))
         Path(dest).parent.mkdir(parents=True, exist_ok=True)
-        Path(dest).write_text("{}", encoding="utf-8")
+        # A checkpoint of the current model format, which the warm start checks for.
+        payload = {"model_state": {"format_version": MODEL_FORMAT_VERSION}}
+        Path(dest).write_text(json.dumps(payload), encoding="utf-8")
         return Path(dest)
 
     monkeypatch.setattr("ac_zero.cli.download_best_checkpoint", _fake_download)

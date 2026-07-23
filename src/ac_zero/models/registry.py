@@ -47,6 +47,17 @@ def create_model(
     return create_trainable_model(normalized, seed=seed, device=device, **hyperparameters)
 
 
+def checkpoint_format_version(payload: dict[str, Any]) -> int:
+    """Model format version of a checkpoint, given either its full bundle payload
+    (with a ``model_state``) or the bare model state itself.
+
+    Checkpoints written before the field existed are v1. Callers use this to compare a
+    stored checkpoint against ``MODEL_FORMAT_VERSION`` without loading its weights.
+    """
+    state = payload.get("model_state", payload)
+    return int(state.get("format_version", 1))
+
+
 def model_from_json(data: dict[str, Any], *, device: str = "cpu") -> TrainablePolicyValueModel:
     """Reconstruct a trainable model and its weights from a checkpoint payload.
 
