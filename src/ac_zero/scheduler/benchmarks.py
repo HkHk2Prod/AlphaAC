@@ -9,14 +9,21 @@ makes it idempotent (a run is keyed by ``(checkpoint_name, run_id)`` and only
 ever enqueued once), and means a checkpoint that crossed the line while the
 scheduler was down is still picked up on the next tick.
 
+Earning one is not enough to earn another: past the first evaluation a name has
+to climb its :mod:`~ac_zero.scheduler.benchmark_ladder` -- close a quarter of its
+remaining error -- before it is worth the run again.
+
 The queue itself is one document on the state repo, written as part of the same
 commit as the rest of the tick::
 
     queue/benchmark_queue.json
-        {"pending": [...], "dispatched": [...]}
+        {"pending": [...], "dispatched": [...], "ladder": {"<name>": {...}}}
 
 ``dispatched`` is the memory that stops a completed evaluation from being
 re-queued forever; it is trimmed, since only the recent tail is ever consulted.
+``ladder`` is keyed by checkpoint name rather than by run and is never trimmed:
+it is what the next run of the same model is measured against, so losing it would
+restart the ladder from scratch.
 """
 
 from __future__ import annotations
@@ -29,6 +36,12 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 from ac_zero.scheduler.backend import StateBackend
+from ac_zero.scheduler.benchmark_ladder import (
+    DEFAULT_ERROR_REDUCTION,
+    DEFAULT_STALENESS_DAYS,
+    LadderRung,
+    evaluation_decision,
+)
 from ac_zero.scheduler.models import Queue, utc_now
 
 BENCHMARK_QUEUE_PATH = "queue/benchmark_queue.json"
@@ -75,6 +88,7 @@ class BenchmarkQueue:
 
     pending: list[PendingEvaluation] = field(default_factory=list)
     dispatched: list[PendingEvaluation] = field(default_factory=list)
+    ladder: dict[str, LadderRung] = field(default_factory=dict)
 
     @classmethod
     def load(cls, backend: StateBackend) -> BenchmarkQueue:
@@ -88,9 +102,15 @@ class BenchmarkQueue:
             return cls()
         if not isinstance(data, dict):
             return cls()
+        rungs = data.get("ladder")
         return cls(
             pending=[PendingEvaluation.from_dict(e) for e in data.get("pending") or []],
             dispatched=[PendingEvaluation.from_dict(e) for e in data.get("dispatched") or []],
+            ladder={
+                str(name): LadderRung.from_dict(rung)
+                for name, rung in (rungs if isinstance(rungs, dict) else {}).items()
+                if isinstance(rung, dict)
+            },
         )
 
     def to_json(self) -> str:
@@ -99,6 +119,7 @@ class BenchmarkQueue:
                 {
                     "pending": [e.to_dict() for e in self.pending],
                     "dispatched": [e.to_dict() for e in self.dispatched],
+                    "ladder": {name: rung.to_dict() for name, rung in self.ladder.items()},
                 },
                 indent=2,
                 sort_keys=True,
@@ -110,14 +131,20 @@ class BenchmarkQueue:
         """Every run this queue has already seen, pending or dispatched."""
         return {e.key for e in self.pending} | {e.key for e in self.dispatched}
 
-    def enqueue(self, entry: PendingEvaluation) -> bool:
-        """Add ``entry`` unless this exact run was queued before. Reports whether it landed."""
+    def enqueue(self, entry: PendingEvaluation, *, format_version: int | None = None) -> bool:
+        """Add ``entry`` unless this exact run was queued before. Reports whether it landed.
+
+        Landing also moves this checkpoint name's ladder up to the entry, so the
+        next run of the same model is measured against what was queued here.
+        """
         if entry.key in self.known_keys():
             return False
+        at = entry.enqueued_at or utc_now()
         self.pending.append(
-            PendingEvaluation(
-                entry.checkpoint_name, entry.run_id, entry.metric, entry.enqueued_at or utc_now()
-            )
+            PendingEvaluation(entry.checkpoint_name, entry.run_id, entry.metric, at)
+        )
+        self.ladder[entry.checkpoint_name] = LadderRung(
+            run_id=entry.run_id, metric=entry.metric, format_version=format_version, at=at
         )
         return True
 
@@ -173,19 +200,26 @@ def scan_for_ready_checkpoints(
     *,
     bucket: str,
     threshold: float = DEFAULT_METRIC_THRESHOLD,
+    error_reduction: float = DEFAULT_ERROR_REDUCTION,
+    staleness_days: float = DEFAULT_STALENESS_DAYS,
     log: Logger = print,
 ) -> list[PendingEvaluation]:
-    """Enqueue every training task's best model that now clears ``threshold``.
+    """Enqueue every training task's best model that clears ``threshold`` and its rung.
 
     The metric read is the one the training pipeline itself selects best models
     by -- the self-play success-rate EMA on navigation runs, the return EMA
     otherwise -- so the gate means "this model got decent at the task it was
     trained on", not a separate notion of accuracy.
 
+    ``threshold`` is the one-time entry price; from then on a name is governed by
+    its :class:`~ac_zero.scheduler.benchmark_ladder.LadderRung`, so a model that
+    trains on without meaningfully improving is not evaluated again.
+
     Bucket reads are best-effort: a missing or unreadable index just means this
     task has nothing to offer yet, never a failed tick.
     """
     added: list[PendingEvaluation] = []
+    now = utc_now()
     for task in queue.tasks:
         if task.mode != "training":
             continue
@@ -206,8 +240,25 @@ def scan_for_ready_checkpoints(
             continue
         if float(metric) < threshold:
             continue
+        # An index entry predating the field describes a checkpoint from before
+        # the format bump, exactly as the best-model promotion reads it.
+        raw_fmt = best.get("format_version", 1)
+        fmt = None if raw_fmt is None else int(raw_fmt)
+        evaluate, reason = evaluation_decision(
+            benchmark_queue.ladder.get(name),
+            metric=float(metric),
+            run_id=str(run_id),
+            format_version=fmt,
+            error_reduction=error_reduction,
+            staleness_days=staleness_days,
+            now=now,
+        )
+        if not evaluate:
+            if reason:
+                log(f"  benchmark-gate {task.id}: {name} held back -- {reason}")
+            continue
         entry = PendingEvaluation(name, str(run_id), float(metric))
-        if benchmark_queue.enqueue(entry):
+        if benchmark_queue.enqueue(entry, format_version=fmt):
             added.append(entry)
-            log(f"  benchmark-gate {task.id}: queued {name} (metric={float(metric):.3f})")
+            log(f"  benchmark-gate {task.id}: queued {name} -- {reason}")
     return added

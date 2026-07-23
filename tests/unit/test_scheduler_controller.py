@@ -412,4 +412,5 @@ def test_the_evaluation_queue_is_written_even_when_nothing_launches(tmp_path: Pa
     assert json.loads(backend.read_text(BENCHMARK_QUEUE_PATH) or "{}") == {
         "pending": [],
         "dispatched": [],
+        "ladder": {},
     }

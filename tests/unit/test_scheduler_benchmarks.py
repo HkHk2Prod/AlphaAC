@@ -39,8 +39,15 @@ def _queue(*tasks: Task) -> Queue:
     return Queue(tasks=list(tasks))
 
 
-def _index(metric: float | None, run_id: str = "run-1") -> dict[str, Any]:
-    return {"name": "n", "best": {"metric": metric, "run_id": run_id}, "runs": []}
+def _index(metric: float | None, run_id: str = "run-1", fmt: int = 1) -> dict[str, Any]:
+    best = {"metric": metric, "run_id": run_id, "format_version": fmt}
+    return {"name": "n", "best": best, "runs": []}
+
+
+def _scan(tasks: Queue, queue: BenchmarkQueue, **kwargs: Any) -> list[PendingEvaluation]:
+    return scan_for_ready_checkpoints(
+        tasks, queue, bucket="b/c", threshold=0.30, log=lambda _: None, **kwargs
+    )
 
 
 def test_a_missing_document_loads_as_an_empty_queue() -> None:
@@ -251,3 +258,99 @@ def test_the_document_is_valid_json_with_both_lists() -> None:
     payload = json.loads(queue.to_json())
     assert payload["pending"] == []
     assert payload["dispatched"][0]["checkpoint_name"] == "model-a"
+
+
+def test_enqueueing_moves_the_models_ladder_rung() -> None:
+    queue = BenchmarkQueue()
+    queue.enqueue(PendingEvaluation("model-a", "run-1", 0.5), format_version=2)
+    rung = queue.ladder["model-a"]
+    assert (rung.run_id, rung.metric, rung.format_version) == ("run-1", 0.5, 2)
+    assert rung.at.endswith("Z")
+
+
+def test_a_rejected_enqueue_leaves_the_rung_alone() -> None:
+    queue = BenchmarkQueue()
+    queue.enqueue(PendingEvaluation("model-a", "run-1", 0.5))
+    queue.enqueue(PendingEvaluation("model-a", "run-1", 0.9))
+    assert queue.ladder["model-a"].metric == 0.5
+
+
+def test_the_ladder_round_trips_through_the_document() -> None:
+    queue = BenchmarkQueue()
+    queue.enqueue(PendingEvaluation("model-a", "run-1", 0.5), format_version=2)
+    restored = BenchmarkQueue.load(MemoryStateBackend({BENCHMARK_QUEUE_PATH: queue.to_json()}))
+    assert restored.ladder["model-a"].metric == 0.5
+    assert restored.ladder["model-a"].format_version == 2
+
+
+def test_a_document_with_a_malformed_ladder_loads_without_one() -> None:
+    raw = json.dumps({"pending": [], "dispatched": [], "ladder": ["not", "a", "map"]})
+    assert BenchmarkQueue.load(MemoryStateBackend({BENCHMARK_QUEUE_PATH: raw})).ladder == {}
+
+
+def test_the_gate_records_a_rung_for_what_it_queues(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(benchmarks_module, "_read_index", lambda name, *, bucket: _index(0.42))
+    queue = BenchmarkQueue()
+    added = _scan(_queue(_training_task()), queue)
+    assert queue.ladder[added[0].checkpoint_name].metric == 0.42
+
+
+def test_a_later_run_that_has_not_cleared_the_rung_is_not_evaluated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indexes = iter([_index(0.35, "run-1"), _index(0.49, "run-2")])
+    monkeypatch.setattr(benchmarks_module, "_read_index", lambda name, *, bucket: next(indexes))
+    queue, tasks = BenchmarkQueue(), _queue(_training_task())
+    assert len(_scan(tasks, queue)) == 1
+    assert _scan(tasks, queue) == []  # 0.49 is short of the 0.5125 rung
+
+
+def test_a_later_run_that_clears_the_rung_is_evaluated(monkeypatch: pytest.MonkeyPatch) -> None:
+    indexes = iter([_index(0.35, "run-1"), _index(0.52, "run-2")])
+    monkeypatch.setattr(benchmarks_module, "_read_index", lambda name, *, bucket: next(indexes))
+    queue, tasks = BenchmarkQueue(), _queue(_training_task())
+    _scan(tasks, queue)
+    added = _scan(tasks, queue)
+    assert [e.metric for e in added] == [0.52]
+    assert queue.ladder[added[0].checkpoint_name].run_id == "run-2"
+
+
+def test_a_format_bump_re_evaluates_a_model_below_its_rung(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indexes = iter([_index(0.80, "run-1", fmt=2), _index(0.40, "run-2", fmt=3)])
+    monkeypatch.setattr(benchmarks_module, "_read_index", lambda name, *, bucket: next(indexes))
+    queue, tasks = BenchmarkQueue(), _queue(_training_task())
+    _scan(tasks, queue)
+    assert [e.metric for e in _scan(tasks, queue)] == [0.40]
+
+
+def test_a_held_back_model_is_logged_with_its_rung(monkeypatch: pytest.MonkeyPatch) -> None:
+    indexes = iter([_index(0.35, "run-1"), _index(0.49, "run-2")])
+    monkeypatch.setattr(benchmarks_module, "_read_index", lambda name, *, bucket: next(indexes))
+    logged: list[str] = []
+    queue, tasks = BenchmarkQueue(), _queue(_training_task())
+    scan_for_ready_checkpoints(tasks, queue, bucket="b/c", threshold=0.3, log=lambda _: None)
+    scan_for_ready_checkpoints(tasks, queue, bucket="b/c", threshold=0.3, log=logged.append)
+    assert any("held back" in line and "0.512" in line for line in logged)
+
+
+def test_a_run_still_holding_its_own_rung_is_logged_about_every_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(benchmarks_module, "_read_index", lambda name, *, bucket: _index(0.42))
+    logged: list[str] = []
+    queue, tasks = BenchmarkQueue(), _queue(_training_task())
+    scan_for_ready_checkpoints(tasks, queue, bucket="b/c", threshold=0.3, log=lambda _: None)
+    scan_for_ready_checkpoints(tasks, queue, bucket="b/c", threshold=0.3, log=logged.append)
+    assert logged == []
+
+
+def test_a_wider_error_reduction_holds_a_model_back_longer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indexes = iter([_index(0.35, "run-1"), _index(0.60, "run-2")])
+    monkeypatch.setattr(benchmarks_module, "_read_index", lambda name, *, bucket: next(indexes))
+    queue, tasks = BenchmarkQueue(), _queue(_training_task())
+    _scan(tasks, queue, error_reduction=0.5)
+    assert _scan(tasks, queue, error_reduction=0.5) == []

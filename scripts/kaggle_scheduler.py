@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from ac_zero.datasets.hub import DEFAULT_BUCKET
 from ac_zero.scheduler.backend import make_state_backend
+from ac_zero.scheduler.benchmark_ladder import DEFAULT_ERROR_REDUCTION, DEFAULT_STALENESS_DAYS
 from ac_zero.scheduler.benchmarks import DEFAULT_METRIC_THRESHOLD
 from ac_zero.scheduler.controller import SchedulerConfig, run_tick
 from ac_zero.scheduler.kaggle import KaggleClient
@@ -111,10 +112,13 @@ def main(argv: list[str] | None = None) -> int:
         ),
         data_bucket=os.environ.get("HF_DATA_BUCKET", "").strip() or DEFAULT_BUCKET,
         # Self-play success rate a training run must reach before its best model is
-        # queued for a benchmark evaluation.
+        # queued for a benchmark evaluation, and -- past that first one -- how much
+        # of its remaining error it has to close to earn the next.
         benchmark_metric_threshold=_env_float(
             "BENCHMARK_METRIC_THRESHOLD", DEFAULT_METRIC_THRESHOLD
         ),
+        benchmark_error_reduction=_env_float("BENCHMARK_ERROR_REDUCTION", DEFAULT_ERROR_REDUCTION),
+        benchmark_staleness_days=_env_float("BENCHMARK_STALENESS_DAYS", DEFAULT_STALENESS_DAYS),
     )
 
     store = StateStore(make_state_backend(repo_id, token=token, repo_type=repo_type))

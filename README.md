@@ -246,6 +246,20 @@ self-play success-rate EMA, the same number best models are selected by. The
 scheduler pops the highest-metric checkpoint and hands it to the run. A given
 `(checkpoint_name, run_id)` is only ever evaluated once.
 
+That threshold is the entry price, paid once. After it, a benchmark run is
+expensive enough that a model has to have *meaningfully* improved to earn
+another: it must close `BENCHMARK_ERROR_REDUCTION` (default 0.25) of its
+remaining error, so a first evaluation at 0.35 puts the next rung at 0.51, then
+0.63, 0.73, 0.79 — geometric in error, which is uniform in `log(1 - accuracy)`,
+so every evaluation buys the same amount of evidence. The rung per checkpoint
+name is kept in `ladder` in `queue/benchmark_queue.json`. Three cases sidestep
+it, so the ladder can never quietly end the evaluations: a metric that is not an
+accuracy (the return EMA off navigation runs) has no ladder and keeps the
+one-evaluation-per-run behaviour; a model-format bump resets the rung, exactly as
+best-model promotion does; and a rung goes stale after
+`BENCHMARK_STALENESS_DAYS` (default 14), so a metric that plateaus just under the
+next rung still gets a periodic data point.
+
 Run the config-driven policy/value training pipeline:
 
 ```bash
