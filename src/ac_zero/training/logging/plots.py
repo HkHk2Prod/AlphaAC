@@ -8,13 +8,21 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class PlotSpec:
-    """One figure: a set of metric series drawn against a shared x-axis."""
+    """One figure: a set of metric series drawn against a shared x-axis.
+
+    ``right_fields`` names series that belong on a secondary y-axis drawn on the
+    right. Each axis autoscales independently, so series whose magnitudes differ
+    by an order of magnitude -- self-play's fractional accuracy against its much
+    larger mean return -- both fill the plot area and stay legible together.
+    """
 
     filename: str
     title: str
     x_field: str
     y_fields: tuple[str, ...]
     ylabel: str = "value"
+    right_fields: tuple[str, ...] = ()
+    right_ylabel: str = "value"
 
 
 # The figures rendered after a run. The fields match the per-update metric rows
@@ -37,7 +45,12 @@ TRAINING_PLOTS: tuple[PlotSpec, ...] = (
         "selfplay_progress.png",
         "Self-play progress",
         "optimizer_step",
-        ("mean_return", "success_rate"),
+        # Accuracy is fractional; mean return runs an order of magnitude larger, so
+        # they get separate axes -- accuracy on the left, mean return on the right.
+        ("success_rate",),
+        ylabel="success_rate",
+        right_fields=("mean_return",),
+        right_ylabel="mean_return",
     ),
     PlotSpec(
         "shaping_alpha.png",
@@ -91,19 +104,56 @@ def render_training_plots(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     for spec in specs:
         series = _numeric_series(rows, spec)
         if not series:
             continue
         xs = [_as_float(row.get(spec.x_field, index)) for index, row in enumerate(rows)]
         figure, axes = plt.subplots(figsize=(8, 4.5))
-        for name, values in series.items():
-            axes.plot(xs[: len(values)], values, marker="o", markersize=3, label=name)
+        left_names = [name for name in spec.y_fields if name in series]
+        right_names = [name for name in spec.right_fields if name in series]
+
+        handles = []
+        # Right-axis series take the first colours of the cycle, left-axis the rest,
+        # so on the self-play figure mean return is blue and success rate orange.
+        for offset, name in enumerate(left_names, start=len(right_names)):
+            values = series[name]
+            (line,) = axes.plot(
+                xs[: len(values)],
+                values,
+                marker="o",
+                markersize=3,
+                color=color_cycle[offset % len(color_cycle)],
+                label=name,
+            )
+            handles.append(line)
+        axes.set_ylabel(spec.ylabel)
+        _tint_axis(axes, "left", handles[:1] if len(left_names) == 1 else [])
+
+        if right_names:
+            right_ax = axes.twinx()
+            for offset, name in enumerate(right_names):
+                values = series[name]
+                (line,) = right_ax.plot(
+                    xs[: len(values)],
+                    values,
+                    marker="o",
+                    markersize=3,
+                    color=color_cycle[offset % len(color_cycle)],
+                    label=name,
+                )
+                handles.append(line)
+            right_ax.set_ylabel(spec.right_ylabel)
+            # A faint reference line at mean return zero: the sign flip that separates
+            # runs that lose reward on average from those that gain it.
+            right_ax.axhline(0.0, color="#404040", linewidth=0.8, alpha=0.4, zorder=0)
+            _tint_axis(right_ax, "right", handles[-1:] if len(right_names) == 1 else [])
+
         axes.set_title(spec.title)
         axes.set_xlabel(spec.x_field)
-        axes.set_ylabel(spec.ylabel)
         axes.grid(True, alpha=0.3)
-        axes.legend()
+        axes.legend(handles=handles, labels=[line.get_label() for line in handles])
         figure.tight_layout()
         path = out / spec.filename
         figure.savefig(path, dpi=120)
@@ -112,10 +162,25 @@ def render_training_plots(
     return written
 
 
+def _tint_axis(axis: Any, side: str, lines: Sequence[Any]) -> None:
+    """Colour an axis's label and ticks to match its curve.
+
+    Only applied when the axis carries a single series: on a dual-scale figure that
+    is what tells the reader which curve each scale belongs to. With two or more
+    series sharing the axis there is no one colour to use, so it is left default.
+    """
+    if not lines:
+        return
+    color = lines[0].get_color()
+    axis.yaxis.label.set_color(color)
+    axis.tick_params(axis="y", colors=color)
+    axis.spines[side].set_color(color)
+
+
 def _numeric_series(rows: Sequence[dict[str, Any]], spec: PlotSpec) -> dict[str, list[float]]:
     """Extract each plotted field's numeric values, dropping empty series."""
     series: dict[str, list[float]] = {}
-    for name in spec.y_fields:
+    for name in (*spec.y_fields, *spec.right_fields):
         values = [_as_float(row[name]) for row in rows if _is_number(row.get(name))]
         if values:
             series[name] = values
