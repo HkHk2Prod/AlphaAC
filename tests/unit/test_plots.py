@@ -69,6 +69,23 @@ def test_render_training_plots_draws_the_supervised_validation_curves(tmp_path: 
         assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
+def test_render_training_plots_draws_dual_axis_series(tmp_path: Path) -> None:
+    # A spec with right_fields draws those series on a secondary right-hand axis
+    # that autoscales independently of the left, and the legend carries both.
+    spec = PlotSpec(
+        "dual.png",
+        "Dual",
+        "optimizer_step",
+        ("success_rate",),
+        ylabel="accuracy",
+        right_fields=("mean_return",),
+        right_ylabel="mean return",
+    )
+    paths = render_training_plots(_ROWS, tmp_path, specs=(spec,))
+    assert [path.name for path in paths] == ["dual.png"]
+    assert paths[0].read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 def test_render_training_plots_handles_no_rows(tmp_path: Path) -> None:
     assert render_training_plots([], tmp_path) == []
     assert list(tmp_path.iterdir()) == []
