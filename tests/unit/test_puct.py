@@ -1,12 +1,14 @@
+import numpy as np
 import pytest
 
 from ac_zero.datasets.generator import generate_solvable
 from ac_zero.encoding.padded import StateEncoder
 from ac_zero.environment.env import ACEnvironment, ACEnvironmentConfig
 from ac_zero.environment.navigation_reward import RewardConfig
+from ac_zero.models.base import PolicyValueOutput
 from ac_zero.models.registry import create_trainable_model
 from ac_zero.moves.universal import moveset_catalog
-from ac_zero.search.puct import PUCTMCTS, PUCTConfig
+from ac_zero.search.puct import PUCTMCTS, PUCTConfig, _MinMaxStats
 
 
 def _mcts(simulations=48):
@@ -87,6 +89,68 @@ def test_the_move_after_a_search_is_scored_from_the_agents_own_position() -> Non
     assert components.reward_shaping == pytest.approx(0.5 * (2 - components.distance_after))
     # And the revisit fee is charged for nodes the agent visited, not the search.
     assert components.reward_revisit_fee == 0.0
+
+
+class _PeakedModel:
+    """A stub model that puts almost all prior mass on one action."""
+
+    def __init__(self, favoured: int, actions: int) -> None:
+        self._favoured = favoured
+        self._actions = actions
+
+    def apply(self, encoding, action_count):  # type: ignore[no-untyped-def]
+        logits = np.full(action_count, -10.0)
+        logits[self._favoured] = 10.0
+        return PolicyValueOutput(logits=logits, value=0.0, success=0.0, progress=0.0)
+
+
+def test_min_max_stats_normalizes_only_once_a_range_exists() -> None:
+    bounds = _MinMaxStats()
+    assert bounds.normalize(7.0) == 7.0  # nothing seen: identity, not a divide by zero
+    bounds.update(3.0)
+    assert bounds.normalize(3.0) == 3.0  # a single value is still no range
+    bounds.update(-1.0)
+    assert bounds.normalize(-1.0) == 0.0
+    assert bounds.normalize(3.0) == 1.0
+    assert bounds.normalize(1.0) == pytest.approx(0.5)
+
+
+def test_the_first_simulation_follows_the_prior_not_the_action_order() -> None:
+    """With `sqrt(total)` every score is 0 before any visit, so index order decided it.
+
+    That threw away the policy on the first simulation of every search -- and on a
+    warm-started run the policy is the most reliable thing the search has.
+    """
+    instance = generate_solvable(rank=2, depth=2, seed=2)
+    env = ACEnvironment(instance.presentation, ACEnvironmentConfig(max_moves=8), StateEncoder(16))
+    mask = env.legal_action_mask()
+    favoured = max(idx for idx, legal in enumerate(mask) if legal)  # not index 0
+
+    stats = PUCTMCTS(
+        _PeakedModel(favoured, len(env.catalog)), StateEncoder(16), PUCTConfig(simulations=1)
+    ).search(env)
+
+    assert sum(stats.visit_counts) == 1
+    assert stats.visit_counts[favoured] == 1
+
+
+def test_selection_is_invariant_to_an_affine_rescale_of_the_rewards() -> None:
+    """Normalized values make `c_puct` mean the same thing at any reward scale.
+
+    Unnormalized, a mean action value spanning tens swamps a prior term bounded by
+    `c_puct`, and the search degenerates to greedy on one-sample estimates.
+    """
+    instance = generate_solvable(rank=2, depth=2, seed=2)
+
+    def counts(goal_reward: float) -> tuple[int, ...]:
+        env = ACEnvironment(
+            instance.presentation,
+            ACEnvironmentConfig(max_moves=8, goal_reward=goal_reward),
+            StateEncoder(16),
+        )
+        return _mcts(simulations=32).search(env).visit_counts
+
+    assert counts(1.0) == counts(100.0)
 
 
 def test_search_is_deterministic() -> None:

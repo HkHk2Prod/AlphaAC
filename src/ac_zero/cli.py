@@ -63,6 +63,7 @@ from ac_zero.training.checkpointing.hub_checkpoints import (
     PeriodicCheckpointUploader,
     archive_checkpoint_lineage,
     download_best_checkpoint,
+    download_latest_checkpoint,
 )
 from ac_zero.training.logging.callbacks import CallbackManager, default_training_callbacks
 from ac_zero.training.logging.events import Verbosity
@@ -690,11 +691,20 @@ def _warm_start_from_hf(
     *,
     start_fresh: bool = False,
 ) -> TrainingPipelineConfig:
-    """Pull this run's best model from the HF bucket and warm-start from it.
+    """Pull this run's own last checkpoint from the HF bucket and continue from it.
 
     The lineage name is `config.checkpoint_name` when set, else the identity name
     the run would upload under, so download and upload address the same bucket
-    prefix. When this task has no checkpoint of its own yet -- its first run -- and it
+    prefix.
+
+    `latest.json` is what a run resumes from -- where the previous run of this task
+    actually stopped -- falling back to `best.json` for a lineage that predates
+    `latest` being published. Resuming from `best` alone made the lineage a fixed
+    point: a run that never beat the recorded best left it unchanged, so the next
+    run reloaded the same weights and, with the same episode seeds, replayed the
+    same session. `best.json` remains what is published and benchmarked.
+
+    When this task has no checkpoint of its own yet -- its first run -- and it
     names a `pretrained_checkpoint`, seed from that supervised-pretrained model instead;
     every later run finds this task's own checkpoint above, so the RL checkpoint always
     wins once it exists and the pretrained model only ever seeds run one. With neither on
@@ -715,10 +725,20 @@ def _warm_start_from_hf(
             {"name": name, "files": moved, "archive": f"{ARCHIVE_PREFIX}/{name}/{stamp}/"},
         )
     reporter.progress(
-        "checkpoint", "pulling best checkpoint from bucket", {"bucket": bucket, "name": name}
+        "checkpoint",
+        "pulling this lineage's checkpoint from bucket",
+        {"bucket": bucket, "name": name},
     )
     dest = Path(config.run_directory) / "warm_start.json"
-    path = download_best_checkpoint(name, dest, bucket=bucket, missing_ok=True)
+    path = download_latest_checkpoint(name, dest, bucket=bucket, missing_ok=True)
+    if path is None:
+        path = download_best_checkpoint(name, dest, bucket=bucket, missing_ok=True)
+        if path is not None:
+            reporter.progress(
+                "checkpoint",
+                "no latest.json for this lineage; resuming from its best model",
+                {"name": name},
+            )
     if path is not None:
         _reject_stale_checkpoint(
             path, name, f"re-run this task with --start-fresh to archive {name!r} and start over"

@@ -39,12 +39,19 @@ class CheckpointBundle:
     ``best`` tracks the highest metric handed to :meth:`save_checkpoint`; the best
     model's weights are written the moment that metric improves, so an early stop
     still leaves the best-so-far model on disk.
+
+    ``best_metric`` seeds that bar. A resumed run passes the metric of the
+    checkpoint it warm-started from, because the alternative -- starting at
+    ``None`` -- makes the run's *first* checkpoint win unconditionally, and on a
+    metric that then never improves (a navigation run stuck at zero success) the
+    bundle's best stays frozen at it for the rest of the session. Every session
+    would publish its first few iterations and discard the ten hours after them.
     """
 
-    def __init__(self, directory: str | Path) -> None:
+    def __init__(self, directory: str | Path, *, best_metric: float | None = None) -> None:
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
-        self.best_metric: float | None = None
+        self.best_metric = best_metric
 
     def save_checkpoint(self, payload: dict[str, Any], *, metric: float | None) -> bool:
         """Write ``latest.json``; also write ``best.json`` when ``metric`` improves.

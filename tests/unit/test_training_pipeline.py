@@ -32,6 +32,19 @@ class _CapturingSink:
         pass
 
 
+def _self_play_iterations(sink: _CapturingSink) -> list[int]:
+    """The iteration numbers of the per-iteration self-play events, in order.
+
+    The ``self_play`` phase also carries the one-off worker-pool line, which
+    reports no iteration; only the per-iteration events are wanted here.
+    """
+    return [
+        int(event.metrics["iteration"])
+        for event in sink.events
+        if event.phase == "self_play" and "iteration" in event.metrics
+    ]
+
+
 def test_training_pipeline_opens_with_full_task_description(tmp_path: Path) -> None:
     config = TrainingPipelineConfig(
         scramble_depth=1,
@@ -175,6 +188,76 @@ def test_training_pipeline_writes_bundle_and_warm_starts(tmp_path: Path, capsys)
     # The warm start is announced in the run log with its provenance.
     out = capsys.readouterr().out
     assert f"[warm-start] initialized model from {bundle / 'best.json'}" in out
+
+
+def test_a_resumed_run_continues_the_iteration_count_and_its_episode_seeds(
+    tmp_path: Path,
+) -> None:
+    """Restarting the count at 1 would replay run one's self-play problems forever.
+
+    Episode seeds are `seed + iteration * 10_000 + index`, so the iteration number
+    is what makes each run of a lineage draw different instances. It has to survive
+    the checkpoint, or every scheduled relaunch of a task is the same run again.
+    """
+    base = dict(
+        scramble_depth=1,
+        unknown_distance_max_moves=4,
+        model="residual_mlp",
+        mcts_simulations=4,
+        iterations=2,
+        episodes_per_iteration=2,
+        optimizer_updates=2,
+        batch_size=2,
+    )
+    first = TrainingPipelineConfig(run_directory=str(tmp_path / "run1"), **base)
+    first_summary = run_training_pipeline(first, seed=3)
+    resume_from = Path(first_summary.checkpoint_bundle_dir) / "latest.json"
+    assert json.loads(resume_from.read_text())["iteration"] == 2
+
+    sink = _CapturingSink()
+    second = TrainingPipelineConfig(
+        run_directory=str(tmp_path / "run2"), warm_start=str(resume_from), **base
+    )
+    second_summary = run_training_pipeline(second, seed=3, callbacks=CallbackManager((sink,)))
+
+    assert sink.events[0].metrics["start_iteration"] == 2
+    assert _self_play_iterations(sink) == [3, 4]  # continues, rather than replaying 1 and 2
+    assert second_summary.iterations == 4
+    resumed = Path(second_summary.checkpoint_bundle_dir) / "latest.json"
+    assert json.loads(resumed.read_text())["iteration"] == 4  # the next run picks up here
+
+    # A checkpoint from another backend does *not* continue the count: the
+    # supervised-pretrained model an RL task seeds its first run from counts
+    # epochs over a labelled dataset, not self-play iterations.
+    payload = json.loads(resume_from.read_text())
+    payload["config"]["agent"] = "supervised"
+    pretrained = tmp_path / "pretrained.json"
+    pretrained.write_text(json.dumps(payload), encoding="utf-8")
+    fresh = _CapturingSink()
+    third = TrainingPipelineConfig(
+        run_directory=str(tmp_path / "run3"), warm_start=str(pretrained), **base
+    )
+    run_training_pipeline(third, seed=3, callbacks=CallbackManager((fresh,)))
+    assert fresh.events[0].metrics["start_iteration"] == 0
+
+
+def test_a_scratch_run_still_numbers_its_iterations_from_one(tmp_path: Path) -> None:
+    sink = _CapturingSink()
+    config = TrainingPipelineConfig(
+        scramble_depth=1,
+        unknown_distance_max_moves=4,
+        model="residual_mlp",
+        mcts_simulations=4,
+        iterations=2,
+        episodes_per_iteration=2,
+        optimizer_updates=2,
+        batch_size=2,
+        run_directory=str(tmp_path / "run"),
+    )
+    run_training_pipeline(config, seed=3, callbacks=CallbackManager((sink,)))
+
+    assert sink.events[0].metrics["start_iteration"] == 0
+    assert _self_play_iterations(sink) == [1, 2]
 
 
 def test_config_reads_warm_start_and_checkpoint_name_from_mapping() -> None:
@@ -785,10 +868,10 @@ def test_warm_start_from_hf_uses_name_and_falls_back(monkeypatch, tmp_path: Path
         Path(dest).write_text(json.dumps(payload), encoding="utf-8")
         return Path(dest)
 
-    monkeypatch.setattr("ac_zero.cli.download_best_checkpoint", _fake_download)
+    monkeypatch.setattr("ac_zero.cli.download_latest_checkpoint", _fake_download)
 
     # An explicit checkpoint name addresses that lineage; the model warm-starts
-    # from the downloaded best.json under the run directory.
+    # from the downloaded latest.json under the run directory.
     named = TrainingPipelineConfig(run_directory=str(tmp_path / "run"), checkpoint_name="mine")
     out = _warm_start_from_hf(named, "ns/bucket", reporter)
     dest = str(tmp_path / "run" / "warm_start.json")
@@ -801,11 +884,14 @@ def test_warm_start_from_hf_uses_name_and_falls_back(monkeypatch, tmp_path: Path
     _warm_start_from_hf(unnamed, "ns/bucket", reporter)
     assert calls[0][0] == derive_checkpoint_name(unnamed)
 
-    # No checkpoint on the bucket: config is returned unchanged (train from scratch).
-    monkeypatch.setattr(
-        "ac_zero.cli.download_best_checkpoint",
-        lambda *a, **k: None,  # type: ignore[no-untyped-def]
-    )
+    # No checkpoint on the bucket at all: config is returned unchanged (train from
+    # scratch). Both sinks must be empty -- `latest` is what a resume reads, `best`
+    # the fallback for a lineage written before `latest` was published.
+    for symbol in ("download_latest_checkpoint", "download_best_checkpoint"):
+        monkeypatch.setattr(
+            f"ac_zero.cli.{symbol}",
+            lambda *a, **k: None,  # type: ignore[no-untyped-def]
+        )
     result = _warm_start_from_hf(named, "ns/bucket", reporter)
     assert result.warm_start is None
     reporter.close()

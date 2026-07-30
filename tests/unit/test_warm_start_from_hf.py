@@ -1,9 +1,10 @@
 """The first-run-vs-follow-up precedence of `_warm_start_from_hf`.
 
-The RL checkpoint of a task always wins once it exists; the supervised-pretrained
-checkpoint only ever seeds the task's very first run; with neither on the bucket the run
-trains from scratch. The decision hinges entirely on which `download_best_checkpoint`
-returns a path, so the network call is stubbed to script each case.
+The RL checkpoint of a task always wins once it exists -- its `latest.json`, falling
+back to `best.json` for a lineage written before `latest` was published; the
+supervised-pretrained checkpoint only ever seeds the task's very first run; with
+neither on the bucket the run trains from scratch. The decision hinges entirely on
+which download returns a path, so both network calls are stubbed to script each case.
 """
 
 from __future__ import annotations
@@ -29,24 +30,34 @@ def _config(tmp_path: Path, **overrides: object) -> TrainingPipelineConfig:
 
 
 def _stub_downloads(
-    monkeypatch, present: set[str], format_version: int = MODEL_FORMAT_VERSION
+    monkeypatch,
+    present: set[str],
+    format_version: int = MODEL_FORMAT_VERSION,
+    latest: set[str] | None = None,
 ) -> None:
-    """Make `download_best_checkpoint` return a written file for names in `present`.
+    """Make both checkpoint downloads return a written file for the named lineages.
 
-    The file carries a model state of `format_version`, which the warm start checks
-    before accepting the checkpoint.
+    `present` holds the names with a `best.json`; `latest` those with a
+    `latest.json`, defaulting to the same set -- a lineage that has checkpointed at
+    all has both. The file records which of the two it came from and carries a model
+    state of `format_version`, which the warm start checks before accepting it.
     """
+    has_latest = present if latest is None else latest
 
-    def fake(name, local_path, *, bucket, missing_ok):  # type: ignore[no-untyped-def]
-        if name not in present:
-            return None
-        dest = Path(local_path)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"model_state": {"format_version": format_version}}
-        dest.write_text(json.dumps(payload), encoding="utf-8")
-        return dest
+    def _fake(names: set[str], source: str):  # type: ignore[no-untyped-def]
+        def fake(name, local_path, *, bucket, missing_ok):  # type: ignore[no-untyped-def]
+            if name not in names:
+                return None
+            dest = Path(local_path)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            payload = {"source": source, "model_state": {"format_version": format_version}}
+            dest.write_text(json.dumps(payload), encoding="utf-8")
+            return dest
 
-    monkeypatch.setattr(cli, "download_best_checkpoint", fake)
+        return fake
+
+    monkeypatch.setattr(cli, "download_best_checkpoint", _fake(present, "best"))
+    monkeypatch.setattr(cli, "download_latest_checkpoint", _fake(has_latest, "latest"))
 
 
 def _stub_archive(monkeypatch, present: set[str]) -> list[tuple[str, str]]:
@@ -152,3 +163,36 @@ def test_without_a_pretrained_name_the_first_run_is_from_scratch(
     _stub_downloads(monkeypatch, set())
     result = cli._warm_start_from_hf(config, "bucket", CliReporter("train", tmp_path))
     assert result.warm_start is None
+
+
+def test_a_resumed_run_continues_from_latest_not_best(tmp_path: Path, monkeypatch) -> None:
+    """`best.json` is a fixed point: a run that never beats it would reload it forever."""
+    config = _config(tmp_path)
+    _stub_downloads(monkeypatch, {"rank2-ppo-transformer"})
+
+    result = cli._warm_start_from_hf(config, "bucket", CliReporter("train", tmp_path))
+
+    assert result.warm_start is not None
+    assert json.loads(Path(result.warm_start).read_text())["source"] == "latest"
+
+
+def test_a_lineage_without_latest_falls_back_to_its_best(tmp_path: Path, monkeypatch) -> None:
+    """Lineages checkpointed before `latest.json` was published still resume."""
+    config = _config(tmp_path)
+    _stub_downloads(monkeypatch, {"rank2-ppo-transformer"}, latest=set())
+
+    result = cli._warm_start_from_hf(config, "bucket", CliReporter("train", tmp_path))
+
+    assert result.warm_start is not None
+    assert json.loads(Path(result.warm_start).read_text())["source"] == "best"
+
+
+def test_the_pretrained_seed_still_comes_from_its_best(tmp_path: Path, monkeypatch) -> None:
+    """The pretrained lineage publishes no RL `latest`; its best is the seed."""
+    config = _config(tmp_path, pretrained_checkpoint="pretrained-transformer")
+    _stub_downloads(monkeypatch, {"pretrained-transformer"})
+
+    result = cli._warm_start_from_hf(config, "bucket", CliReporter("train", tmp_path))
+
+    assert result.warm_start == str(Path(config.run_directory) / "pretrained_warm_start.json")
+    assert json.loads(Path(result.warm_start).read_text())["source"] == "best"

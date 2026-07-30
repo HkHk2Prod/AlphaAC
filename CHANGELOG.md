@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **PUCT normalizes its action values, so the policy prior is no longer numerically
+  invisible.** The score added a raw mean action value to `c_puct * prior * sqrt(N)/(1+n)`.
+  Under the navigation reward `reward_scale` is 1.0 and rewards are trained raw, so the
+  mean spanned tens -- a destination bonus of `L0` against a shaping sum reaching -30 --
+  while the prior term is bounded by `c_puct`. Selection collapsed to greedy on
+  one-sample estimates. Measured against the rank-2 ball's annotations, the search
+  picked a distance-reducing move on 35/60 roots where the pretrained transformer's own
+  prior picked one on 56/60: it broke 21 of the prior's correct moves and fixed none of
+  its mistakes -- and AlphaZero then regressed the policy head onto that. The mean is now
+  min-max normalized into `[0, 1]` against the values seen (the MuZero treatment), an
+  unvisited child takes its parent's value rather than a constant that cannot be right in
+  both reward modes, and the visit total is offset by one inside the square root so the
+  prior participates on the first simulation instead of losing to index order. The same
+  measurement now reads 59/60, and the length-reduction modes are unchanged within noise.
+
+- **A resumed run continues its iteration count, so scheduled reruns stop replaying each
+  other.** Episode seeds are `seed + iteration * 10_000 + index` and the count restarted
+  at 1 every session, so every relaunch of a task drew the same self-play problems in the
+  same order. The count now resumes from the warm-start checkpoint (a checkpoint from
+  another backend -- the supervised-pretrained seed, whose `iteration` counts epochs --
+  does not offset it). The opening event reports `start_iteration`: two consecutive runs
+  reporting the same value is the signature of a lineage replaying itself.
+
+- **A run resumes from `latest.json` rather than `best.json`.** `best` is a fixed point:
+  a session that failed to beat it left it unchanged, so the next session reloaded
+  identical weights and -- with identical episode seeds -- replayed the same run. `latest`
+  always advances; `best` stays what is published and benchmarked, and remains the seed
+  for a task's first run from its pretrained lineage and the fallback for a lineage with
+  no `latest.json`.
+
+- **A run's `best.json` is measured against the checkpoint it resumed from.** The
+  bundle's bar started at `None`, so a run's *first* checkpoint won unconditionally; on a
+  metric that then never improved -- a navigation run pinned at zero success -- `best`
+  stayed frozen there and every later iteration of the session was discarded. The bar is
+  now seeded from the warm-start checkpoint's metric, and the best-model EMAs persist in
+  `learning_state` alongside `alpha` so a resumed run is scored on the same footing as
+  the bar it must clear.
+
 - **A model format bump now always promotes `best.json`.** The bucket replaced a
   lineage's `best.json` only when a run's metric beat the recorded best, and that
   comparison was blind to the model format the two checkpoints were written in. So a

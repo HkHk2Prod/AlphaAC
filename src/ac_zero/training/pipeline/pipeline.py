@@ -90,6 +90,12 @@ class _TrainingRun:
         )
         self._warm_start_payload: dict[str, Any] | None = None
         self.warm_started_from = self._warm_start()
+        # Where this run's iteration numbering picks up: the warm-start checkpoint's
+        # iteration, or 0 from scratch. Episode seeds are derived from the iteration
+        # (see `collect_episodes`), so restarting the count at 1 every session would
+        # hand every run of a task the same self-play problems in the same order --
+        # a resumed lineage replaying its first session forever.
+        self.start_iteration = self._resumed_iteration()
         self.checkpointer = RunCheckpointer(
             self.dirs.run,
             config=config,
@@ -97,12 +103,14 @@ class _TrainingRun:
             run_id=f"{int(time.time())}-{seed}",
             warm_started_from=self.warm_started_from,
             seed=seed,
+            resumed_metric=self._resumed_metric(),
         )
         self.metrics_rows: list[MetricsRow] = []
         self.optimizer_step = 0
-        # Iterations actually run: the wall-clock budget can end the loop early,
-        # so this -- not `config.iterations` -- is what the summary reports.
-        self.completed_iterations = 0
+        # The last iteration reached, counted from the resumed one: the wall-clock
+        # budget can end the loop early, so this -- not `config.iterations` -- is
+        # what the checkpoints and the summary report.
+        self.completed_iterations = self.start_iteration
         self.deadline = (
             None if config.time_limit_s is None else time.monotonic() + config.time_limit_s
         )
@@ -164,13 +172,43 @@ class _TrainingRun:
         print(f"[warm-start] initialized model from {self.config.warm_start}{provenance}")
         return self.config.warm_start
 
-    def _restore_learning_state(self) -> None:
-        """Continue alpha from the warm-start checkpoint when it carried one.
+    def _resumed_iteration(self) -> int:
+        """The iteration the warm-start checkpoint stopped at; 0 from scratch.
 
-        Reads the ``learning_state`` block the checkpointer writes, but only when
-        both the snapshot and the live run run the navigation reward. A checkpoint
-        from before this field existed leaves the fresh updater at its config
-        initial -- the pre-existing behavior.
+        Only a checkpoint from the *same backend* continues the count. The
+        supervised-pretrained model an RL task seeds its first run from counts
+        epochs over a labelled dataset, which is not this run's self-play
+        iteration and would offset its whole axis (and split the ablation twins,
+        whose scratch arm starts at zero). A checkpoint written before this field
+        existed, or one whose value is not a usable count, also resumes from 0 --
+        the pre-existing numbering.
+        """
+        payload = self._warm_start_payload or {}
+        if (payload.get("config") or {}).get("agent") != self.config.agent:
+            return 0
+        iteration = payload.get("iteration")
+        if not isinstance(iteration, int) or iteration < 0:
+            return 0
+        return iteration
+
+    def _resumed_metric(self) -> float | None:
+        """The warm-start checkpoint's metric: the bar this run's best must clear."""
+        payload = self._warm_start_payload or {}
+        metric = payload.get("checkpoint_metric")
+        return float(metric) if isinstance(metric, (int, float)) else None
+
+    def _restore_learning_state(self) -> None:
+        """Continue alpha and the best-model EMAs from the warm-start checkpoint.
+
+        Reads the ``learning_state`` block the checkpointer writes; alpha is
+        restored only when both the snapshot and the live run run the navigation
+        reward. A checkpoint from before either field existed leaves the fresh
+        updater and EMAs at their cold-start values -- the pre-existing behavior.
+
+        The EMAs matter as much as alpha: they are what
+        :meth:`_checkpoint_metric` scores the run by, so a resumed run that
+        re-seeded them from its own first iteration would be measured against a
+        bar (the resumed metric) it had not been scored on the same way.
         """
         payload = self._warm_start_payload
         if not payload:
@@ -180,16 +218,27 @@ class _TrainingRun:
         if alpha_state is not None and self.alpha_updater is not None:
             self.alpha_updater.load_state_dict(alpha_state)
             print(f"[warm-start] resumed shaping alpha at {self.alpha_updater.alpha:.4f}")
+        emas = state.get("metric_emas") or {}
+        # A snapshot taken before the first iteration carries nulls; those leave the
+        # fresh run's EMAs unseeded rather than crashing the resume.
+        if emas.get("return_ema") is not None:
+            self.return_ema = float(emas["return_ema"])
+        if emas.get("success_ema") is not None:
+            self.success_ema = float(emas["success_ema"])
 
     def _learning_state(self) -> dict[str, Any]:
         """The adaptive across-episode state to persist in the next checkpoint.
 
-        Empty for a non-navigation run, which carries no alpha to advance, so
-        :meth:`_restore_learning_state` restores nothing from it.
+        The best-model EMAs always; the navigation shaping alpha when the run has
+        one, so :meth:`_restore_learning_state` leaves a non-navigation run's
+        updater untouched.
         """
-        if self.alpha_updater is None:
-            return {}
-        return {"alpha_updater": self.alpha_updater.state_dict()}
+        state: dict[str, Any] = {
+            "metric_emas": {"return_ema": self.return_ema, "success_ema": self.success_ema}
+        }
+        if self.alpha_updater is not None:
+            state["alpha_updater"] = self.alpha_updater.state_dict()
+        return state
 
     def _record_iteration_stats(self, mean_return: float, success_rate: float) -> None:
         """Track the latest self-play stats and the EMAs used to pick the best model."""
@@ -234,12 +283,16 @@ class _TrainingRun:
             iteration,
             self.alpha_updater,
             episodes,
-            self._progress_level(iteration),
+            self._iteration_level(iteration),
         )
 
     def execute(self) -> TrainingPipelineSummary:
         try:
             description = run_description(self.config, self.seed, self.model.architecture)
+            # Where the iteration numbering (and with it the episode seeds) picks
+            # up. Two consecutive runs of a task reporting the same value is the
+            # signature of a lineage that is replaying itself.
+            description["start_iteration"] = self.start_iteration
             self.manager.emit(0, "start", "starting training pipeline", description)
             self.manager.emit(
                 1, "dataset", "self-play instance source", dict(self._instance_source.describe())
@@ -247,7 +300,8 @@ class _TrainingRun:
             _, worker_message, worker_metrics = describe_worker_pool(self.config.workers)
             self.manager.emit(2, "self_play", worker_message, worker_metrics)
 
-            for iteration in range(1, self.config.iterations + 1):
+            first = self.start_iteration + 1
+            for iteration in range(first, first + self.config.iterations):
                 self._train_iteration(iteration)
                 self.completed_iterations = iteration
                 if self._budget_spent():
@@ -318,6 +372,16 @@ class _TrainingRun:
             return LogLevel.INFO
         return LogLevel.DEBUG
 
+    def _iteration_level(self, iteration: int) -> LogLevel:
+        """Progress level for an iteration, counted from where this run resumed.
+
+        A resumed run's first iteration is 1501, not 1, so the count is offset
+        back to the session -- otherwise every run but the first would open at
+        DEBUG and print nothing until the numbering happened to hit a multiple of
+        ``progress_every``.
+        """
+        return self._progress_level(iteration - self.start_iteration)
+
     def _train_iteration(self, iteration: int) -> None:
         """Run one iteration's self-play, then its optimizer updates and checkpoint."""
         if self.ppo is not None:
@@ -340,7 +404,7 @@ class _TrainingRun:
                 "replay_size": len(self.replay),
                 **self._dynamic_params(),
             },
-            level=self._progress_level(iteration),
+            level=self._iteration_level(iteration),
         )
         self._run_optimizer_updates(iteration, mean_return, success_rate)
         self._checkpoint(iteration)
@@ -367,7 +431,7 @@ class _TrainingRun:
                 "examples": result.example_count,
                 **self._dynamic_params(),
             },
-            level=self._progress_level(iteration),
+            level=self._iteration_level(iteration),
         )
         for stats in result.updates:
             self.optimizer_step += 1

@@ -25,6 +25,9 @@ class TrainingPipelineSummary:
     checkpoint_bundle_dir: str
     run_id: str
     best_return: float | None
+    # The last iteration reached, counted across the whole lineage: a resumed run
+    # continues its warm-start checkpoint's numbering rather than restarting at 1,
+    # so this exceeds the iterations *this* run performed.
     iterations: int
     episodes: int
     replay_size: int

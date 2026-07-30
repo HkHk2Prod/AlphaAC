@@ -324,6 +324,36 @@ def test_warm_start_resumes_alpha_from_checkpoint(tmp_path: Path) -> None:
     assert resumed.alpha_updater.alpha == pytest.approx(0.77)
 
 
+def test_warm_start_resumes_the_best_model_emas_and_their_bar(tmp_path: Path) -> None:
+    """The EMAs that score a run must resume with the metric they are scored against.
+
+    `_checkpoint_metric` is the success EMA; the bundle's bar is the warm-start
+    checkpoint's metric. Re-seeding the EMA from the resumed run's own first
+    iteration would measure it against a bar it was never scored on the same way.
+    """
+    from dataclasses import replace
+
+    from ac_zero.training.pipeline.pipeline import _TrainingRun
+
+    config = _navigation_config(tmp_path, "alphazero")
+    summary = run_training_pipeline(config, seed=5, callbacks=CallbackManager(()))
+    payload = json.loads(Path(summary.checkpoint_path).read_text(encoding="utf-8"))
+    payload["learning_state"]["metric_emas"] = {"return_ema": -1.5, "success_ema": 0.25}
+    payload["checkpoint_metric"] = 0.25
+    warm = tmp_path / "warm_emas.json"
+    warm.write_text(json.dumps(payload), encoding="utf-8")
+
+    resumed = _TrainingRun(
+        replace(config, warm_start=str(warm), run_directory=str(tmp_path / "resumed-emas")),
+        seed=5,
+        callbacks=CallbackManager(()),
+    )
+
+    assert resumed.success_ema == pytest.approx(0.25)
+    assert resumed.return_ema == pytest.approx(-1.5)
+    assert resumed.checkpointer.best_metric == pytest.approx(0.25)
+
+
 def test_fresh_run_without_warm_start_starts_at_config_initials(tmp_path: Path) -> None:
     # The restore path must be a no-op when nothing was warm-started: a fresh run
     # keeps the config's alpha_initial.

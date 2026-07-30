@@ -26,6 +26,21 @@ def test_latest_always_written_best_tracks_improvement(tmp_path: Path) -> None:
     assert bundle.best_metric == 0.5
 
 
+def test_a_seeded_best_metric_is_the_bar_the_run_must_clear(tmp_path: Path) -> None:
+    """A resumed run starts at the metric it warm-started from, not at `None`.
+
+    Starting at `None` let the run's first checkpoint win unconditionally; on a
+    metric that then never improves -- a navigation run pinned at zero success --
+    `best.json` stayed frozen at it and the rest of the session was discarded.
+    """
+    bundle = CheckpointBundle(tmp_path / "b", best_metric=0.4)
+
+    assert bundle.save_checkpoint(_payload(0.1), metric=0.1) is False  # below the bar
+    assert not (tmp_path / "b" / "best.json").exists()
+    assert bundle.save_checkpoint(_payload(0.6), metric=0.6) is True  # clears it
+    assert json.loads((tmp_path / "b" / "best.json").read_text())["checkpoint_metric"] == 0.6
+
+
 def test_none_metric_updates_latest_but_not_best(tmp_path: Path) -> None:
     bundle = CheckpointBundle(tmp_path / "b")
     assert bundle.save_checkpoint(_payload(0.0), metric=None) is False
