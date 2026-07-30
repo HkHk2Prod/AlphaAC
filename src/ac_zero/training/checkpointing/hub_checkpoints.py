@@ -4,7 +4,7 @@ Everything a run produces lives under one prefix keyed by the checkpoint name::
 
     model_checkpoints/<name>/
         best.json                     # best model across every run of this name
-        latest.json                   # most recent run's latest checkpoint
+        latest.json                   # where the last run stopped -- what a resume reads
         index.json                    # rollup: best pointer + one entry per run
         runs/<run_id>.metrics.jsonl   # each run's per-update metrics
         runs/<run_id>.meta.json       # each run's provenance
@@ -78,12 +78,40 @@ def download_best_checkpoint(
     bucket: str = DEFAULT_BUCKET,
     missing_ok: bool = True,
 ) -> Path | None:
-    """Fetch ``best.json`` for ``name`` to ``local_path`` for a warm start.
+    """Fetch ``best.json`` for ``name`` to ``local_path``.
+
+    The seed for a task's *first* run (from its supervised-pretrained lineage) and
+    the fallback for a lineage with no ``latest.json``; a resuming run reads
+    :func:`download_latest_checkpoint` instead.
 
     Returns ``None`` (rather than raising) when no checkpoint exists yet, so a
     first run on a fresh name simply trains from scratch.
     """
     remote = f"{checkpoint_prefix(name)}/{BEST_FILE}"
+    return download_file(remote, local_path, bucket=bucket, missing_ok=missing_ok)
+
+
+def download_latest_checkpoint(
+    name: str,
+    local_path: str | Path,
+    *,
+    bucket: str = DEFAULT_BUCKET,
+    missing_ok: bool = True,
+) -> Path | None:
+    """Fetch ``latest.json`` for ``name`` -- where the last run of it stopped.
+
+    This, not ``best.json``, is what a resuming run continues from. ``best.json``
+    is a *fixed point*: a run that fails to beat it leaves it untouched, so the
+    next run starts from the same weights, and with the same episode seeds it
+    replays the same session indefinitely. ``latest`` always advances, so the
+    lineage does too, while ``best`` stays the model that is published and
+    benchmarked.
+
+    Returns ``None`` when the lineage has no ``latest.json`` -- a first run, or
+    one whose only checkpoint predates this file being uploaded -- so the caller
+    can fall back.
+    """
+    remote = f"{checkpoint_prefix(name)}/{LATEST_FILE}"
     return download_file(remote, local_path, bucket=bucket, missing_ok=missing_ok)
 
 

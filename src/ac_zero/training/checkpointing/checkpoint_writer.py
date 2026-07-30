@@ -39,9 +39,12 @@ class RunCheckpointer:
         run_id: str,
         seed: int,
         warm_started_from: str | None,
+        resumed_metric: float | None = None,
     ) -> None:
         self._legacy = CheckpointManager(run_dir / "checkpoints")
-        self.bundle = CheckpointBundle(run_dir / "model_checkpoint")
+        # `resumed_metric` is the warm-start checkpoint's metric: the bar this run
+        # has to clear before it overwrites `best.json` (see `CheckpointBundle`).
+        self.bundle = CheckpointBundle(run_dir / "model_checkpoint", best_metric=resumed_metric)
         self._config = config
         self.checkpoint_name = checkpoint_name
         self.run_id = run_id

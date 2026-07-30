@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **A resumed run continues its iteration count, so scheduled reruns stop replaying each
+  other.** Episode seeds are `seed + iteration * 10_000 + index` and the count restarted
+  at 1 every session, so every relaunch of a task drew the same self-play problems in the
+  same order. The count now resumes from the warm-start checkpoint (a checkpoint from
+  another backend -- the supervised-pretrained seed, whose `iteration` counts epochs --
+  does not offset it). The opening event reports `start_iteration`: two consecutive runs
+  reporting the same value is the signature of a lineage replaying itself.
+
+- **A run resumes from `latest.json` rather than `best.json`.** `best` is a fixed point:
+  a session that failed to beat it left it unchanged, so the next session reloaded
+  identical weights and -- with identical episode seeds -- replayed the same run. `latest`
+  always advances; `best` stays what is published and benchmarked, and remains the seed
+  for a task's first run from its pretrained lineage and the fallback for a lineage with
+  no `latest.json`.
+
+- **A run's `best.json` is measured against the checkpoint it resumed from.** The
+  bundle's bar started at `None`, so a run's *first* checkpoint won unconditionally; on a
+  metric that then never improved -- a navigation run pinned at zero success -- `best`
+  stayed frozen there and every later iteration of the session was discarded. The bar is
+  now seeded from the warm-start checkpoint's metric, and the best-model EMAs persist in
+  `learning_state` alongside `alpha` so a resumed run is scored on the same footing as
+  the bar it must clear.
+
 - **A model format bump now always promotes `best.json`.** The bucket replaced a
   lineage's `best.json` only when a run's metric beat the recorded best, and that
   comparison was blind to the model format the two checkpoints were written in. So a
