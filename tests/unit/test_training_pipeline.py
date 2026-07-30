@@ -958,6 +958,13 @@ def test_cli_train_download_checkpoint_warm_starts(monkeypatch, tmp_path: Path) 
         Path(dest).write_text(best.read_text(), encoding="utf-8")
         return Path(dest)
 
+    # A lineage written before `latest.json` was published: the resume read finds
+    # nothing and the run falls back to `best.json`. Both sinks are stubbed so the
+    # test never reaches the real bucket (nor the optional `huggingface_hub`).
+    monkeypatch.setattr(
+        "ac_zero.cli.download_latest_checkpoint",
+        lambda *a, **k: None,  # type: ignore[no-untyped-def]
+    )
     monkeypatch.setattr("ac_zero.cli.download_best_checkpoint", _fake_download)
     config_path = tmp_path / "train.yaml"
     config_path.write_text(
