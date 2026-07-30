@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **PUCT normalizes its action values, so the policy prior is no longer numerically
+  invisible.** The score added a raw mean action value to `c_puct * prior * sqrt(N)/(1+n)`.
+  Under the navigation reward `reward_scale` is 1.0 and rewards are trained raw, so the
+  mean spanned tens -- a destination bonus of `L0` against a shaping sum reaching -30 --
+  while the prior term is bounded by `c_puct`. Selection collapsed to greedy on
+  one-sample estimates. Measured against the rank-2 ball's annotations, the search
+  picked a distance-reducing move on 35/60 roots where the pretrained transformer's own
+  prior picked one on 56/60: it broke 21 of the prior's correct moves and fixed none of
+  its mistakes -- and AlphaZero then regressed the policy head onto that. The mean is now
+  min-max normalized into `[0, 1]` against the values seen (the MuZero treatment), an
+  unvisited child takes its parent's value rather than a constant that cannot be right in
+  both reward modes, and the visit total is offset by one inside the square root so the
+  prior participates on the first simulation instead of losing to index order. The same
+  measurement now reads 59/60, and the length-reduction modes are unchanged within noise.
+
 - **A resumed run continues its iteration count, so scheduled reruns stop replaying each
   other.** Episode seeds are `seed + iteration * 10_000 + index` and the count restarted
   at 1 every session, so every relaunch of a task drew the same self-play problems in the
