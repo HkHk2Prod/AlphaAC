@@ -22,6 +22,7 @@ from ac_zero.training.pipeline.pipeline_episodes import (
     build_env,
     episode_distance_and_moves,
     navigation_head_targets,
+    normalize_return,
 )
 from ac_zero.training.ppo.losses import PPOBatchStats, masked_softmax, sample_from_policy
 
@@ -83,11 +84,17 @@ class _Rollout:
 
 @dataclass(frozen=True, slots=True)
 class PPOIterationResult:
-    """What one PPO iteration produced for the training run to log."""
+    """What one PPO iteration produced for the training run to log.
+
+    ``stopped_early`` records that the KL early stop cut the iteration's epochs
+    short, so a run that is repeatedly hitting its trust region says so in the
+    metrics instead of just showing fewer updates than ``ppo_epochs`` implies.
+    """
 
     example_count: int
     episodes: list[EpisodeMetrics] = field(default_factory=list)
     updates: list[PPOBatchStats] = field(default_factory=list)
+    stopped_early: bool = False
 
 
 def _collect_rollout(
@@ -153,7 +160,7 @@ def _collect_rollout(
         success_targets = [0.0] * len(transitions)
         progress_targets = [0.0] * len(transitions)
     total = float(sum(rewards))
-    metrics = EpisodeMetrics(total, total, terminated, len(transitions), nav)
+    metrics = EpisodeMetrics(normalize_return(total, nav), terminated, len(transitions), nav)
     return _Rollout(transitions, bootstrap, metrics, success_targets, progress_targets)
 
 
@@ -337,18 +344,26 @@ class PPOTrainer:
         examples, episodes = collect_rollouts(
             self.config, self.encoder, model, seed, iteration, self.source, alpha
         )
-        updates = self._optimize(model, examples, rng) if examples else []
-        return PPOIterationResult(len(examples), episodes, updates)
+        updates, stopped_early = self._optimize(model, examples, rng) if examples else ([], False)
+        return PPOIterationResult(len(examples), episodes, updates, stopped_early)
 
     def _optimize(
         self,
         model: TrainablePolicyValueModel,
         examples: list[PPOExample],
         rng: random.Random,
-    ) -> list[PPOBatchStats]:
-        """Run epoch-by-minibatch clipped updates, shuffling deterministically."""
+    ) -> tuple[list[PPOBatchStats], bool]:
+        """Run epoch-by-minibatch clipped updates, shuffling deterministically.
+
+        Returns the per-minibatch stats and whether the KL early stop fired. The
+        stop is checked after every minibatch rather than at epoch boundaries: a
+        single update can carry the policy out of the region its rollouts were
+        collected in, and every further update in that epoch is then optimizing a
+        surrogate that no longer bounds the objective.
+        """
         indices = list(range(len(examples)))
         size = max(1, self.config.batch_size)
+        target_kl = self.config.target_kl
         updates: list[PPOBatchStats] = []
         for _ in range(self.config.ppo_epochs):
             rng.shuffle(indices)
@@ -365,4 +380,6 @@ class PPOTrainer:
                         reward_mode=self.config.reward_mode,
                     )
                 )
-        return updates
+                if target_kl > 0.0 and updates[-1].approx_kl > target_kl:
+                    return updates, True
+        return updates, False

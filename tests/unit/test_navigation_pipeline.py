@@ -21,7 +21,12 @@ from ac_zero.training.logging.callbacks import CallbackManager
 from ac_zero.training.logging.events import TrainingEvent
 from ac_zero.training.navigation.navigation_metrics import fold_alpha, navigation_eval_metrics
 from ac_zero.training.pipeline.pipeline import TrainingPipelineConfig, run_training_pipeline
-from ac_zero.training.pipeline.pipeline_episodes import EpisodeMetrics, navigation_head_targets
+from ac_zero.training.pipeline.pipeline_episodes import (
+    EpisodeMetrics,
+    batch_episode_metrics,
+    navigation_head_targets,
+    normalize_return,
+)
 
 _ANNOTATIONS_SCHEMA = "aczero-annotations-v1"
 
@@ -106,12 +111,66 @@ def _episode(progress: float, success: bool, *, start: int = 10) -> EpisodeMetri
         total_reward=5.55 if success else 0.55,
     )
     return EpisodeMetrics(
-        total_return=stats.total_reward,
-        normalized_return=0.5,
+        normalized_return=normalize_return(stats.total_reward, stats),
         success=success,
         moves=3,
         nav=stats,
     )
+
+
+def test_normalize_return_divides_a_navigation_return_by_its_start_distance() -> None:
+    # The terminal bonus *is* L0, so a solve is worth ~1 whatever it started from
+    # and an iteration's mean stops tracking which groups the seeds drew.
+    far = _episode(1.0, True, start=20)
+    near = _episode(1.0, True, start=2)
+    assert far.nav is not None and near.nav is not None
+    assert far.normalized_return == pytest.approx(far.nav.total_reward / 20)
+    assert near.normalized_return == pytest.approx(near.nav.total_reward / 2)
+
+
+def test_normalize_return_passes_a_non_navigation_return_through() -> None:
+    # Off navigation the reward already carries its own 1/initial_length scale.
+    assert normalize_return(1.5, None) == pytest.approx(1.5)
+
+
+def test_normalize_return_survives_a_zero_start_distance() -> None:
+    # A start state already at the destination has L0 = 0; the divisor floors at 1.
+    stats = _episode(0.0, True, start=0).nav
+    assert stats is not None
+    assert normalize_return(4.0, stats) == pytest.approx(4.0)
+
+
+def test_batch_episode_metrics_average_the_batch() -> None:
+    batch = batch_episode_metrics([_episode(0.5, True), _episode(0.1, False)])
+    assert batch.success_rate == pytest.approx(0.5)
+    assert batch.progress_rate == pytest.approx(0.3)
+    assert batch.mean_return == pytest.approx((5.55 + 0.55) / 2 / 10)
+    # The horizon is 3 * start_distance + 6, so the pair is what makes an episode
+    # length auditable after the run.
+    assert batch.start_distance == pytest.approx(10.0)
+    assert batch.moves == pytest.approx(3.0)
+    assert batch.no_start_distance == pytest.approx(0.0)
+
+
+def test_batch_episode_metrics_count_episodes_with_no_start_distance() -> None:
+    # A navigation episode whose start carries no distance loses its destination
+    # bonus and its horizon in silence, so the share of them is reported. The
+    # instance filter should make this impossible, which is exactly why a nonzero
+    # value is worth seeing.
+    batch = batch_episode_metrics([_episode(0.5, True), _episode(0.0, False, start=0)])
+    assert batch.no_start_distance == pytest.approx(0.5)
+
+
+def test_batch_episode_metrics_have_no_distance_series_off_navigation() -> None:
+    # Nothing outside navigation carries the distance stats these come from, so the
+    # series are absent rather than a misleading flat zero. Move count still applies.
+    plain = EpisodeMetrics(normalized_return=1.0, success=True, moves=2)
+    batch = batch_episode_metrics([plain])
+    assert batch.progress_rate is None
+    assert batch.start_distance is None
+    assert batch.no_start_distance is None
+    assert batch.moves == pytest.approx(2.0)
+    assert batch.mean_return == pytest.approx(1.0)
 
 
 def _component(distance_progress: int) -> RewardComponents:
@@ -206,7 +265,7 @@ def test_fold_alpha_folds_every_episode_into_the_emas() -> None:
 
 def test_fold_alpha_ignores_episodes_without_nav_stats() -> None:
     updater = AlphaUpdater(RewardConfig())
-    plain = EpisodeMetrics(total_return=1.0, normalized_return=1.0, success=True, moves=2)
+    plain = EpisodeMetrics(normalized_return=1.0, success=True, moves=2)
     assert fold_alpha(updater, [plain]) == []
     assert updater.alpha == RewardConfig().alpha_initial
 
@@ -233,7 +292,7 @@ def test_navigation_eval_metrics_average_the_batch() -> None:
 
 
 def test_navigation_eval_metrics_empty_without_nav_episodes() -> None:
-    plain = EpisodeMetrics(total_return=1.0, normalized_return=1.0, success=True, moves=2)
+    plain = EpisodeMetrics(normalized_return=1.0, success=True, moves=2)
     assert navigation_eval_metrics([plain]) == {}
 
 
@@ -286,16 +345,21 @@ def test_navigation_pipeline_emits_alpha_and_eval_metrics(tmp_path: Path, agent:
     assert all(len(alphas) == 1 for alphas in per_iteration.values())
 
 
-def test_navigation_run_records_alpha_on_every_metrics_row(tmp_path: Path) -> None:
-    # Alpha is folded into the metrics rows so the rendered plots can trace it; a
-    # non-navigation run carries none and its alpha figure is skipped.
+def test_navigation_run_records_self_play_once_per_iteration(tmp_path: Path) -> None:
+    # Self-play is measured once an iteration, so its series -- alpha, the return,
+    # and the two rates -- land on one row per iteration rather than being repeated
+    # onto every optimizer-step row, which drew the plots as a staircase.
     config = _navigation_config(tmp_path, "alphazero")
     run_training_pipeline(config, seed=5, callbacks=CallbackManager(()))
     rows = [
         json.loads(line)
         for line in (Path(config.run_directory) / "metrics.jsonl").read_text().splitlines()
     ]
-    assert rows and all("alpha" in row for row in rows)
+    self_play = [row for row in rows if "mean_return" in row]
+    assert [row["iteration"] for row in self_play] == list(range(1, config.iterations + 1))
+    assert all({"alpha", "success_rate", "progress_rate"} <= set(row) for row in self_play)
+    # The optimizer rows carry only what an optimizer step measures.
+    assert all("alpha" not in row for row in rows if "optimizer_step" in row)
 
 
 def test_warm_start_resumes_alpha_from_checkpoint(tmp_path: Path) -> None:

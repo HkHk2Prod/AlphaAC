@@ -39,6 +39,7 @@ _TRAINING_GRAPH_METRICS = (
     "episodes",
     "mean_return",
     "success_rate",
+    "progress_rate",
     # Supervised: the per-epoch validation scores, led by the descent accuracy the
     # run selects its best checkpoint on.
     "val_descent_accuracy",

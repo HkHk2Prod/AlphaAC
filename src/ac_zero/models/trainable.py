@@ -88,6 +88,10 @@ class TrainablePolicyValueModel(ABC):
         self._feature_dim = 0
         self._action_count = 0
         self._pending_state: dict[str, Any] | None = None
+        # Built on first use alongside the network, then kept for the run's lifetime
+        # (see `_ensure_optimizer`). Not serialized: a resumed session restarts Adam's
+        # moment estimates even though it continues the weights.
+        self._optimizer: torch.optim.Optimizer | None = None
 
     # -- subclass contract -------------------------------------------------
     @abstractmethod
@@ -247,7 +251,7 @@ class TrainablePolicyValueModel(ABC):
         self.ensure_built(encoded, legal.shape[1])
         assert self._net is not None
         self._net.train()
-        optimizer = torch.optim.SGD(self._net.parameters(), lr=learning_rate)
+        optimizer = self._ensure_optimizer(learning_rate)
         optimizer.zero_grad(set_to_none=True)
 
         logits, value, success, progress = self._net(encoded)
@@ -259,7 +263,8 @@ class TrainablePolicyValueModel(ABC):
 
         log_probs = torch.log_softmax(logits.masked_fill(~legal, float("-inf")), dim=1)
         log_prob = log_probs.gather(1, actions.unsqueeze(1)).squeeze(1)
-        ratio = torch.exp(log_prob - old_log_prob)
+        log_ratio = log_prob - old_log_prob
+        ratio = torch.exp(log_ratio)
         clipped = torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
         surrogate = -torch.minimum(ratio * advantage, clipped * advantage)
         value_loss = self._value_error(
@@ -268,13 +273,22 @@ class TrainablePolicyValueModel(ABC):
         finite = log_probs.nan_to_num(neginf=0.0)
         entropy = -(finite.exp() * finite).sum(dim=1)
         loss = surrogate + value_weight * value_loss - entropy_weight * entropy
-        loss.mean().backward()  # type: ignore[no-untyped-call]
-        self._clip_gradients(grad_clip)
+        self._accumulate_balanced_gradients(
+            (surrogate - entropy_weight * entropy).mean(),
+            (value_weight * value_loss).mean(),
+            grad_clip,
+        )
         optimizer.step()
 
         with torch.no_grad():
             clip_fraction = ((ratio - 1.0).abs() > clip_ratio).float().mean()
-            approx_kl = (old_log_prob - log_prob).mean()
+            # Schulman's k3 estimator. The plain `old_logp - new_logp` mean is
+            # unbiased but high variance and routinely negative on a minibatch,
+            # which is fine to eyeball and useless as the threshold an early stop
+            # trips on. `(r - 1) - log r` is non-negative for every sample and much
+            # steadier, so a value crossing `target_kl` means the policy really did
+            # move rather than that this batch happened to be noisy.
+            approx_kl = ((ratio - 1.0) - log_ratio).mean()
         return PPOBatchStats(
             policy_loss=float(surrogate.mean().item()),
             value_loss=float(value_loss.mean().item()),
@@ -283,6 +297,62 @@ class TrainablePolicyValueModel(ABC):
             clip_fraction=float(clip_fraction.item()),
             approx_kl=float(approx_kl.item()),
         )
+
+    def _ensure_optimizer(self, learning_rate: float) -> torch.optim.Optimizer:
+        """The run's Adam optimizer, created once the lazily built network exists.
+
+        Adam's per-parameter moment estimates are only worth anything if the same
+        optimizer instance spans the whole run. The RL losses used to construct a
+        fresh optimizer for every minibatch, which is harmless for plain SGD --
+        it carries no state -- but would reduce Adam to a permanently
+        bias-corrected first step, throwing away the second-moment scaling that is
+        the reason to use it.
+
+        The rate is reapplied on every call so a learning-rate change between runs
+        takes effect without stranding the accumulated moments.
+        """
+        assert self._net is not None
+        if self._optimizer is None:
+            self._optimizer = torch.optim.Adam(self._net.parameters(), lr=learning_rate)
+        for group in self._optimizer.param_groups:
+            group["lr"] = learning_rate
+        return self._optimizer
+
+    def _accumulate_balanced_gradients(
+        self, policy_term: torch.Tensor, value_term: torch.Tensor, grad_clip: float
+    ) -> None:
+        """Give the policy and value objectives their own gradient budgets, then sum.
+
+        The two heads share a trunk, and under the navigation reward the value
+        term's gradient is far the larger of the pair -- measured at 54 against 2.6
+        on rank-2 rollouts, a 21x imbalance. One global norm clip over their sum is
+        therefore set almost entirely by the value error: the trunk learns the
+        critic's features, and the policy's say in the shared representation is
+        whatever is left. Worse, the clip's scale factor then moves with the value
+        error from minibatch to minibatch, so the policy's effective step size
+        drifts for reasons that have nothing to do with the policy.
+
+        Clipping each term separately and adding the results bounds each objective's
+        contribution at ``grad_clip``, so the ratio between them is fixed by the
+        clip rather than by whatever the critic's error happens to be this batch.
+
+        With clipping disabled this is exactly the old single backward pass: the
+        gradient of a sum is the sum of the gradients.
+        """
+        assert self._net is not None
+        parameters = list(self._net.parameters())
+        self._net.zero_grad(set_to_none=True)
+        policy_term.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+        self._clip_gradients(grad_clip)
+        policy_grads = [None if p.grad is None else p.grad.detach().clone() for p in parameters]
+
+        self._net.zero_grad(set_to_none=True)
+        value_term.backward()  # type: ignore[no-untyped-call]
+        self._clip_gradients(grad_clip)
+        for parameter, policy_grad in zip(parameters, policy_grads, strict=True):
+            if policy_grad is None:
+                continue
+            parameter.grad = policy_grad if parameter.grad is None else parameter.grad + policy_grad
 
     def _clip_gradients(self, grad_clip: float) -> None:
         """Clip the accumulated gradient norm in place; ``0`` disables clipping.
@@ -313,13 +383,32 @@ class TrainablePolicyValueModel(ABC):
 
     # -- serialization -----------------------------------------------------
     def to_json(self) -> dict[str, Any]:
-        state = self._net.state_dict() if self._net is not None else {}
-        parameters = {name: value.detach().cpu().numpy().tolist() for name, value in state.items()}
+        """Serialize the model, including weights staged for a build that has not run.
+
+        A warm-started model has no network yet -- the trunk shape comes from the
+        first real batch -- but it is emphatically not an *untrained* model:
+        :meth:`load_state` has staged the checkpoint's weights for that build.
+        Reporting it as unbuilt shipped rollout workers an empty parameter set, so
+        they sampled from a freshly initialized network while the trainer updated
+        the checkpoint's weights. PPO then scored those actions against log-probs
+        no policy in the run had ever produced, which showed up as a near-total
+        clip fraction on the first iteration of every resumed session. Emitting the
+        staged weights makes a round trip through this method reproduce the model
+        in either state.
+        """
+        if self._net is not None:
+            parameters = {
+                name: value.detach().cpu().numpy().tolist()
+                for name, value in self._net.state_dict().items()
+            }
+        else:
+            # Already JSON-shaped: `load_state` stages what a previous `to_json` wrote.
+            parameters = dict(self._pending_state or {})
         return {
             "architecture": self.architecture,
             "format_version": MODEL_FORMAT_VERSION,
             "hyperparameters": {"seed": self.seed, **self._hp},
-            "built": self._net is not None,
+            "built": bool(parameters),
             "feature_dim": self._feature_dim,
             "action_count": self._action_count,
             "parameters": parameters,

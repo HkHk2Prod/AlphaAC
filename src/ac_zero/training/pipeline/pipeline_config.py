@@ -78,8 +78,8 @@ class TrainingPipelineConfig:
     device: str = "cpu"
     # Supervised stage (ignored by the RL backends). `iterations` counts epochs,
     # `optimizer_updates` the minibatches per epoch, and `batch_size`/`learning_rate`/
-    # `value_loss_weight`/`gamma` carry their usual meanings; the Adam optimizer is
-    # used rather than the RL backends' plain SGD.
+    # `value_loss_weight`/`gamma` carry their usual meanings. It and PPO both train
+    # with Adam; the AlphaZero replay step is the one backend still on plain SGD.
     # The policy target for a group is `softmax(-delta_distance / target_temperature)`
     # over the moves whose neighbour has a known distance to the origin: a move that
     # descends (delta = -1) gets the most mass, one that stalls (0) less, one that
@@ -108,6 +108,19 @@ class TrainingPipelineConfig:
     ppo_lambda: float = 0.95
     ppo_clip: float = 0.2
     ppo_epochs: int = 4
+    # Stop an iteration's epochs early once a minibatch moves the policy further than
+    # this (Schulman's k3 KL estimate; see `PPOBatchStats`). Reusing one batch of
+    # rollouts for several epochs is only sound while the policy stays near the one
+    # that collected them, and `ppo_epochs` is a fixed guess at how long that holds;
+    # this is the measured version of the same bound. 0 disables the stop and runs
+    # every epoch unconditionally.
+    #
+    # 0.05 rather than the 0.02 a PPO paper would suggest, because the threshold has
+    # to be read against this run's minibatch count. Measured over 25 rank-2
+    # navigation iterations at lr 3e-4, 0.02 stopped after 0.66 epochs -- less than a
+    # single pass over the rollouts, which throws away most of the episodes just
+    # collected and makes `ppo_epochs` decorative. 0.05 lets ~1.6 epochs through.
+    target_kl: float = 0.05
     entropy_coef: float = 0.01
     iterations: int = 2
     episodes_per_iteration: int = 4
@@ -230,6 +243,7 @@ class TrainingPipelineConfig:
             ),
             ppo_clip=float(training.get("ppo_clip", data.get("ppo_clip", defaults.ppo_clip))),
             ppo_epochs=int(training.get("ppo_epochs", data.get("ppo_epochs", defaults.ppo_epochs))),
+            target_kl=float(training.get("target_kl", data.get("target_kl", defaults.target_kl))),
             entropy_coef=float(
                 training.get("entropy_coef", data.get("entropy_coef", defaults.entropy_coef))
             ),
@@ -382,6 +396,8 @@ class TrainingPipelineConfig:
             raise ValueError("ppo_clip must be positive")
         if self.ppo_epochs <= 0:
             raise ValueError("ppo_epochs must be positive")
+        if self.target_kl < 0.0:
+            raise ValueError("target_kl must be non-negative (0 disables the early stop)")
         if self.entropy_coef < 0.0:
             raise ValueError("entropy_coef must be non-negative")
         if self.iterations <= 0:
@@ -486,6 +502,7 @@ def run_description(
             ppo_lambda=config.ppo_lambda,
             ppo_clip=config.ppo_clip,
             ppo_epochs=config.ppo_epochs,
+            target_kl=config.target_kl,
             entropy_coef=config.entropy_coef,
         )
     elif config.agent == "supervised":

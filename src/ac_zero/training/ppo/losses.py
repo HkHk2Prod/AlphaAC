@@ -49,8 +49,10 @@ class PPOBatchStats:
     """Mean diagnostics from one PPO minibatch update.
 
     `clip_fraction` is the share of samples whose probability ratio left the
-    trust region, and `approx_kl` the mean ``old_logp - new_logp``; both are the
-    standard signals for whether the step size and clip range are well matched.
+    trust region, and `approx_kl` how far the policy moved, as Schulman's
+    non-negative k3 estimator ``mean((r - 1) - log r)``; both are the standard
+    signals for whether the step size and clip range are well matched, and
+    `approx_kl` is what the trainer's early stop trips on.
     """
 
     policy_loss: float
