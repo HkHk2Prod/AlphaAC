@@ -50,23 +50,88 @@ class ReplayExample:
 class EpisodeMetrics:
     """Small aggregate metrics from one generated episode.
 
+    ``normalized_return`` is the episode's return in difficulty-invariant units
+    (see :func:`normalize_return`); the raw sum it came from stays available on
+    ``nav`` as ``total_reward``.
+
     ``nav`` carries the navigation reward's per-episode aggregate (progress,
     success, component sums) that feeds the alpha updater and the evaluation
     metrics; ``None`` for other reward modes.
     """
 
-    total_return: float
     normalized_return: float
     success: bool
     moves: int
     nav: EpisodeStats | None = None
 
 
-def batch_return_and_success(episodes: list[EpisodeMetrics]) -> tuple[float, float]:
-    """Mean normalized return and success rate over one iteration's episodes."""
-    mean_return = float(np.mean([episode.normalized_return for episode in episodes]))
-    success_rate = float(np.mean([1.0 if episode.success else 0.0 for episode in episodes]))
-    return mean_return, success_rate
+def normalize_return(total_return: float, nav: EpisodeStats | None) -> float:
+    """Scale one episode's return so instances of different difficulty compare.
+
+    A navigation return is dominated by the terminal bonus, which *is* the
+    episode's start distance ``L0`` (:meth:`RewardComputer.step`), so a solved
+    ``L0 = 20`` instance scores ten times a solved ``L0 = 2`` one. An iteration's
+    mean over a difficulty-mixed batch then swings with which groups the seeds
+    happened to draw rather than with the policy -- the run's reward curve
+    oscillates even while nothing is learning or unlearning. Dividing by ``L0``
+    makes a solve worth about 1 whatever it started from, so the mean moves only
+    when the policy does.
+
+    The other reward modes already carry their own ``1/initial_length`` scale
+    (:attr:`ACEnvironment.reward_scale`), so their return passes through.
+    """
+    if nav is None:
+        return total_return
+    return total_return / max(1, nav.start_distance)
+
+
+@dataclass(frozen=True, slots=True)
+class BatchMetrics:
+    """One iteration's self-play summary, in difficulty-invariant units.
+
+    ``progress_rate`` -- the mean fraction of the start distance the episodes
+    closed at their closest approach -- and ``start_distance`` are ``None`` off
+    navigation, where no episode carries the distance stats they come from.
+
+    ``start_distance`` and ``moves`` are recorded together because the horizon is
+    a function of the first (``3 * L + 6``), so the pair is what says whether the
+    episodes ran the length their instances called for. A stored run whose mean
+    ``moves`` exceeds ``3 * max_distance + 6`` is drawing a horizon from somewhere
+    other than its instance's distance, and neither number was previously written
+    anywhere a finished run could be audited from.
+
+    ``no_start_distance`` is the share of navigation episodes that began from a
+    node with no usable distance to the destination. It should be exactly zero:
+    a navigation run filters its instances to annotated groups
+    (``require_potential``), and an episode without a start distance silently
+    loses both its destination bonus (which *is* that distance) and its horizon,
+    falling back to ``unknown_distance_max_moves`` -- an order-of-magnitude change
+    that nothing previously reported.
+    """
+
+    mean_return: float
+    success_rate: float
+    progress_rate: float | None
+    start_distance: float | None
+    no_start_distance: float | None
+    moves: float
+
+
+def batch_episode_metrics(episodes: list[EpisodeMetrics]) -> BatchMetrics:
+    """Summarize one iteration's episodes into the series the run records."""
+    nav = [episode.nav for episode in episodes if episode.nav is not None]
+    return BatchMetrics(
+        mean_return=float(np.mean([episode.normalized_return for episode in episodes])),
+        success_rate=float(np.mean([1.0 if episode.success else 0.0 for episode in episodes])),
+        progress_rate=float(np.mean([stats.progress_rate for stats in nav])) if nav else None,
+        start_distance=float(np.mean([stats.start_distance for stats in nav])) if nav else None,
+        no_start_distance=(
+            float(np.mean([1.0 if stats.start_distance <= 0 else 0.0 for stats in nav]))
+            if nav
+            else None
+        ),
+        moves=float(np.mean([episode.moves for episode in episodes])),
+    )
 
 
 def moves_for_distance(distance: int) -> int:
@@ -323,8 +388,7 @@ def _collect_episode(
     total_return = float(sum(rewards))
     nav = env.navigation_episode_stats() if is_navigation else None
     return examples, EpisodeMetrics(
-        total_return=total_return,
-        normalized_return=total_return,
+        normalized_return=normalize_return(total_return, nav),
         success=terminated,
         moves=len(pending),
         nav=nav,

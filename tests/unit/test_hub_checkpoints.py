@@ -77,17 +77,20 @@ def _write_bundle(
         "model_state": {"a": 1, "format_version": format_version},
     }
     bundle.save_checkpoint(payload, metric=metric)
-    rows = [
-        {
-            "optimizer_step": i + 1,
-            "total_loss": 1.0 / (i + 1),
-            "policy_loss": 0.5,
-            "value_loss": 0.1,
-            "mean_return": metric,
-            "success_rate": 0.5,
-        }
-        for i in range(steps)
-    ]
+    # The real row shape: one self-play row per iteration, then one per optimizer
+    # step inside it -- the two figures read different rows and different x fields.
+    rows: list[dict[str, float | int]] = []
+    for i in range(steps):
+        rows.append({"iteration": i + 1, "mean_return": metric, "success_rate": 0.5})
+        rows.append(
+            {
+                "iteration": i + 1,
+                "optimizer_step": i + 1,
+                "total_loss": 1.0 / (i + 1),
+                "policy_loss": 0.5,
+                "value_loss": 0.1,
+            }
+        )
     bundle.save_metrics(rows)
     bundle.save_meta(
         {

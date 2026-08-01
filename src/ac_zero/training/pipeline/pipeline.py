@@ -22,9 +22,10 @@ from ac_zero.training.pipeline.instance_source import build_instance_source
 from ac_zero.training.pipeline.pipeline_artifacts import render_plots, write_fixture_certificate
 from ac_zero.training.pipeline.pipeline_config import TrainingPipelineConfig, run_description
 from ac_zero.training.pipeline.pipeline_episodes import (
+    BatchMetrics,
     EpisodeMetrics,
     ReplayExample,
-    batch_return_and_success,
+    batch_episode_metrics,
     collect_episodes,
 )
 from ac_zero.training.pipeline.pipeline_showcase import EpisodeShowcase
@@ -240,18 +241,51 @@ class _TrainingRun:
             state["alpha_updater"] = self.alpha_updater.state_dict()
         return state
 
-    def _record_iteration_stats(self, mean_return: float, success_rate: float) -> None:
+    def _record_iteration_stats(self, batch: BatchMetrics) -> None:
         """Track the latest self-play stats and the EMAs used to pick the best model."""
-        self.last_mean_return = mean_return
-        self.last_success_rate = success_rate
+        self.last_mean_return = batch.mean_return
+        self.last_success_rate = batch.success_rate
         self.return_ema = (
-            mean_return if self.return_ema is None else 0.7 * self.return_ema + 0.3 * mean_return
+            batch.mean_return
+            if self.return_ema is None
+            else 0.7 * self.return_ema + 0.3 * batch.mean_return
         )
         self.success_ema = (
-            success_rate
+            batch.success_rate
             if self.success_ema is None
-            else 0.7 * self.success_ema + 0.3 * success_rate
+            else 0.7 * self.success_ema + 0.3 * batch.success_rate
         )
+
+    def _self_play_metrics(
+        self, iteration: int, batch: BatchMetrics, extra: MetricsRow | None = None
+    ) -> MetricsRow:
+        """Record this iteration's self-play summary as its own metrics row.
+
+        Kept separate from the per-optimizer-step rows on purpose. Self-play
+        produces one measurement per *iteration*, so repeating it on every
+        minibatch row -- as many as ``ppo_epochs`` times the minibatch count under
+        PPO -- turned the rendered curve into a staircase whose treads were tens
+        of identical points wide, which reads as violent oscillation at every
+        iteration boundary. One row per measurement puts the plot on the axis the
+        measurement is actually indexed by (see ``TRAINING_PLOTS``).
+        """
+        row: MetricsRow = {
+            "iteration": iteration,
+            "episodes": self.total_episodes,
+            "mean_return": batch.mean_return,
+            "success_rate": batch.success_rate,
+            "moves": batch.moves,
+            **self._dynamic_params(),
+            **(extra or {}),
+        }
+        if batch.progress_rate is not None:
+            row["progress_rate"] = batch.progress_rate
+        if batch.start_distance is not None:
+            row["start_distance"] = batch.start_distance
+        if batch.no_start_distance is not None:
+            row["no_start_distance"] = batch.no_start_distance
+        self.metrics_rows.append(row)
+        return row
 
     def _current_alpha(self) -> float | None:
         """The navigation shaping weight this iteration's episodes run at."""
@@ -389,24 +423,17 @@ class _TrainingRun:
             return
         episodes = self._collect_iteration(iteration)
         self.total_episodes += len(episodes)
-        mean_return, success_rate = batch_return_and_success(episodes)
-        self._record_iteration_stats(mean_return, success_rate)
+        batch = batch_episode_metrics(episodes)
+        self._record_iteration_stats(batch)
         self._finalize_navigation(iteration, episodes)
         self.manager.emit(
             iteration * 100,
             "self_play",
             "collected search-guided replay",
-            {
-                "iteration": iteration,
-                "episodes": self.total_episodes,
-                "mean_return": mean_return,
-                "success_rate": success_rate,
-                "replay_size": len(self.replay),
-                **self._dynamic_params(),
-            },
+            {**self._self_play_metrics(iteration, batch), "replay_size": len(self.replay)},
             level=self._iteration_level(iteration),
         )
-        self._run_optimizer_updates(iteration, mean_return, success_rate)
+        self._run_optimizer_updates(iteration)
         self._checkpoint(iteration)
 
     def _train_iteration_ppo(self, iteration: int) -> None:
@@ -416,21 +443,25 @@ class _TrainingRun:
             self.model, self.seed, iteration, self.rng, self._current_alpha()
         )
         self.total_episodes += len(result.episodes)
-        mean_return, success_rate = batch_return_and_success(result.episodes)
-        self._record_iteration_stats(mean_return, success_rate)
+        batch = batch_episode_metrics(result.episodes)
+        self._record_iteration_stats(batch)
         self._finalize_navigation(iteration, result.episodes)
         self.manager.emit(
             iteration * 100,
             "self_play",
             "collected on-policy PPO rollouts",
-            {
-                "iteration": iteration,
-                "episodes": self.total_episodes,
-                "mean_return": mean_return,
-                "success_rate": success_rate,
-                "examples": result.example_count,
-                **self._dynamic_params(),
-            },
+            # How much of the planned `ppo_epochs` x minibatches actually ran, and
+            # whether the KL stop is what cut it short -- on the row, not just the
+            # event, so a finished run's uploaded metrics show the truncation.
+            self._self_play_metrics(
+                iteration,
+                batch,
+                {
+                    "examples": result.example_count,
+                    "ppo_updates": len(result.updates),
+                    "stopped_early": result.stopped_early,
+                },
+            ),
             level=self._iteration_level(iteration),
         )
         for stats in result.updates:
@@ -446,9 +477,6 @@ class _TrainingRun:
                 "entropy": stats.entropy,
                 "clip_fraction": stats.clip_fraction,
                 "approx_kl": stats.approx_kl,
-                "mean_return": mean_return,
-                "success_rate": success_rate,
-                **self._dynamic_params(),
             }
             self.metrics_rows.append(row)
             self.manager.emit(
@@ -506,9 +534,7 @@ class _TrainingRun:
             episodes.append(episode_metrics)
         return episodes
 
-    def _run_optimizer_updates(
-        self, iteration: int, mean_return: float, success_rate: float
-    ) -> None:
+    def _run_optimizer_updates(self, iteration: int) -> None:
         """Sample replay batches and update the model, logging one row per step."""
         self.final_loss = PolicyValueLoss(0.0, 0.0, 0.0)
         for _ in range(self.config.optimizer_updates):
@@ -529,9 +555,6 @@ class _TrainingRun:
                 "policy_loss": self.final_loss.policy_loss,
                 "value_loss": self.final_loss.value_loss,
                 "total_loss": self.final_loss.total_loss,
-                "mean_return": mean_return,
-                "success_rate": success_rate,
-                **self._dynamic_params(),
             }
             self.metrics_rows.append(row)
             self.manager.emit(

@@ -232,7 +232,13 @@ tasks:
       ppo_clip: 0.2
       entropy_coef: 0.01
       value_loss_weight: 0.5
-      learning_rate: 0.02
+      # Adam, not the plain SGD the RL path used to build per minibatch, so this is
+      # an Adam-scale rate. 0.02 was an SGD rate and would diverge here.
+      learning_rate: 0.0003
+      # Stop an iteration's epochs once a minibatch moves the policy this far (k3 KL).
+      # 0.02 measured out at 0.66 epochs per iteration -- less than one pass over the
+      # rollouts; 0.05 lets ~1.6 through.
+      target_kl: 0.05
       # See the alphazero tasks above: gradient-norm clip, not the `ppo_clip`
       # ratio bound. 0.5 is the standard PPO value.
       grad_clip: 0.5
@@ -280,7 +286,13 @@ tasks:
       ppo_clip: 0.2
       entropy_coef: 0.01
       value_loss_weight: 0.5
-      learning_rate: 0.02
+      # Adam, not the plain SGD the RL path used to build per minibatch, so this is
+      # an Adam-scale rate. 0.02 was an SGD rate and would diverge here.
+      learning_rate: 0.0003
+      # Stop an iteration's epochs once a minibatch moves the policy this far (k3 KL).
+      # 0.02 measured out at 0.66 epochs per iteration -- less than one pass over the
+      # rollouts; 0.05 lets ~1.6 through.
+      target_kl: 0.05
       # See the alphazero tasks above: gradient-norm clip, not the `ppo_clip`
       # ratio bound. 0.5 is the standard PPO value.
       grad_clip: 0.5
@@ -432,7 +444,13 @@ tasks:
       ppo_clip: 0.2
       entropy_coef: 0.01
       value_loss_weight: 0.5
-      learning_rate: 0.02
+      # Adam, not the plain SGD the RL path used to build per minibatch, so this is
+      # an Adam-scale rate. 0.02 was an SGD rate and would diverge here.
+      learning_rate: 0.0003
+      # Stop an iteration's epochs once a minibatch moves the policy this far (k3 KL).
+      # 0.02 measured out at 0.66 epochs per iteration -- less than one pass over the
+      # rollouts; 0.05 lets ~1.6 through.
+      target_kl: 0.05
       # See the alphazero tasks above: gradient-norm clip, not the `ppo_clip`
       # ratio bound. 0.5 is the standard PPO value.
       grad_clip: 0.5
@@ -482,7 +500,13 @@ tasks:
       ppo_clip: 0.2
       entropy_coef: 0.01
       value_loss_weight: 0.5
-      learning_rate: 0.02
+      # Adam, not the plain SGD the RL path used to build per minibatch, so this is
+      # an Adam-scale rate. 0.02 was an SGD rate and would diverge here.
+      learning_rate: 0.0003
+      # Stop an iteration's epochs once a minibatch moves the policy this far (k3 KL).
+      # 0.02 measured out at 0.66 epochs per iteration -- less than one pass over the
+      # rollouts; 0.05 lets ~1.6 through.
+      target_kl: 0.05
       # See the alphazero tasks above: gradient-norm clip, not the `ppo_clip`
       # ratio bound. 0.5 is the standard PPO value.
       grad_clip: 0.5

@@ -106,6 +106,8 @@ class ConsoleSummaryLogger:
             parts.append(f"return={float(metrics['mean_return']):+.3f}")
         if "success_rate" in metrics:
             parts.append(f"success={float(metrics['success_rate']):.2f}")
+        if "progress_rate" in metrics:
+            parts.append(f"progress={float(metrics['progress_rate']):.2f}")
         if "total_loss" in self._loss:
             parts.append(f"loss={self._loss['total_loss']:.4f}")
         # The supervised run has no return or success rate to report: its epoch is scored

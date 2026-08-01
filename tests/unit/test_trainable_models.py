@@ -132,6 +132,42 @@ def test_checkpoint_round_trip_is_exact(name: str) -> None:
     assert before.value == pytest.approx(after.value)
 
 
+@pytest.mark.parametrize("name", ARCHITECTURES)
+def test_a_warm_started_model_serializes_its_staged_weights(name: str) -> None:
+    """A model that has loaded a checkpoint but not built yet still ships its weights.
+
+    This is what `collect_rollouts` sends to the rollout workers on the first
+    iteration of a warm-started run. Reporting the staged model as unbuilt sent an
+    empty parameter set, so workers sampled from a fresh random network while the
+    trainer updated the checkpoint's weights.
+    """
+    encoding, mask, action_count, target = _fixture()
+    trained = create_trainable_model(name, seed=0)
+    example = _Example(encoding, mask, target, 0.5)
+    trained.train_batch(
+        [example], learning_rate=0.1, value_loss_weight=1.0, grad_clip=0.0, reward_mode=_SCALAR_MODE
+    )
+
+    warm = model_from_json(trained.to_json())  # staged for a build that has not run
+    shipped = warm.to_json()
+    assert shipped["built"] is True
+    assert shipped["parameters"]
+
+    worker = model_from_json(shipped)
+    assert np.allclose(
+        worker.apply(encoding, action_count).logits,
+        trained.apply(encoding, action_count).logits,
+    )
+
+
+@pytest.mark.parametrize("name", ARCHITECTURES)
+def test_an_untrained_model_still_serializes_as_unbuilt(name: str) -> None:
+    """Nothing staged and nothing built: there are no weights to claim."""
+    payload = create_trainable_model(name, seed=0).to_json()
+    assert payload["built"] is False
+    assert payload["parameters"] == {}
+
+
 def test_transformer_grad_checkpointing_matches_plain_path() -> None:
     """Checkpointing recomputes activations; the logits, values, and grads are unchanged."""
     encoding, _, action_count, _ = _fixture()

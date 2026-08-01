@@ -183,14 +183,18 @@ def _combined_rows(runs: list[tuple[str, list[dict[str, Any]]]]) -> list[dict[st
     """Concatenate runs in chronological order with a monotonic ``optimizer_step``.
 
     Each run restarts its optimizer step at 1, so the raw values overlap; the
-    all-runs plot re-indexes them onto one global x-axis instead.
+    all-runs plot re-indexes them onto one global x-axis instead. The iteration
+    count already continues across a lineage's sessions and is left alone.
+
+    Each row keeps the run it came from, so the figures can mark where one session
+    handed over to the next.
     """
     combined: list[dict[str, Any]] = []
     step = 0
-    for _run_id, rows in sorted(runs, key=lambda item: item[0]):
+    for run_id, rows in sorted(runs, key=lambda item: item[0]):
         for row in rows:
             step += 1
-            combined.append({**row, "optimizer_step": step})
+            combined.append({**row, "optimizer_step": step, "run": run_id})
     return combined
 
 
