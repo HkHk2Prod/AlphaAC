@@ -1,0 +1,37 @@
+# AlphaZero fine-tune of the 14.2M supervised transformer
+# (configs/experiments/supervised_rel48_14m.yaml). `model`, `model_config` and
+# `max_relator_tokens` must equal that config's, or the warm-start weights do not load.
+#
+# The learning rate is the supervised run's, not the heavy config's 0.01: an RL step at
+# 0.01 on a pretrained transformer erases what pretraining bought in the first iterations.
+rank: 2
+agent: alphazero
+model: transformer
+moveset: strict-ac
+max_relator_tokens: 48
+model_config:
+  embed_dim: 384
+  ff_dim: 1536
+  num_layers: 8
+  num_heads: 6
+dataset:
+  path: data/generated/ball_rank2_rel48.groups.json
+  annotations: data/generated/ball_rank2_rel48.strict-ac.annotations.json
+  count: 8
+  depth: 6
+training:
+  device: auto
+  reward_mode: navigation
+  warm_start: runs/train/supervised_rel48_14m/model_checkpoint/best.json
+  iterations: 1000000
+  episodes_per_iteration: 24
+  optimizer_updates: 32
+  batch_size: 64
+  replay_capacity: 8192
+  learning_rate: 0.0001
+  value_loss_weight: 1.0
+  mcts_simulations: 128
+  c_puct: 1.5
+  checkpoint_every: 5
+  workers: 0
+  run_directory: runs/train/alphazero_rank2_14m
